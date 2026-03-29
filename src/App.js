@@ -138,7 +138,7 @@ export default function App() {
     }
   }, [data]);
 
-  /** Immutable state updater that also triggers persistence */
+  /** Immutable state updater that also trigger persistence */
   const update = (fn) =>
     setData((d) => {
       const nd = fn(d);
