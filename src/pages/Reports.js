@@ -136,22 +136,12 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     return a + (contrib ? contrib.combinedCashValue : Number(t.value) - (Number(t.outstanding) || 0));
   }, 0), [filtered, selectedItems]);
 
-  const chartData = useMemo(() => {
-    const byDate = {};
-    filtered.forEach((t) => {
-      if (!byDate[t.date]) byDate[t.date] = { income: 0, expense: 0 };
-      byDate[t.date][t.type] += Number(t.value) - (Number(t.outstanding) || 0);
-    });
-    return Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).slice(-14);
-  }, [filtered]);
-
-  const maxVal = useMemo(() => Math.max(...chartData.flatMap(([, v]) => [v.income, v.expense]), 1), [chartData]);
-
   const exportCSV = () => {
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = [["Tanggal","Waktu","No.Order","Klien","Barang","Stok","Karung","Berat (Kg)","Harga/Kg","Jenis","Status","Nilai Total","Sisa Tagihan","Nilai (Rp)"]];
+    const rows = [["Tanggal","Waktu","No. Invoice","Klien","Barang","Stok","Karung","Berat (Kg)","Harga/Kg","Jenis","Status","Jatuh Tempo","Nilai Total","Sisa Tagihan","Nilai (Rp)"]];
     filtered.forEach((t) => {
       const contrib = getMultiItemContribution(t, selectedItems);
+      const jenisLabel = t.type === "income" ? "Penjualan" : "Pembelian";
       const sign = t.type === "income" ? "-" : "+";
       const txUnit = t.stockUnit || "karung";
       if (contrib) {
@@ -167,7 +157,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
           rows.push([
             t.date, t.time, t.txnId || "", t.counterparty,
             it.itemName, stok, it.sackQty, it.weightKg || "", it.pricePerKg || "",
-            t.type, t.status,
+            jenisLabel, t.status, t.dueDate || "",
             itSubtotal, itOutstanding, itSubtotal - itOutstanding,
           ]);
         });
@@ -181,7 +171,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
           rows.push([
             t.date, t.time, t.txnId || "", t.counterparty,
             it.itemName, stok, it.sackQty, it.weightKg || "", it.pricePerKg || "",
-            t.type, t.status,
+            jenisLabel, t.status, t.dueDate || "",
             t.value, t.outstanding || 0, Number(t.value) - (Number(t.outstanding) || 0),
           ]);
         });
@@ -189,7 +179,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     });
     const a = document.createElement("a");
     a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(rows.map((r) => r.map(q).join(",")).join("\n"));
-    a.download = `laporan_${dateFrom}_${dateTo}.csv`;
+    a.download = `Laporan_${dateFrom}_sd_${dateTo}.csv`;
     a.click();
   };
 
@@ -319,29 +309,6 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
           </div>
         ))}
       </div>
-
-      {/* Bar chart */}
-      {chartData.length > 0 && (
-        <div className="chart-card">
-          <h4 className="chart-title">Grafik Pemasukan vs Pengeluaran</h4>
-          <div className="chart-bars">
-            {chartData.map(([date,vals]) => (
-              <div key={date} className="chart-bar-col">
-                <div style={{ display:"flex", gap:2, alignItems:"flex-end" }}>
-                  <div className="chart-bar" style={{ background:"#10b981", height:Math.max(4,(vals.income/maxVal)*100) }} />
-                  <div className="chart-bar" style={{ background:"#ef4444", height:Math.max(4,(vals.expense/maxVal)*100) }} />
-                </div>
-                <div className="chart-bar-label">{date.slice(5)}</div>
-              </div>
-            ))}
-          </div>
-          <div className="chart-legend">
-            {[["#10b981","Pemasukan"],["#ef4444","Pengeluaran"]].map(([c,l]) => (
-              <div key={l} className="legend-item"><div className="legend-dot" style={{ background:c }} />{l}</div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Transaction table */}
       <div className="table-card">

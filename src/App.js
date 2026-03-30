@@ -37,6 +37,7 @@ import { computeStockMap }         from "./utils/stockUtils";
 import { computeARandAP }          from "./utils/balanceUtils";
 import { generateId, generateTxnId, fmtIDR, normItem, normalizeTitleCase, addDays, today, nowTime } from "./utils/idGenerators";
 import { deriveStatus }            from "./utils/statusUtils";
+import { generateCode }           from "./utils/categoryUtils";
 
 // ─── Edit Modal ───────────────────────────────────────────────────────────────
 /**
@@ -461,21 +462,70 @@ export default function App() {
 
   // ── Item Catalog CRUD ────────────────────────────────────────────────────────
   const addCatalogItem = (item) =>
-    update((d) => ({
-      ...d,
-      itemCatalog: [...(d.itemCatalog || []), {
-        id:          generateId(),
-        name:        normalizeTitleCase(item.name),
-        defaultUnit: item.defaultUnit || "karung",
-        subtypes:    item.subtypes    || [],
-      }],
-    }));
+    update((d) => {
+      const catalog = d.itemCatalog || [];
+      const categories = d.itemCategories || [];
+      const normalizedName = normalizeTitleCase(item.name);
+
+      let newCatalog;
+      let catalogItemName;
+
+      const existing = catalog.find((c) => normItem(c.name) === normItem(item.name));
+      if (existing) {
+        // Safety guard: merge subtypes instead of creating a duplicate entry
+        const existingNorm = new Set((existing.subtypes || []).map(normItem));
+        const merged = [
+          ...(existing.subtypes || []),
+          ...(item.subtypes || []).filter((s) => !existingNorm.has(normItem(s))),
+        ];
+        newCatalog = catalog.map((c) => c.id === existing.id ? { ...c, subtypes: merged } : c);
+        catalogItemName = existing.name;
+      } else {
+        newCatalog = [...catalog, {
+          id:          generateId(),
+          name:        normalizedName,
+          defaultUnit: item.defaultUnit || "karung",
+          subtypes:    item.subtypes    || [],
+        }];
+        catalogItemName = normalizedName;
+      }
+
+      // Auto-create a matching itemCategories entry if none exists for this item
+      const hasCat = categories.some((c) => normItem(c.groupName) === normItem(catalogItemName));
+      let newCategories = categories;
+      if (!hasCat) {
+        const existingCodes = new Set(categories.map((c) => c.code));
+        let code = generateCode(catalogItemName);
+        let suffix = 2;
+        while (existingCodes.has(code)) {
+          code = generateCode(catalogItemName) + suffix;
+          suffix++;
+        }
+        newCategories = [...categories, {
+          id:        generateId(),
+          groupName: catalogItemName,
+          code,
+          items:     [normItem(catalogItemName)],
+        }];
+      }
+
+      return { ...d, itemCatalog: newCatalog, itemCategories: newCategories };
+    });
 
   const updateCatalogItem = (updatedItem) =>
-    update((d) => ({
-      ...d,
-      itemCatalog: (d.itemCatalog || []).map((c) => c.id === updatedItem.id ? updatedItem : c),
-    }));
+    update((d) => {
+      const newCatalog = (d.itemCatalog || []).map((c) => c.id === updatedItem.id ? updatedItem : c);
+
+      // Sync the matching itemCategories entry's items[] when subtypes change
+      const newCategories = (d.itemCategories || []).map((cat) => {
+        if (normItem(cat.groupName) !== normItem(updatedItem.name)) return cat;
+        const baseKey = normItem(updatedItem.name);
+        const subKeys = (updatedItem.subtypes || []).map((sub) => normItem(`${updatedItem.name} ${sub}`));
+        return { ...cat, items: [baseKey, ...subKeys] };
+      });
+
+      return { ...d, itemCatalog: newCatalog, itemCategories: newCategories };
+    });
 
   const deleteCatalogItem = (itemId) =>
     update((d) => ({

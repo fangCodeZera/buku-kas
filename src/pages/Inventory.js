@@ -5,12 +5,11 @@
  * Shows:
  *  - Date navigation bar with full Indonesian date format
  *  - Alert banners for negative / low-stock items
- *  - Summary dashboard cards + bar chart
+ *  - Summary dashboard cards
  *  - Search/sort bar above unified item cards
  *  - Unified catalog item cards (replaces old Katalog Barang section + stock table)
  *  - Expandable per-item stock ledger rendered inside each card
  *  - Uncataloged items section at the bottom
- *  - CSV export
  */
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import Icon               from "../components/Icon";
@@ -105,8 +104,9 @@ const Inventory = ({
   const [toast,         setToast]         = useState(null);
 
   // Refs for auto-focus
-  const adjQtyRef      = useRef(null);
-  const catalogNameRef = useRef(null);
+  const adjQtyRef         = useRef(null);
+  const catalogNameRef    = useRef(null);
+  const addSubtypeInputRef = useRef(null);
 
   // Rename modal state
   const [renameTarget,       setRenameTarget]       = useState(null);
@@ -152,12 +152,31 @@ const Inventory = ({
     }
   }, [adjTarget]);
 
-  // Auto-focus name input when catalog add/edit modal opens
+  // Auto-focus subtype input when inline "+ Tambah Tipe" row opens
   useEffect(() => {
-    if (catalogForm && catalogNameRef.current) {
-      setTimeout(() => catalogNameRef.current?.focus(), 50);
+    if (addSubtypeTarget && addSubtypeInputRef.current) {
+      setTimeout(() => addSubtypeInputRef.current?.focus(), 50);
     }
-  }, [catalogForm]);
+  }, [addSubtypeTarget]);
+
+  // Global Escape key handler — closes modals/forms in foreground-first priority order
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (catalogForm)          { setCatalogForm(null); setCatalogFormError(""); setCatalogSubtypeError(""); return; }
+      if (deleteCatalogConfirm) { setDeleteCatalogConfirm(null); return; }
+      if (removeSubtypeConfirm) { setRemoveSubtypeConfirm(null); return; }
+      if (adjTarget)            { setAdjTarget(null); return; }
+      if (renameTarget)         { setRenameTarget(null); setRenameMergeConfirm(false); return; }
+      if (deleteTarget)         { setDeleteTarget(null); return; }
+      if (adjDeleteConfirm)     { setAdjDeleteConfirm(null); return; }
+      if (addSubtypeTarget)     { setAddSubtypeTarget(null); setAddSubtypeInput(""); setAddSubtypeError(""); return; }
+      if (expandedStockItem)    { setExpandedStockItem(null); return; }
+      if (showCategoryModal)    { setShowCategoryModal(false); return; }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [catalogForm, deleteCatalogConfirm, removeSubtypeConfirm, adjTarget, renameTarget, deleteTarget, adjDeleteConfirm, addSubtypeTarget, expandedStockItem, showCategoryModal]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -358,13 +377,6 @@ const Inventory = ({
 
   const negItems = useMemo(() => items.filter((it) => it.qty < 0), [items]);
   const lowItems = useMemo(() => items.filter((it) => it.qty >= 0 && it.qty <= threshold), [items, threshold]);
-  const maxQty   = useMemo(() => Math.max(...items.map((it) => Math.abs(it.qty)), 1), [items]);
-
-  const chartItems = useMemo(
-    () => [...items].sort((a, b) => Math.abs(b.qty) - Math.abs(a.qty)).slice(0, 12),
-    [items]
-  );
-
   // Expanded item display info — used by the ledger panel
   const expandedItemInfo = useMemo(() => {
     if (!expandedStockItem) return null;
@@ -391,6 +403,7 @@ const Inventory = ({
       const baseKey   = normItem(cat.name);
       coveredKeys.add(baseKey);
       const baseStock = activeStockMap[baseKey];
+      // Always show base item row — represents the item "without a type"
       flatRows.push({
         key:         baseKey,
         displayName: cat.name,
@@ -399,6 +412,7 @@ const Inventory = ({
         lastDate:    baseStock?.lastDate || null,
         lastTime:    baseStock?.lastTime || null,
         txCount:     baseStock?.txCount  || 0,
+        catalogItem: cat,   // full catalog item — used for "+ Tambah Tipe" button and delete
       });
 
       for (const sub of (cat.subtypes || [])) {
@@ -408,12 +422,13 @@ const Inventory = ({
         const stock = activeStockMap[key];
         flatRows.push({
           key,
-          displayName: fullName,
-          qty:      stock?.qty      ?? 0,
-          unit:     stock?.unit     || cat.defaultUnit || "karung",
-          lastDate: stock?.lastDate || null,
-          lastTime: stock?.lastTime || null,
-          txCount:  stock?.txCount  || 0,
+          displayName:  fullName,
+          qty:          stock?.qty      ?? 0,
+          unit:         stock?.unit     || cat.defaultUnit || "karung",
+          lastDate:     stock?.lastDate || null,
+          lastTime:     stock?.lastTime || null,
+          txCount:      stock?.txCount  || 0,
+          catalogItem:  null,
         });
       }
     }
@@ -424,11 +439,12 @@ const Inventory = ({
         flatRows.push({
           key,
           displayName: stock.displayName || key,
-          qty:      stock.qty      ?? 0,
-          unit:     stock.unit     || "karung",
-          lastDate: stock.lastDate || null,
-          lastTime: stock.lastTime || null,
-          txCount:  stock.txCount  || 0,
+          qty:         stock.qty      ?? 0,
+          unit:        stock.unit     || "karung",
+          lastDate:    stock.lastDate || null,
+          lastTime:    stock.lastTime || null,
+          txCount:     stock.txCount  || 0,
+          catalogItem: null,
         });
       }
     }
@@ -595,52 +611,13 @@ const Inventory = ({
     if (submitting) return;
     setSubmitting(true);
     onDeleteCatalogItem(catalogItem.id);
+    onUpdateCategories(itemCategories.filter((c) => normItem(c.groupName) !== normItem(catalogItem.name)));
     setDeleteCatalogConfirm(null);
     setToast(`Barang berhasil dihapus dari katalog`);
     setSubmitting(false);
   };
 
   // ── Display helpers ───────────────────────────────────────────────────────────
-
-  /** Format a stock quantity: whole numbers without decimals, floats to 2dp. */
-  const fmtQty = (qty) => {
-    const n = Number(qty) || 0;
-    return n % 1 === 0 ? String(Math.round(n)) : n.toFixed(2);
-  };
-
-  /** Stock quantity color: red for ≤0, amber for ≤threshold, green otherwise. */
-  const stockColor = (qty) => {
-    const n = Number(qty) || 0;
-    if (n <= 0) return "#ef4444";
-    if (n <= threshold) return "#f59e0b";
-    return "#10b981";
-  };
-
-  const exportCSV = () => {
-    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = [["Barang", "Stok", "Satuan", "Terakhir Aktif", "Jml Transaksi"]];
-
-    // tableGroups is already filtered by `search` and sorted by sortBy/sortDir —
-    // this matches exactly what the user sees on screen.
-    for (const group of tableGroups) {
-      for (const row of group.items) {
-        rows.push([
-          row.displayName,
-          fmtQty(row.qty),
-          row.unit,
-          row.lastDate || "",
-          row.txCount,
-        ]);
-      }
-    }
-
-    const dateStr = today();
-    const a = document.createElement("a");
-    a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(rows.map((r) => r.map(q).join(",")).join("\n"));
-    a.download = `inventaris_${dateStr}.csv`;
-    a.click();
-    setToast("File CSV berhasil diunduh");
-  };
 
   // Quick-select helpers for ledger date filter
   const setLedgerToday  = () => { setLedgerDateFrom(today()); setLedgerDateTo(today()); };
@@ -1185,7 +1162,7 @@ const Inventory = ({
         <div style={{ display: "flex", gap: 8 }}>
           {isToday && (
             <button
-              onClick={() => { setCatalogForm({ name: "", defaultUnit: "karung", subtypes: [] }); setCatalogFormError(""); }}
+              onClick={() => { setCatalogForm({ name: "", defaultUnit: "karung", subtypes: [] }); setCatalogFormError(""); setTimeout(() => catalogNameRef.current?.focus(), 50); }}
               className="btn btn-primary"
               aria-label="Tambah item baru ke katalog"
             >
@@ -1197,9 +1174,6 @@ const Inventory = ({
           </button>
           <button onClick={onStockReport} className="btn btn-outline" aria-label="Cetak laporan stok">
             <Icon name="reports" size={14} color="#007bff" /> Laporan Stok
-          </button>
-          <button onClick={exportCSV} className="btn btn-outline" aria-label="Ekspor CSV inventaris">
-            <Icon name="download" size={14} color="#007bff" /> Ekspor CSV
           </button>
         </div>
       </div>
@@ -1318,46 +1292,6 @@ const Inventory = ({
         ))}
       </div>
 
-      {/* ── Bar chart ── */}
-      {chartItems.length > 0 && (
-        <div className="chart-card">
-          <h4 className="chart-title">Stok per Item ({chartItems.length} item)</h4>
-          <div className="chart-bars">
-            {chartItems.map((it) => {
-              const isNeg    = it.qty < 0;
-              const isLow    = !isNeg && it.qty <= threshold;
-              const barColor = isNeg ? "#ef4444" : isLow ? "#f59e0b" : "#007bff";
-              const barH     = Math.max(4, (Math.abs(it.qty) / maxQty) * 100);
-              return (
-                <div
-                  key={it.key}
-                  className="chart-bar-col"
-                  onClick={() => onViewItem(it.displayName)}
-                  title={`${it.displayName}: ${it.qty} ${it.unit}`}
-                  style={{ cursor: "pointer" }}
-                  role="button"
-                  aria-label={`Lihat transaksi ${it.displayName}`}
-                >
-                  <div className="chart-bar" style={{ height: barH, background: barColor }} />
-                  <div className="chart-bar-label">{it.displayName.slice(0, 8)}</div>
-                  <div className="chart-bar-qty" style={{ color: barColor }}>
-                    {Number(it.qty).toFixed(it.qty % 1 === 0 ? 0 : 1)}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="chart-legend">
-            {[["#007bff", "Cukup"], ["#f59e0b", "Rendah"], ["#ef4444", "Negatif"]].map(([c, l]) => (
-              <div key={l} className="legend-item">
-                <div className="legend-dot" style={{ background: c }} />
-                {l}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ── Search / Sort bar ── */}
       <div className="inventory-search-sort">
         <div className="search-wrap" style={{ flex: 1, marginBottom: 0 }}>
@@ -1395,7 +1329,7 @@ const Inventory = ({
             <button
               className="btn btn-primary"
               style={{ marginTop: 12 }}
-              onClick={() => { setCatalogForm({ name: "", defaultUnit: "karung", subtypes: [] }); setCatalogFormError(""); }}
+              onClick={() => { setCatalogForm({ name: "", defaultUnit: "karung", subtypes: [] }); setCatalogFormError(""); setTimeout(() => catalogNameRef.current?.focus(), 50); }}
             >
               ＋ Tambah Barang Pertama
             </button>
@@ -1414,109 +1348,165 @@ const Inventory = ({
               </tr>
             </thead>
             <tbody>
-              {tableGroups.map((group) => (
-                <React.Fragment key={group.groupName}>
-                  {/* Group header row */}
-                  <tr className="inventory-group-header">
-                    <td colSpan={5}>{group.groupName} — {group.code}</td>
-                  </tr>
+              {tableGroups.map((group) => {
+                // Find catalog item matching this group — used for "+ Tambah Tipe" on the header.
+                // Only shown when viewing today (not historical dates).
+                const groupCatalogItem = isToday
+                  ? itemCatalog.find((c) => normItem(c.name) === normItem(group.groupName)) || null
+                  : null;
+                return (
+                  <React.Fragment key={group.groupName}>
+                    {/* Group header row */}
+                    <tr className="inventory-group-header">
+                      <td colSpan={5}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span>{group.groupName} — {group.code}</span>
+                          {groupCatalogItem && (
+                            <button
+                              className="category-add-subtype-btn"
+                              onClick={() => {
+                                setAddSubtypeTarget(
+                                  addSubtypeTarget === groupCatalogItem.id ? null : groupCatalogItem.id
+                                );
+                                setAddSubtypeInput("");
+                                setAddSubtypeError("");
+                              }}
+                              aria-label={`Tambah tipe untuk ${groupCatalogItem.name}`}
+                            >
+                              + Tambah Tipe
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
 
-                  {/* Item rows */}
-                  {group.items.map((row) => (
-                    <React.Fragment key={row.key}>
-                      <tr className={expandedStockItem === row.key ? "row-alt" : undefined}>
-                        <td>{row.displayName}</td>
-                        <td className="td-center">
-                          <StockChip qty={row.qty} unit={row.unit} threshold={threshold} />
-                        </td>
-                        <td className="td-center whitespace-nowrap" style={{ fontSize: 11, color: "#6b7280" }}>
-                          {row.lastDate
-                            ? `${fmtDate(row.lastDate)}${row.lastTime ? ` · ${row.lastTime}` : ""}`
-                            : "—"}
-                        </td>
-                        <td className="td-center" style={{ fontSize: 12, color: "#6b7280" }}>
-                          {row.txCount > 0 ? `${row.txCount} tx` : "—"}
-                        </td>
-                        <td className="td-center">
-                          <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
-                            {/* 1. Riwayat Stok */}
+                    {/* Inline add-subtype form — appears below the header, above item rows */}
+                    {groupCatalogItem && addSubtypeTarget === groupCatalogItem.id && (
+                      <tr className="payment-history-row">
+                        <td colSpan={5} className="payment-history-cell">
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 4px" }}>
+                            <input
+                              ref={addSubtypeInputRef}
+                              value={addSubtypeInput}
+                              onChange={(e) => { setAddSubtypeInput(e.target.value); setAddSubtypeError(""); }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") { e.preventDefault(); handleAddSubtype(groupCatalogItem); }
+                                if (e.key === "Escape") { setAddSubtypeTarget(null); setAddSubtypeInput(""); setAddSubtypeError(""); }
+                              }}
+                              placeholder="Nama tipe baru..."
+                              style={{ padding: "5px 10px", border: `1.5px solid ${addSubtypeError ? "#ef4444" : "#c7ddf7"}`, borderRadius: 8, fontSize: 13, minWidth: 160 }}
+                              aria-label="Nama tipe baru"
+                            />
                             <button
-                              onClick={() => toggleLedger(row.key)}
-                              className={`action-btn${expandedStockItem === row.key ? " action-btn--history-active" : " action-btn--history"}`}
-                              title="Riwayat Stok"
-                              aria-label={`Riwayat stok ${row.displayName}`}
-                              aria-expanded={expandedStockItem === row.key}
+                              className="btn btn-sm btn-primary"
+                              onClick={() => handleAddSubtype(groupCatalogItem)}
+                              disabled={submitting}
                             >
-                              <Icon name="clock" size={13} color={expandedStockItem === row.key ? "#fff" : "#007BFF"} />
-                              {(adjCountMap[row.key] || 0) > 0 && (
-                                <span className="action-btn--history-badge">{adjCountMap[row.key]}</span>
-                              )}
+                              Simpan
                             </button>
-                            {/* 2. Sesuaikan */}
-                            {isToday && (
-                              <button
-                                onClick={() => openAdj(row.displayName, row.unit)}
-                                className="action-btn action-btn--adjust"
-                                title="Sesuaikan Stok"
-                                aria-label={`Sesuaikan stok ${row.displayName}`}
-                              >
-                                <Icon name="adjust" size={13} color="#10b981" />
-                              </button>
-                            )}
-                            {/* 3. Lihat Laporan */}
                             <button
-                              onClick={() => onViewItem(row.displayName)}
-                              className="action-btn"
-                              title="Lihat Laporan"
-                              aria-label={`Lihat laporan ${row.displayName}`}
+                              className="btn btn-sm btn-secondary"
+                              onClick={() => { setAddSubtypeTarget(null); setAddSubtypeInput(""); setAddSubtypeError(""); }}
                             >
-                              <Icon name="reports" size={13} color="#6366f1" />
+                              Batal
                             </button>
-                            {/* 4. Ubah Nama */}
-                            {isToday && (
-                              <button
-                                onClick={() => openRename(row.displayName, row.unit)}
-                                className="action-btn action-btn--edit"
-                                title="Ubah Nama"
-                                aria-label={`Ubah nama ${row.displayName}`}
-                              >
-                                <Icon name="edit" size={13} color="#007BFF" />
-                              </button>
-                            )}
-                            {/* 5. Hapus */}
-                            {isToday && (
-                              <button
-                                onClick={() => setDeleteTarget({
-                                  itemName: row.displayName,
-                                  txCount: transactions.filter((t) => {
-                                    const itemList = Array.isArray(t.items) && t.items.length > 0
-                                      ? t.items : [{ itemName: t.itemName }];
-                                    return itemList.some((it) => normItem(it.itemName) === row.key);
-                                  }).length,
-                                })}
-                                className="action-btn action-btn--delete"
-                                title="Hapus Semua Transaksi Item"
-                                aria-label={`Hapus semua transaksi ${row.displayName}`}
-                              >
-                                <Icon name="trash" size={13} color="#ef4444" />
-                              </button>
+                            {addSubtypeError && (
+                              <span className="field-error" style={{ margin: 0 }}>{addSubtypeError}</span>
                             )}
                           </div>
                         </td>
                       </tr>
+                    )}
 
-                      {/* Ledger expansion row */}
-                      {expandedStockItem === row.key && (
-                        <tr className="payment-history-row">
-                          <td colSpan={5} className="payment-history-cell">
-                            {renderLedgerPanel()}
+                    {/* Item rows */}
+                    {group.items.map((row) => (
+                      <React.Fragment key={row.key}>
+                        <tr className={expandedStockItem === row.key ? "row-alt" : undefined}>
+                          <td>{row.displayName}</td>
+                          <td className="td-center">
+                            <StockChip qty={row.qty} unit={row.unit} threshold={threshold} />
+                          </td>
+                          <td className="td-center whitespace-nowrap" style={{ fontSize: 11, color: "#6b7280" }}>
+                            {row.lastDate
+                              ? `${fmtDate(row.lastDate)}${row.lastTime ? ` · ${row.lastTime}` : ""}`
+                              : "—"}
+                          </td>
+                          <td className="td-center" style={{ fontSize: 12, color: "#6b7280" }}>
+                            {row.txCount > 0 ? `${row.txCount} tx` : "—"}
+                          </td>
+                          <td className="td-center">
+                            <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                              {/* 1. Riwayat Stok */}
+                              <button
+                                onClick={() => toggleLedger(row.key)}
+                                className={`action-btn${expandedStockItem === row.key ? " action-btn--history-active" : " action-btn--history"}`}
+                                title="Riwayat Stok"
+                                aria-label={`Riwayat stok ${row.displayName}`}
+                                aria-expanded={expandedStockItem === row.key}
+                              >
+                                <Icon name="clock" size={13} color={expandedStockItem === row.key ? "#fff" : "#007BFF"} />
+                                {(adjCountMap[row.key] || 0) > 0 && (
+                                  <span className="action-btn--history-badge">{adjCountMap[row.key]}</span>
+                                )}
+                              </button>
+                              {/* 2. Sesuaikan */}
+                              {isToday && (
+                                <button
+                                  onClick={() => openAdj(row.displayName, row.unit)}
+                                  className="action-btn action-btn--adjust"
+                                  title="Sesuaikan Stok"
+                                  aria-label={`Sesuaikan stok ${row.displayName}`}
+                                >
+                                  <Icon name="adjust" size={13} color="#10b981" />
+                                </button>
+                              )}
+                              {/* 3. Lihat Laporan */}
+                              <button
+                                onClick={() => onViewItem(row.displayName)}
+                                className="action-btn"
+                                title="Lihat Laporan"
+                                aria-label={`Lihat laporan ${row.displayName}`}
+                              >
+                                <Icon name="reports" size={13} color="#6366f1" />
+                              </button>
+                              {/* 4. Ubah Nama */}
+                              {isToday && (
+                                <button
+                                  onClick={() => openRename(row.displayName, row.unit)}
+                                  className="action-btn action-btn--edit"
+                                  title="Ubah Nama"
+                                  aria-label={`Ubah nama ${row.displayName}`}
+                                >
+                                  <Icon name="edit" size={13} color="#007BFF" />
+                                </button>
+                              )}
+                              {/* 5. Hapus — only for catalogued base items; uncatalogued rows have no delete */}
+                              {isToday && row.catalogItem && (
+                                <button
+                                  onClick={() => setDeleteCatalogConfirm(row.catalogItem)}
+                                  className="action-btn action-btn--delete"
+                                  title="Hapus dari Katalog"
+                                  aria-label={`Hapus ${row.displayName} dari katalog`}
+                                >
+                                  <Icon name="trash" size={13} color="#ef4444" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </React.Fragment>
-              ))}
+                        {/* Ledger expansion row */}
+                        {expandedStockItem === row.key && (
+                          <tr className="payment-history-row">
+                            <td colSpan={5} className="payment-history-cell">
+                              {renderLedgerPanel()}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

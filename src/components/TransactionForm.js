@@ -464,15 +464,20 @@ const TransactionForm = ({
     }
     if (!validate()) return;
 
-    // Derive unit from the first item's matched catalog entry; fall back to "karung"
-    const unit = form.items[0]?.matchedCatalog?.defaultUnit || "karung";
+    // Derive unit from the first item — use fresh catalog lookup to avoid stale matchedCatalog
+    const firstItem = form.items[0];
+    const freshFirstCat = firstItem?.catalogItemId
+      ? itemCatalog.find((c) => c.id === firstItem.catalogItemId)
+      : null;
+    const unit = freshFirstCat?.defaultUnit || firstItem?.matchedCatalog?.defaultUnit || "karung";
 
     // Check for new items/subtypes before saving — build confirmation list
     const toConfirm = form.items.map(getItemStatus).filter((s) => s.status !== "matched");
-    // Deduplicate by baseName (same new item may appear in multiple rows)
+    // Deduplicate by full item name (baseName + typeName) so e.g. "Kacang Ijo Malay"
+    // and "Kacang Ijo Viet" are not incorrectly collapsed to one entry
     const seen = new Set();
     const deduped = toConfirm.filter((s) => {
-      const key = normItem(s.baseName);
+      const key = normItem(s.baseName) + (s.typeName ? " " + normItem(s.typeName) : "");
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -490,20 +495,54 @@ const TransactionForm = ({
   const handleConfirmNewItems = () => {
     const { items: newItems, unit } = newItemConfirm;
     setNewItemConfirm(null);
+
+    // Build a map of catalog changes, merging all subtypes per base item BEFORE calling
+    // any handlers. This prevents duplicate catalog entries when the same base item appears
+    // in multiple rows (e.g. "Bawang Goreng Jawa" + "Bawang Goreng Sumatra" → one entry
+    // with both subtypes, not two separate entries).
+    const changeMap = {}; // normItem(baseName) → { isExisting, normSubtypes: Set, displaySubtypes: [] }
+
     for (const item of newItems) {
-      if (item.status === "new_item") {
-        onAddCatalogItem({
-          name:        normalizeTitleCase(item.baseName),
-          defaultUnit: unit,
-          subtypes:    item.typeName ? [normalizeTitleCase(item.typeName)] : [],
-        });
-      } else if (item.status === "new_subtype") {
-        onUpdateCatalogItem({
-          ...item.catalogItem,
-          subtypes: [...item.catalogItem.subtypes, normalizeTitleCase(item.typeName)],
-        });
+      const key = normItem(item.baseName);
+      if (!changeMap[key]) {
+        if (item.status === "new_subtype" && item.catalogItem) {
+          // Existing catalog item — start with its current subtypes
+          changeMap[key] = {
+            isExisting:      true,
+            existingItem:    item.catalogItem,
+            normSubtypes:    new Set((item.catalogItem.subtypes || []).map(normItem)),
+            displaySubtypes: [...(item.catalogItem.subtypes || [])],
+          };
+        } else {
+          // Completely new catalog item
+          changeMap[key] = {
+            isExisting:      false,
+            name:            normalizeTitleCase(item.baseName),
+            defaultUnit:     unit,
+            normSubtypes:    new Set(),
+            displaySubtypes: [],
+          };
+        }
+      }
+      // Merge subtype (deduplicated by normalized value)
+      if (item.typeName && item.typeName.trim()) {
+        const normSub = normItem(item.typeName);
+        if (!changeMap[key].normSubtypes.has(normSub)) {
+          changeMap[key].normSubtypes.add(normSub);
+          changeMap[key].displaySubtypes.push(normalizeTitleCase(item.typeName));
+        }
       }
     }
+
+    // Apply ONE call per catalog base item — not one per transaction row
+    for (const change of Object.values(changeMap)) {
+      if (change.isExisting) {
+        onUpdateCatalogItem({ ...change.existingItem, subtypes: change.displaySubtypes });
+      } else {
+        onAddCatalogItem({ name: change.name, defaultUnit: change.defaultUnit, subtypes: change.displaySubtypes });
+      }
+    }
+
     setSubmitting(true);
     doStockCheckAndSave(unit);
   };
@@ -838,23 +877,33 @@ const TransactionForm = ({
                         aria-label={`Tipe barang item ${idx + 1}`}
                       />
                       {/* Autocomplete suggestions for TIPE (from matched catalog subtypes) */}
-                      {showTypeSugg === idx && item.matchedCatalog && (() => {
+                      {showTypeSugg === idx && item.catalogItemId && (() => {
+                        const freshCatalog = itemCatalog.find((c) => c.id === item.catalogItemId);
+                        if (!freshCatalog) return null;
                         const q = normItem(item.itemTypeInput);
-                        const suggs = (item.matchedCatalog.subtypes || [])
+                        const suggs = (freshCatalog.subtypes || [])
                           .filter((s) => !q || normItem(s).includes(q))
                           .slice(0, 10);
                         if (suggs.length === 0) return null;
                         return (
                           <div className="autocomplete-dropdown">
-                            {suggs.map((sub) => (
-                              <div
-                                key={sub}
-                                className="autocomplete-item"
-                                onMouseDown={() => handleSelectTypeSuggestion(idx, sub)}
-                              >
-                                {sub}
-                              </div>
-                            ))}
+                            {suggs.map((sub) => {
+                              const sq = stockMap[normItem(`${item.itemNameInput.trim()} ${sub}`)];
+                              return (
+                                <div
+                                  key={sub}
+                                  className="autocomplete-item autocomplete-item--stock"
+                                  onMouseDown={() => handleSelectTypeSuggestion(idx, sub)}
+                                >
+                                  <span>{sub}</span>
+                                  <span className="autocomplete-stock-hint">
+                                    {sq
+                                      ? `${Number(sq.qty).toFixed(2)} ${sq.unit || "karung"}`
+                                      : `0 ${freshCatalog.defaultUnit || "karung"}`}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       })()}
@@ -875,9 +924,9 @@ const TransactionForm = ({
                 )}
 
                 {/* Karung | Harga/Kg | Berat (Kg) | Subtotal */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+                <div className="item-fields-row">
                   <div>
-                    <label style={lStyle}>Jumlah Karung</label>
+                    <label className="item-field-label">Jumlah Karung</label>
                     <input
                       type="text"
                       inputMode="decimal"
@@ -899,7 +948,7 @@ const TransactionForm = ({
                   </div>
 
                   <div>
-                    <label style={lStyle}>Harga per Kg (IDR)</label>
+                    <label className="item-field-label">Harga per Kg (IDR)</label>
                     <RupiahInput
                       value={item.pricePerKg}
                       onChange={(v) => setItem(idx, "pricePerKg", v)}
@@ -909,7 +958,7 @@ const TransactionForm = ({
                   </div>
 
                   <div>
-                    <label style={lStyle}>Berat (Kg)</label>
+                    <label className="item-field-label">Berat (Kg)</label>
                     <input
                       type="text"
                       inputMode="decimal"
@@ -930,7 +979,7 @@ const TransactionForm = ({
                   </div>
 
                   <div>
-                    <label style={lStyle}>
+                    <label className="item-field-label">
                       Subtotal
                       <span style={{ fontWeight: 400, textTransform: "none", fontSize: 10, marginLeft: 4, color: "#10b981" }}>✓ auto</span>
                     </label>
