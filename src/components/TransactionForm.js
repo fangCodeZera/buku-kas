@@ -61,8 +61,18 @@ const TransactionForm = ({
   onUnarchiveSubtype = () => {},
   onUnarchiveContact = () => {},
 }) => {
-  // Active (non-archived) catalog items — used for autocomplete dropdowns
-  const activeCatalog = useMemo(() => itemCatalog.filter((c) => !c.archived), [itemCatalog]);
+  // Active catalog items for autocomplete: include if base is not archived, OR if the item
+  // has at least one non-archived subtype (so "Bawang Putih China" still appears when
+  // "Bawang Putih" base is archived but "China" subtype is still active).
+  const activeCatalog = useMemo(() =>
+    (itemCatalog || []).filter((c) => {
+      if (!c.archived) return true;
+      const activeSubtypes = (c.subtypes || []).filter(
+        (s) => !(c.archivedSubtypes || []).some((as) => normItem(as) === normItem(s))
+      );
+      return activeSubtypes.length > 0;
+    }),
+  [itemCatalog]);
   /**
    * Map an existing itemName string back to its catalog entry for edit-mode pre-fill.
    * Returns { itemNameInput, itemTypeInput, catalogItemId, matchedCatalog }.

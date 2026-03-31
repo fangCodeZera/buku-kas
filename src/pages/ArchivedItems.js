@@ -59,50 +59,41 @@ const ArchivedItems = ({
     return map;
   }, [transactions]);
 
-  // Flat list of archived entries: archived base items + archived subtypes
+  // Flat list of archived entries — each item (base or subtype) is independent.
+  // Archiving a base item does NOT affect its subtypes; both paths run for every catalog entry.
   const archivedRows = useMemo(() => {
     const rows = [];
     for (const cat of itemCatalog) {
-      // Fully archived base item
+      // Archived base item — its own row, independent of subtypes
       if (cat.archived) {
-        const key = normItem(cat.name);
-        const hasTx = (txCountMap[key] || 0) > 0 ||
-          (cat.subtypes || []).some((s) => (txCountMap[normItem(`${cat.name} ${s}`)] || 0) > 0);
-        // Build per-subtype details for display in archive page
-        const subtypeDetails = (cat.subtypes || []).map((sub) => ({
-          name:    sub,
-          txCount: txCountMap[normItem(`${cat.name} ${sub}`)] || 0,
-        }));
+        const key    = normItem(cat.name);
+        const cnt    = txCountMap[key] || 0;
         rows.push({
           key:         `base-${cat.id}`,
           displayName: cat.name,
           type:        "base",
           catalogId:   cat.id,
-          hasTx,
-          subtypeDetails,
-          txCount:     Object.entries(txCountMap).reduce((sum, [k, c]) => {
-            const matches = k === key || k.startsWith(key + " ");
-            return sum + (matches ? c : 0);
-          }, 0),
+          hasTx:       cnt > 0,
+          txCount:     cnt,
         });
-      } else {
-        // Individually archived subtypes (parent item is active)
-        for (const sub of (cat.archivedSubtypes || [])) {
-          const fullName = `${cat.name} ${sub}`;
-          const key      = normItem(fullName);
-          const cnt      = txCountMap[key] || 0;
-          rows.push({
-            key:         `sub-${cat.id}-${normItem(sub)}`,
-            displayName: fullName,
-            subtitle:    `(diarsipkan dari ${cat.name})`,
-            type:        "subtype",
-            catalogId:   cat.id,
-            subtypeName: sub,
-            parentName:  cat.name,
-            hasTx:       cnt > 0,
-            txCount:     cnt,
-          });
-        }
+      }
+
+      // Archived subtypes — each its own row, regardless of base archived status
+      for (const sub of (cat.archivedSubtypes || [])) {
+        const fullName = `${cat.name} ${sub}`;
+        const key      = normItem(fullName);
+        const cnt      = txCountMap[key] || 0;
+        rows.push({
+          key:         `sub-${cat.id}-${normItem(sub)}`,
+          displayName: fullName,
+          subtitle:    `(diarsipkan dari ${cat.name})`,
+          type:        "subtype",
+          catalogId:   cat.id,
+          subtypeName: sub,
+          parentName:  cat.name,
+          hasTx:       cnt > 0,
+          txCount:     cnt,
+        });
       }
     }
     return rows;
@@ -215,28 +206,6 @@ const ArchivedItems = ({
                     {row.subtitle && (
                       <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>
                         {row.subtitle}
-                      </div>
-                    )}
-                    {row.subtypeDetails && row.subtypeDetails.length > 0 && (
-                      <div style={{ marginTop: 4 }}>
-                        {row.subtypeDetails.map((sub) => (
-                          <div key={sub.name} style={{ fontSize: 12, color: "#6b7280", paddingLeft: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                            <span>
-                              └ {row.displayName} {sub.name}
-                              {sub.txCount > 0 && (
-                                <span style={{ color: "#9ca3af", marginLeft: 4 }}>({sub.txCount} transaksi)</span>
-                              )}
-                            </span>
-                            <button
-                              onClick={() => onViewItem(`${row.displayName} ${sub.name}`)}
-                              className="btn btn-sm btn-outline"
-                              style={{ fontSize: 11, padding: "1px 6px", display: "inline-flex", alignItems: "center", gap: 3 }}
-                              title={`Lihat laporan ${row.displayName} ${sub.name}`}
-                            >
-                              <Icon name="reports" size={11} /> Laporan
-                            </button>
-                          </div>
-                        ))}
                       </div>
                     )}
                   </td>

@@ -430,24 +430,17 @@ const Inventory = ({
     const flatRows = [];
 
     for (const cat of itemCatalog) {
-      if (cat.archived) {
-        // Mark all keys as covered so they don't leak into the uncatalogued section
-        coveredKeys.add(normItem(cat.name));
-        for (const sub of (cat.subtypes || [])) {
-          coveredKeys.add(normItem(`${cat.name} ${sub}`));
-        }
-        continue;
-      }
       const baseKey   = normItem(cat.name);
       coveredKeys.add(baseKey);
       const baseStock = activeStockMap[baseKey];
-      // Hide base item row when: item has subtypes AND base has 0 stock AND 0 transactions.
-      // This avoids a phantom "Bawang Daun — 0 karung" row when only subtypes have been traded.
-      // Standalone items (no subtypes) are always shown.
-      const hasSubtypes   = (cat.subtypes || []).length > 0;
-      const baseQty       = baseStock?.qty    ?? 0;
-      const baseTxCount   = baseStock?.txCount || 0;
-      if (!hasSubtypes || baseQty > 0 || baseTxCount > 0) {
+
+      // Base row: hidden when archived OR (has subtypes AND 0 stock AND 0 transactions).
+      // Each item — base and each subtype — is archived independently; archiving the base
+      // does NOT hide subtypes. Standalone items (no subtypes) are always shown.
+      const hasSubtypes = (cat.subtypes || []).length > 0;
+      const baseQty     = baseStock?.qty    ?? 0;
+      const baseTxCount = baseStock?.txCount || 0;
+      if (!cat.archived && (!hasSubtypes || baseQty > 0 || baseTxCount > 0)) {
         flatRows.push({
           key:         baseKey,
           displayName: cat.name,
@@ -460,6 +453,8 @@ const Inventory = ({
         });
       }
 
+      // Subtypes are always processed regardless of base archived status.
+      // Each subtype is checked individually against archivedSubtypes[].
       const archivedSubs = new Set((cat.archivedSubtypes || []).map(normItem));
       for (const sub of (cat.subtypes || [])) {
         const fullName = `${cat.name} ${sub}`;
@@ -655,11 +650,8 @@ const Inventory = ({
         displayName:       row.displayName,
       });
     } else {
-      // Base item: has transactions if this exact key OR any subtype key has transactions
-      const hasTx = (txCountMap[row.key] || 0) > 0 ||
-        (row.catalogItem?.subtypes || []).some(
-          (s) => (txCountMap[normItem(`${row.displayName} ${s}`)] || 0) > 0
-        );
+      // Base item: hasTx checks ONLY base key transactions — subtypes are archived independently
+      const hasTx = (txCountMap[row.key] || 0) > 0;
       setDeleteConfirm({
         type:        hasTx ? "archiveCatalog" : "catalog",
         catalogItem: row.catalogItem,
@@ -1044,21 +1036,9 @@ const Inventory = ({
               {deleteConfirm.type === "archiveCatalog" && (
                 <>
                   <p>Arsipkan <strong>{deleteConfirm.displayName}</strong> dari katalog aktif?</p>
-                  {(deleteConfirm.catalogItem.subtypes || []).length > 0 && (
-                    <>
-                      <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
-                        Semua tipe di bawah barang ini juga akan diarsipkan:
-                      </p>
-                      <ul style={{ fontSize: 13, color: "#6b7280", margin: "4px 0 4px 16px", padding: 0, listStyle: "disc" }}>
-                        {(deleteConfirm.catalogItem.subtypes || []).map((sub) => {
-                          const fullName = `${deleteConfirm.displayName} ${sub}`;
-                          const cnt = txCountMap[normItem(fullName)] || 0;
-                          return <li key={sub}>{fullName}{cnt > 0 ? ` (${cnt} transaksi)` : ""}</li>;
-                        })}
-                      </ul>
-                    </>
-                  )}
                   <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+                    Item ini tidak akan muncul di pilihan transaksi baru.
+                    Tipe-tipe di bawahnya tidak terpengaruh — tetap aktif.
                     Data transaksi tidak akan terpengaruh. Dapat dikembalikan kapan saja dari halaman arsip.
                   </p>
                 </>

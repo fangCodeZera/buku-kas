@@ -596,7 +596,9 @@ export default function App() {
     update((d) => ({
       ...d,
       itemCatalog: (d.itemCatalog || []).map((c) =>
-        c.id === itemId ? { ...c, archived: false, archivedSubtypes: [] } : c
+        // Only unarchive the base item — archivedSubtypes stays unchanged;
+        // each subtype is archived/unarchived independently via archiveSubtype/unarchiveSubtype.
+        c.id === itemId ? { ...c, archived: false } : c
       ),
     }));
 
