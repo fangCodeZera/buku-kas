@@ -57,7 +57,12 @@ const TransactionForm = ({
   itemCatalog = [],
   onAddCatalogItem = () => {},
   onUpdateCatalogItem = () => {},
+  onUnarchiveCatalogItem = () => {},
+  onUnarchiveSubtype = () => {},
+  onUnarchiveContact = () => {},
 }) => {
+  // Active (non-archived) catalog items — used for autocomplete dropdowns
+  const activeCatalog = useMemo(() => itemCatalog.filter((c) => !c.archived), [itemCatalog]);
   /**
    * Map an existing itemName string back to its catalog entry for edit-mode pre-fill.
    * Returns { itemNameInput, itemTypeInput, catalogItemId, matchedCatalog }.
@@ -209,7 +214,7 @@ const TransactionForm = ({
 
   /** When user types in NAMA BARANG input — try to match catalog, update matchedCatalog */
   const handleItemNameChange = (idx, value) => {
-    const cat = itemCatalog.find((c) => normItem(c.name) === normItem(value.trim()));
+    const cat = activeCatalog.find((c) => normItem(c.name) === normItem(value.trim()));
     setForm((f) => {
       const items = f.items.map((it, i) => {
         if (i !== idx) return it;
@@ -270,15 +275,18 @@ const TransactionForm = ({
 
   // ── Counterparty (client) selector ──────────────────────────────────────────
 
+  // Only active (non-archived) contacts shown in the dropdown
+  const activeContacts = useMemo(() => contacts.filter((c) => !c.archived), [contacts]);
+
   const filteredContacts = useMemo(() => {
     const q = cpQuery.trim().toLowerCase();
-    const list = q ? contacts.filter((c) => c.name.toLowerCase().includes(q)) : [...contacts];
+    const list = q ? activeContacts.filter((c) => c.name.toLowerCase().includes(q)) : [...activeContacts];
     return list.sort((a, b) => a.name.localeCompare(b.name));
-  }, [contacts, cpQuery]);
+  }, [activeContacts, cpQuery]);
 
   const isExactMatch = useMemo(
-    () => contacts.some((c) => c.name.toLowerCase() === cpQuery.trim().toLowerCase()),
-    [contacts, cpQuery]
+    () => activeContacts.some((c) => c.name.toLowerCase() === cpQuery.trim().toLowerCase()),
+    [activeContacts, cpQuery]
   );
 
   const totalItems = filteredContacts.length + 1;
@@ -319,6 +327,16 @@ const TransactionForm = ({
   const createContact = (name) => {
     const trimmed = normalizeTitleCase(name);
     if (!trimmed) return;
+    // Check if name matches an archived contact — unarchive instead of creating a duplicate
+    const archivedMatch = contacts.find(
+      (c) => c.archived && c.name.toLowerCase().trim() === trimmed.toLowerCase().trim()
+    );
+    if (archivedMatch) {
+      onUnarchiveContact(archivedMatch.id);
+      selectContact(archivedMatch.name);
+      showCpToast(`Klien '${archivedMatch.name}' dikembalikan dari arsip`);
+      return;
+    }
     set("counterparty", trimmed);
     setCpQuery(trimmed);
     setCpOpen(false);
@@ -364,11 +382,24 @@ const TransactionForm = ({
     const baseName = row.itemNameInput.trim();
     const typeName = row.itemTypeInput.trim();
     if (!baseName) return { status: "matched" }; // validation catches empty separately
-    const matchedCat = itemCatalog.find((c) => normItem(c.name) === normItem(baseName));
-    if (!matchedCat) return { status: "new_item", baseName, typeName };
-    if (typeName && !(matchedCat.subtypes || []).some((s) => normItem(s) === normItem(typeName)))
-      return { status: "new_subtype", baseName, typeName, catalogItem: matchedCat };
-    return { status: "matched" };
+    // Check active (non-archived) catalog first
+    const activeCat = activeCatalog.find((c) => normItem(c.name) === normItem(baseName));
+    if (activeCat) {
+      if (typeName) {
+        // Check if subtype is archived
+        if ((activeCat.archivedSubtypes || []).some((s) => normItem(s) === normItem(typeName)))
+          return { status: "archived_subtype", baseName, typeName, catalogItem: activeCat };
+        // Check if subtype is new
+        if (!(activeCat.subtypes || []).some((s) => normItem(s) === normItem(typeName)))
+          return { status: "new_subtype", baseName, typeName, catalogItem: activeCat };
+      }
+      return { status: "matched" };
+    }
+    // Not in active catalog — check if it's an archived base item
+    const archivedCat = itemCatalog.find((c) => c.archived && normItem(c.name) === normItem(baseName));
+    if (archivedCat) return { status: "archived_item", baseName, typeName, catalogItem: archivedCat };
+    // Completely new item
+    return { status: "new_item", baseName, typeName };
   };
 
   // ── Validation ───────────────────────────────────────────────────────────────
@@ -496,13 +527,22 @@ const TransactionForm = ({
     const { items: newItems, unit } = newItemConfirm;
     setNewItemConfirm(null);
 
-    // Build a map of catalog changes, merging all subtypes per base item BEFORE calling
-    // any handlers. This prevents duplicate catalog entries when the same base item appears
-    // in multiple rows (e.g. "Bawang Goreng Jawa" + "Bawang Goreng Sumatra" → one entry
-    // with both subtypes, not two separate entries).
+    // Handle archived items/subtypes — restore from archive instead of creating new
+    for (const item of newItems) {
+      if (item.status === "archived_item" && item.catalogItem) {
+        onUnarchiveCatalogItem(item.catalogItem.id);
+      } else if (item.status === "archived_subtype" && item.catalogItem) {
+        onUnarchiveSubtype(item.catalogItem.id, item.typeName);
+      }
+    }
+
+    // Build a map of catalog changes for truly new items/subtypes only,
+    // merging all subtypes per base item BEFORE calling any handlers. This prevents
+    // duplicate catalog entries when the same base item appears in multiple rows.
     const changeMap = {}; // normItem(baseName) → { isExisting, normSubtypes: Set, displaySubtypes: [] }
 
     for (const item of newItems) {
+      if (item.status === "archived_item" || item.status === "archived_subtype") continue;
       const key = normItem(item.baseName);
       if (!changeMap[key]) {
         if (item.status === "new_subtype" && item.catalogItem) {
@@ -831,8 +871,8 @@ const TransactionForm = ({
                     {showItemSugg === idx && (() => {
                       const q = normItem(item.itemNameInput);
                       const suggs = q
-                        ? itemCatalog.filter((c) => normItem(c.name).includes(q)).slice(0, 10)
-                        : itemCatalog.slice(0, 10);
+                        ? activeCatalog.filter((c) => normItem(c.name).includes(q)).slice(0, 10)
+                        : activeCatalog.slice(0, 10);
                       if (suggs.length === 0) return null;
                       return (
                         <div className="autocomplete-dropdown">
@@ -883,6 +923,7 @@ const TransactionForm = ({
                         const q = normItem(item.itemTypeInput);
                         const suggs = (freshCatalog.subtypes || [])
                           .filter((s) => !q || normItem(s).includes(q))
+                          .filter((s) => !(freshCatalog.archivedSubtypes || []).some((a) => normItem(a) === normItem(s)))
                           .slice(0, 10);
                         if (suggs.length === 0) return null;
                         return (
@@ -1162,51 +1203,68 @@ const TransactionForm = ({
       </div>
 
       {/* ── New-item confirmation dialog ── */}
-      {newItemConfirm && (
-        <div className="modal-overlay" role="dialog" aria-modal="true">
-          <div className="modal-box" style={{ maxWidth: 480 }}>
-            <h3 className="modal-title">⚠ Barang Baru Terdeteksi</h3>
-            <div className="modal-body">
-              <p style={{ marginBottom: 8 }}>Barang berikut belum terdaftar di katalog:</p>
-              <ul style={{ margin: "0 0 12px 0", paddingLeft: 20 }}>
-                {newItemConfirm.items.map((itm, i) => (
-                  <li key={i} style={{ marginBottom: 4 }}>
-                    <strong>
-                      "{itm.typeName
-                        ? normalizeTitleCase(itm.baseName) + " " + normalizeTitleCase(itm.typeName)
-                        : normalizeTitleCase(itm.baseName)}"
-                    </strong>
-                    {" — "}
-                    {itm.status === "new_item"
-                      ? "barang baru"
-                      : `tipe baru untuk ${normalizeTitleCase(itm.baseName)}`}
-                  </li>
-                ))}
-              </ul>
-              <p style={{ fontSize: 13, color: "#6b7280" }}>
-                Barang/tipe baru akan otomatis ditambahkan ke katalog setelah transaksi disimpan.
-                Pastikan penulisan sudah benar untuk menghindari duplikasi.
-              </p>
-            </div>
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => { setNewItemConfirm(null); setSubmitting(false); }}
-              >
-                Periksa Kembali
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleConfirmNewItems}
-              >
-                Ya, Lanjutkan
-              </button>
+      {newItemConfirm && (() => {
+        const hasArchived = newItemConfirm.items.some(
+          (itm) => itm.status === "archived_item" || itm.status === "archived_subtype"
+        );
+        return (
+          <div className="modal-overlay" role="dialog" aria-modal="true">
+            <div className="modal-box" style={{ maxWidth: 480 }}>
+              <h3 className="modal-title">
+                {hasArchived ? "📦 Barang Diarsipkan" : "⚠ Barang Baru Terdeteksi"}
+              </h3>
+              <div className="modal-body">
+                <p style={{ marginBottom: 8 }}>
+                  {hasArchived
+                    ? "Barang berikut ada di arsip atau mengandung tipe yang diarsipkan:"
+                    : "Barang berikut belum terdaftar di katalog:"}
+                </p>
+                <ul style={{ margin: "0 0 12px 0", paddingLeft: 20 }}>
+                  {newItemConfirm.items.map((itm, i) => (
+                    <li key={i} style={{ marginBottom: 4 }}>
+                      <strong>
+                        "{itm.typeName
+                          ? normalizeTitleCase(itm.baseName) + " " + normalizeTitleCase(itm.typeName)
+                          : normalizeTitleCase(itm.baseName)}"
+                      </strong>
+                      {" — "}
+                      {itm.status === "archived_item"
+                        ? "ada di arsip — akan dikembalikan ke katalog aktif"
+                        : itm.status === "archived_subtype"
+                        ? `tipe diarsipkan — akan dikembalikan ke ${normalizeTitleCase(itm.baseName)}`
+                        : itm.status === "new_item"
+                        ? "barang baru"
+                        : `tipe baru untuk ${normalizeTitleCase(itm.baseName)}`}
+                    </li>
+                  ))}
+                </ul>
+                <p style={{ fontSize: 13, color: "#6b7280" }}>
+                  {hasArchived
+                    ? "Barang/tipe yang diarsipkan akan dikembalikan ke katalog aktif."
+                    : "Barang/tipe baru akan otomatis ditambahkan ke katalog setelah transaksi disimpan."}
+                  {" "}Pastikan penulisan sudah benar untuk menghindari duplikasi.
+                </p>
+              </div>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => { setNewItemConfirm(null); setSubmitting(false); }}
+                >
+                  Periksa Kembali
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleConfirmNewItems}
+                >
+                  Ya, Lanjutkan
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

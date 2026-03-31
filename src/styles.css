@@ -518,6 +518,8 @@ body {
 .action-btn--paid    { background: #d1fae5; color: #065f46; font-weight: 800; font-size: 13px; line-height: 1; }
 .action-btn--paid:hover { background: #a7f3d0; }
 .action-btn--delete  { background: #fef2f2; }
+.action-btn--archive { background: #fffbeb; }
+.action-btn--archive:hover { background: #fef3c7; }
 
 /* ── Type badges (transaction table — Option A: money-flow labels) ──────────── */
 .type-badge {
