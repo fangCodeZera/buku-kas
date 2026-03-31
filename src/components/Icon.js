@@ -43,6 +43,8 @@ export const IPATHS = {
     "M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6",
   truck:
     "M1 3h15v13H1z M16 8h4l3 3v5h-7V8z M5.5 19a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z M18.5 19a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z",
+  archive:
+    "M21 8H3V3h18v5z M20 8v13H4V8h16z M9 12h6",
 };
 
 /**

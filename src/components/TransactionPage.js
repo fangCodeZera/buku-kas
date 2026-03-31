@@ -53,6 +53,9 @@ const TransactionPage = ({
   itemCatalog = [],
   onAddCatalogItem = () => {},
   onUpdateCatalogItem = () => {},
+  onUnarchiveCatalogItem = () => {},
+  onUnarchiveSubtype = () => {},
+  onUnarchiveContact = () => {},
 }) => {
   const [showForm,          setShowForm]          = useState(false);
   const [search,            setSearch]            = useState("");
@@ -264,6 +267,9 @@ const TransactionPage = ({
             onCreateContact={onCreateContact}
             onAddCatalogItem={onAddCatalogItem}
             onUpdateCatalogItem={onUpdateCatalogItem}
+            onUnarchiveCatalogItem={onUnarchiveCatalogItem}
+            onUnarchiveSubtype={onUnarchiveSubtype}
+            onUnarchiveContact={onUnarchiveContact}
             onSave={(t) => { onAdd(t); setShowForm(false); setToast("✅ Transaksi berhasil ditambahkan!"); }}
             onCancel={() => setShowForm(false)}
           />

@@ -7,7 +7,7 @@ import { deriveStatus, LEGACY_STATUS_MAP } from "./statusUtils";
 import { addDays, generateId, normItem } from "./idGenerators";
 
 export const STORAGE_KEY    = "bukukas_data_v2";
-export const NORM_VERSION   = 14; // bump when a new migration is needed
+export const NORM_VERSION   = 17; // bump when a new migration is needed
 
 export const defaultData = {
   transactions: [],
@@ -50,6 +50,9 @@ const tc = (s) =>
  * v14: backfill any items from transactions/adjustments not covered by v13 catalog
  *      (fixes items that were in itemCategories.items[] but didn't match the groupName prefix,
  *       so were silently excluded from the catalog in v13)
+ * v15: add `archived` (boolean) and `archivedSubtypes` (string[]) fields to all catalog items
+ * v16: add `archived` (boolean) field to all contacts
+ * v17: deduplicate itemCatalog by normalized name (merge subtypes from duplicates into first entry)
  */
 function migrateData(data) {
   if ((data._normVersion || 0) >= NORM_VERSION) return data;
@@ -160,7 +163,8 @@ function migrateData(data) {
 
   const contacts = (data.contacts || []).map((c) => ({
     ...c,
-    name: tc(c.name),
+    name:     tc(c.name),
+    archived: c.archived ?? false,   // v16: backfill archived field
   }));
 
   // ── v7: migrate flat bank fields to bankAccounts[] ───────────────────────
@@ -311,6 +315,40 @@ function migrateData(data) {
   }
   if (newV14Entries.length > 0) {
     itemCatalog = [...itemCatalog, ...newV14Entries];
+  }
+
+  // ── v15: add archived and archivedSubtypes fields to all catalog items ─────
+  itemCatalog = itemCatalog.map((cat) => ({
+    ...cat,
+    archived:         cat.archived         ?? false,
+    archivedSubtypes: cat.archivedSubtypes ?? [],
+  }));
+
+  // ── v17: deduplicate itemCatalog by normalized name ──────────────────────
+  {
+    const seenNames = {};
+    const deduped = [];
+    for (const item of itemCatalog) {
+      const key = normItem(item.name);
+      if (seenNames[key]) {
+        const existing = seenNames[key];
+        const existingSubs = new Set((existing.subtypes || []).map(normItem));
+        existing.subtypes = [
+          ...(existing.subtypes || []),
+          ...(item.subtypes || []).filter((s) => !existingSubs.has(normItem(s))),
+        ];
+        const existingArch = new Set((existing.archivedSubtypes || []).map(normItem));
+        existing.archivedSubtypes = [
+          ...(existing.archivedSubtypes || []),
+          ...(item.archivedSubtypes || []).filter((s) => !existingArch.has(normItem(s))),
+        ];
+      } else {
+        const mutable = { ...item };
+        seenNames[key] = mutable;
+        deduped.push(mutable);
+      }
+    }
+    itemCatalog = deduped;
   }
 
   return { ...data, transactions, contacts, settings, stockAdjustments, itemCategories, itemCatalog, _normVersion: NORM_VERSION };

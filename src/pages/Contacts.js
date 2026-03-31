@@ -33,7 +33,11 @@ import { computePaymentProgress } from "../utils/paymentUtils";
  */
 const Contacts = ({
   contacts, transactions, balanceMap,
-  onAddContact, onUpdateContact, onDeleteContact, onDeleteTransaction,
+  onAddContact, onUpdateContact, onDeleteContact,
+  onArchiveContact = () => {},
+  onUnarchiveContact = () => {},  // eslint-disable-line no-unused-vars
+  onNavigateToArchive = () => {},
+  onDeleteTransaction,
   onEditTransaction, onMarkPaid,
 }) => {
   const [search,      setSearch]      = useState("");
@@ -46,16 +50,32 @@ const Contacts = ({
   const [paidTx,      setPaidTx]      = useState(null);
   const [toast,       setToast]       = useState(null);
   const [submitting,  setSubmitting]  = useState(false);
-  const [deleteContactId, setDeleteContactId] = useState(null); // replaces window.confirm
+  const [contactAction,   setContactAction]   = useState(null); // { type: "archive"|"delete", contact }
   const [expandedTxId,    setExpandedTxId]    = useState(null);
   const [nameError,       setNameError]       = useState("");
   const nameInputRef = useRef(null);
 
 
 
-  // Enrich each contact from the pre-computed balanceMap (O(contacts), not O(contacts×tx))
+  // Active (non-archived) contacts — drives main list, alpha filter, count
+  const activeContacts = useMemo(() => contacts.filter((c) => !c.archived), [contacts]);
+
+  const archivedCount = useMemo(() => contacts.filter((c) => c.archived).length, [contacts]);
+
+  // Transaction count per contact name (case-insensitive) — for archive vs delete decision
+  const txCountMap = useMemo(() => {
+    const map = {};
+    for (const t of transactions) {
+      if (!t.counterparty) continue;
+      const key = t.counterparty.toLowerCase().trim();
+      map[key] = (map[key] || 0) + 1;
+    }
+    return map;
+  }, [transactions]);
+
+  // Enrich each ACTIVE contact from the pre-computed balanceMap (O(contacts), not O(contacts×tx))
   const withBalance = useMemo(() => {
-    const enriched = contacts.map((c) => {
+    const enriched = activeContacts.map((c) => {
       const key = c.name.toLowerCase();
       const bal = balanceMap?.[key] || { totalIncome: 0, totalExpense: 0, ar: 0, ap: 0, netOut: 0, txs: [] };
       return { ...c, ...bal, txCount: bal.txs?.length || 0 };
@@ -76,17 +96,17 @@ const Contacts = ({
       if (sortBy === "txCount")  return b.txCount - a.txCount;
       return 0;
     });
-  }, [contacts, balanceMap, search, alphaFilter, sortBy]);
+  }, [activeContacts, balanceMap, search, alphaFilter, sortBy]);
 
-  // Which letters have at least one contact
+  // Which letters have at least one ACTIVE contact
   const lettersWithContacts = useMemo(() => {
     const set = new Set();
-    contacts.forEach((c) => {
+    activeContacts.forEach((c) => {
       const ch = c.name.trim()[0]?.toUpperCase();
       if (ch) set.add(ch);
     });
     return set;
-  }, [contacts]);
+  }, [activeContacts]);
 
   const sel = selected ? withBalance.find((c) => c.id === selected) : null;
 
@@ -128,6 +148,13 @@ const Contacts = ({
     }
   }, [selected, editMode]);
 
+  // Escape closes contact action modal
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && contactAction) setContactAction(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [contactAction]);
+
   const handleDeleteTx  = (tx) => setDeleteTx(tx);
   const confirmDeleteTx = () => {
     onDeleteTransaction && onDeleteTransaction(deleteTx.id);
@@ -156,13 +183,20 @@ const Contacts = ({
       <div className="contacts-list-panel">
         <div className="page-header" style={{ marginBottom: 12 }}>
           <h2 className="page-title">Kontak</h2>
-          <button
-            onClick={() => { setEditMode(false); setForm({ name: "", email: "", phone: "", address: "" }); setSelected("new"); }}
-            className="btn btn-primary btn-sm"
-            aria-label="Tambah kontak baru"
-          >
-            <Icon name="plus" size={13} color="#fff" /> Tambah
-          </button>
+          <div style={{ display: "flex", gap: 6 }}>
+            {archivedCount > 0 && (
+              <button onClick={onNavigateToArchive} className="btn btn-outline btn-sm" aria-label="Lihat kontak diarsipkan">
+                📦 Arsip ({archivedCount})
+              </button>
+            )}
+            <button
+              onClick={() => { setEditMode(false); setForm({ name: "", email: "", phone: "", address: "" }); setSelected("new"); }}
+              className="btn btn-primary btn-sm"
+              aria-label="Tambah kontak baru"
+            >
+              <Icon name="plus" size={13} color="#fff" /> Tambah
+            </button>
+          </div>
         </div>
 
         <input
@@ -313,13 +347,24 @@ const Contacts = ({
               >
                 Edit
               </button>
-              <button
-                onClick={() => setDeleteContactId(sel.id)}
-                className="btn btn-sm btn-danger-outline"
-                aria-label={`Hapus kontak ${sel.name}`}
-              >
-                Hapus
-              </button>
+              {(txCountMap[sel.name.toLowerCase().trim()] || 0) > 0 ? (
+                <button
+                  onClick={() => setContactAction({ type: "archive", contact: sel })}
+                  className="btn btn-sm btn-outline"
+                  style={{ borderColor: "#f59e0b", color: "#b45309" }}
+                  aria-label={`Arsipkan kontak ${sel.name}`}
+                >
+                  📦 Arsipkan
+                </button>
+              ) : (
+                <button
+                  onClick={() => setContactAction({ type: "delete", contact: sel })}
+                  className="btn btn-sm btn-danger-outline"
+                  aria-label={`Hapus kontak ${sel.name}`}
+                >
+                  Hapus
+                </button>
+              )}
             </div>
           </div>
 
@@ -520,13 +565,63 @@ const Contacts = ({
         onConfirm={confirmDeleteTx}
         onCancel={() => setDeleteTx(null)}
       />
-      {/* Contact delete modal — correct title/description, no tx-side-effect warnings */}
-      <DeleteConfirmModal
-        isContact={true}
-        contact={deleteContactId ? withBalance.find(c => c.id === deleteContactId) : null}
-        onConfirm={() => { onDeleteContact(deleteContactId); setSelected(null); setDeleteContactId(null); setToast("Kontak dihapus. Semua transaksi terkait tetap tersimpan."); }}
-        onCancel={() => setDeleteContactId(null)}
-      />
+      {/* Contact archive / delete confirmation */}
+      {contactAction && (
+        <div className="modal-overlay" onClick={() => setContactAction(null)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 380 }}>
+            <h3 className="modal-title">
+              {contactAction.type === "archive" ? "📦 Arsipkan Kontak?" : "Hapus Kontak?"}
+            </h3>
+            <div className="modal-body">
+              {contactAction.type === "archive" ? (
+                <>
+                  <p>Arsipkan <strong>{contactAction.contact.name}</strong>?</p>
+                  <p style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>
+                    Kontak akan dipindahkan ke arsip. Data transaksi tidak terpengaruh.
+                    Dapat dikembalikan kapan saja.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>Hapus <strong>{contactAction.contact.name}</strong> secara permanen?</p>
+                  <p style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>
+                    Kontak ini tidak memiliki transaksi. Tindakan ini tidak dapat dibatalkan.
+                  </p>
+                </>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setContactAction(null)}>Batal</button>
+              {contactAction.type === "archive" ? (
+                <button
+                  className="btn btn-primary"
+                  style={{ background: "#f59e0b", borderColor: "#f59e0b" }}
+                  onClick={() => {
+                    onArchiveContact(contactAction.contact.id);
+                    setSelected(null);
+                    setContactAction(null);
+                    setToast(`${contactAction.contact.name} berhasil diarsipkan`);
+                  }}
+                >
+                  Arsipkan
+                </button>
+              ) : (
+                <button
+                  className="btn btn-danger"
+                  onClick={() => {
+                    onDeleteContact(contactAction.contact.id);
+                    setSelected(null);
+                    setContactAction(null);
+                    setToast(`${contactAction.contact.name} berhasil dihapus`);
+                  }}
+                >
+                  Hapus
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <PaymentUpdateModal
         transaction={paidTx}
         onConfirm={confirmPaidTx}

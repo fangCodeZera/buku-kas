@@ -57,7 +57,22 @@ const TransactionForm = ({
   itemCatalog = [],
   onAddCatalogItem = () => {},
   onUpdateCatalogItem = () => {},
+  onUnarchiveCatalogItem = () => {},
+  onUnarchiveSubtype = () => {},
+  onUnarchiveContact = () => {},
 }) => {
+  // Active catalog items for autocomplete: include if base is not archived, OR if the item
+  // has at least one non-archived subtype (so "Bawang Putih China" still appears when
+  // "Bawang Putih" base is archived but "China" subtype is still active).
+  const activeCatalog = useMemo(() =>
+    (itemCatalog || []).filter((c) => {
+      if (!c.archived) return true;
+      const activeSubtypes = (c.subtypes || []).filter(
+        (s) => !(c.archivedSubtypes || []).some((as) => normItem(as) === normItem(s))
+      );
+      return activeSubtypes.length > 0;
+    }),
+  [itemCatalog]);
   /**
    * Map an existing itemName string back to its catalog entry for edit-mode pre-fill.
    * Returns { itemNameInput, itemTypeInput, catalogItemId, matchedCatalog }.
@@ -209,7 +224,7 @@ const TransactionForm = ({
 
   /** When user types in NAMA BARANG input — try to match catalog, update matchedCatalog */
   const handleItemNameChange = (idx, value) => {
-    const cat = itemCatalog.find((c) => normItem(c.name) === normItem(value.trim()));
+    const cat = activeCatalog.find((c) => normItem(c.name) === normItem(value.trim()));
     setForm((f) => {
       const items = f.items.map((it, i) => {
         if (i !== idx) return it;
@@ -270,15 +285,18 @@ const TransactionForm = ({
 
   // ── Counterparty (client) selector ──────────────────────────────────────────
 
+  // Only active (non-archived) contacts shown in the dropdown
+  const activeContacts = useMemo(() => contacts.filter((c) => !c.archived), [contacts]);
+
   const filteredContacts = useMemo(() => {
     const q = cpQuery.trim().toLowerCase();
-    const list = q ? contacts.filter((c) => c.name.toLowerCase().includes(q)) : [...contacts];
+    const list = q ? activeContacts.filter((c) => c.name.toLowerCase().includes(q)) : [...activeContacts];
     return list.sort((a, b) => a.name.localeCompare(b.name));
-  }, [contacts, cpQuery]);
+  }, [activeContacts, cpQuery]);
 
   const isExactMatch = useMemo(
-    () => contacts.some((c) => c.name.toLowerCase() === cpQuery.trim().toLowerCase()),
-    [contacts, cpQuery]
+    () => activeContacts.some((c) => c.name.toLowerCase() === cpQuery.trim().toLowerCase()),
+    [activeContacts, cpQuery]
   );
 
   const totalItems = filteredContacts.length + 1;
@@ -319,6 +337,16 @@ const TransactionForm = ({
   const createContact = (name) => {
     const trimmed = normalizeTitleCase(name);
     if (!trimmed) return;
+    // Check if name matches an archived contact — unarchive instead of creating a duplicate
+    const archivedMatch = contacts.find(
+      (c) => c.archived && c.name.toLowerCase().trim() === trimmed.toLowerCase().trim()
+    );
+    if (archivedMatch) {
+      onUnarchiveContact(archivedMatch.id);
+      selectContact(archivedMatch.name);
+      showCpToast(`Klien '${archivedMatch.name}' dikembalikan dari arsip`);
+      return;
+    }
     set("counterparty", trimmed);
     setCpQuery(trimmed);
     setCpOpen(false);
@@ -364,11 +392,24 @@ const TransactionForm = ({
     const baseName = row.itemNameInput.trim();
     const typeName = row.itemTypeInput.trim();
     if (!baseName) return { status: "matched" }; // validation catches empty separately
-    const matchedCat = itemCatalog.find((c) => normItem(c.name) === normItem(baseName));
-    if (!matchedCat) return { status: "new_item", baseName, typeName };
-    if (typeName && !(matchedCat.subtypes || []).some((s) => normItem(s) === normItem(typeName)))
-      return { status: "new_subtype", baseName, typeName, catalogItem: matchedCat };
-    return { status: "matched" };
+    // Check active (non-archived) catalog first
+    const activeCat = activeCatalog.find((c) => normItem(c.name) === normItem(baseName));
+    if (activeCat) {
+      if (typeName) {
+        // Check if subtype is archived
+        if ((activeCat.archivedSubtypes || []).some((s) => normItem(s) === normItem(typeName)))
+          return { status: "archived_subtype", baseName, typeName, catalogItem: activeCat };
+        // Check if subtype is new
+        if (!(activeCat.subtypes || []).some((s) => normItem(s) === normItem(typeName)))
+          return { status: "new_subtype", baseName, typeName, catalogItem: activeCat };
+      }
+      return { status: "matched" };
+    }
+    // Not in active catalog — check if it's an archived base item
+    const archivedCat = itemCatalog.find((c) => c.archived && normItem(c.name) === normItem(baseName));
+    if (archivedCat) return { status: "archived_item", baseName, typeName, catalogItem: archivedCat };
+    // Completely new item
+    return { status: "new_item", baseName, typeName };
   };
 
   // ── Validation ───────────────────────────────────────────────────────────────
@@ -464,15 +505,20 @@ const TransactionForm = ({
     }
     if (!validate()) return;
 
-    // Derive unit from the first item's matched catalog entry; fall back to "karung"
-    const unit = form.items[0]?.matchedCatalog?.defaultUnit || "karung";
+    // Derive unit from the first item — use fresh catalog lookup to avoid stale matchedCatalog
+    const firstItem = form.items[0];
+    const freshFirstCat = firstItem?.catalogItemId
+      ? itemCatalog.find((c) => c.id === firstItem.catalogItemId)
+      : null;
+    const unit = freshFirstCat?.defaultUnit || firstItem?.matchedCatalog?.defaultUnit || "karung";
 
     // Check for new items/subtypes before saving — build confirmation list
     const toConfirm = form.items.map(getItemStatus).filter((s) => s.status !== "matched");
-    // Deduplicate by baseName (same new item may appear in multiple rows)
+    // Deduplicate by full item name (baseName + typeName) so e.g. "Kacang Ijo Malay"
+    // and "Kacang Ijo Viet" are not incorrectly collapsed to one entry
     const seen = new Set();
     const deduped = toConfirm.filter((s) => {
-      const key = normItem(s.baseName);
+      const key = normItem(s.baseName) + (s.typeName ? " " + normItem(s.typeName) : "");
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -490,20 +536,63 @@ const TransactionForm = ({
   const handleConfirmNewItems = () => {
     const { items: newItems, unit } = newItemConfirm;
     setNewItemConfirm(null);
+
+    // Handle archived items/subtypes — restore from archive instead of creating new
     for (const item of newItems) {
-      if (item.status === "new_item") {
-        onAddCatalogItem({
-          name:        normalizeTitleCase(item.baseName),
-          defaultUnit: unit,
-          subtypes:    item.typeName ? [normalizeTitleCase(item.typeName)] : [],
-        });
-      } else if (item.status === "new_subtype") {
-        onUpdateCatalogItem({
-          ...item.catalogItem,
-          subtypes: [...item.catalogItem.subtypes, normalizeTitleCase(item.typeName)],
-        });
+      if (item.status === "archived_item" && item.catalogItem) {
+        onUnarchiveCatalogItem(item.catalogItem.id);
+      } else if (item.status === "archived_subtype" && item.catalogItem) {
+        onUnarchiveSubtype(item.catalogItem.id, item.typeName);
       }
     }
+
+    // Build a map of catalog changes for truly new items/subtypes only,
+    // merging all subtypes per base item BEFORE calling any handlers. This prevents
+    // duplicate catalog entries when the same base item appears in multiple rows.
+    const changeMap = {}; // normItem(baseName) → { isExisting, normSubtypes: Set, displaySubtypes: [] }
+
+    for (const item of newItems) {
+      if (item.status === "archived_item" || item.status === "archived_subtype") continue;
+      const key = normItem(item.baseName);
+      if (!changeMap[key]) {
+        if (item.status === "new_subtype" && item.catalogItem) {
+          // Existing catalog item — start with its current subtypes
+          changeMap[key] = {
+            isExisting:      true,
+            existingItem:    item.catalogItem,
+            normSubtypes:    new Set((item.catalogItem.subtypes || []).map(normItem)),
+            displaySubtypes: [...(item.catalogItem.subtypes || [])],
+          };
+        } else {
+          // Completely new catalog item
+          changeMap[key] = {
+            isExisting:      false,
+            name:            normalizeTitleCase(item.baseName),
+            defaultUnit:     unit,
+            normSubtypes:    new Set(),
+            displaySubtypes: [],
+          };
+        }
+      }
+      // Merge subtype (deduplicated by normalized value)
+      if (item.typeName && item.typeName.trim()) {
+        const normSub = normItem(item.typeName);
+        if (!changeMap[key].normSubtypes.has(normSub)) {
+          changeMap[key].normSubtypes.add(normSub);
+          changeMap[key].displaySubtypes.push(normalizeTitleCase(item.typeName));
+        }
+      }
+    }
+
+    // Apply ONE call per catalog base item — not one per transaction row
+    for (const change of Object.values(changeMap)) {
+      if (change.isExisting) {
+        onUpdateCatalogItem({ ...change.existingItem, subtypes: change.displaySubtypes });
+      } else {
+        onAddCatalogItem({ name: change.name, defaultUnit: change.defaultUnit, subtypes: change.displaySubtypes });
+      }
+    }
+
     setSubmitting(true);
     doStockCheckAndSave(unit);
   };
@@ -792,8 +881,8 @@ const TransactionForm = ({
                     {showItemSugg === idx && (() => {
                       const q = normItem(item.itemNameInput);
                       const suggs = q
-                        ? itemCatalog.filter((c) => normItem(c.name).includes(q)).slice(0, 10)
-                        : itemCatalog.slice(0, 10);
+                        ? activeCatalog.filter((c) => normItem(c.name).includes(q)).slice(0, 10)
+                        : activeCatalog.slice(0, 10);
                       if (suggs.length === 0) return null;
                       return (
                         <div className="autocomplete-dropdown">
@@ -838,23 +927,34 @@ const TransactionForm = ({
                         aria-label={`Tipe barang item ${idx + 1}`}
                       />
                       {/* Autocomplete suggestions for TIPE (from matched catalog subtypes) */}
-                      {showTypeSugg === idx && item.matchedCatalog && (() => {
+                      {showTypeSugg === idx && item.catalogItemId && (() => {
+                        const freshCatalog = itemCatalog.find((c) => c.id === item.catalogItemId);
+                        if (!freshCatalog) return null;
                         const q = normItem(item.itemTypeInput);
-                        const suggs = (item.matchedCatalog.subtypes || [])
+                        const suggs = (freshCatalog.subtypes || [])
                           .filter((s) => !q || normItem(s).includes(q))
+                          .filter((s) => !(freshCatalog.archivedSubtypes || []).some((a) => normItem(a) === normItem(s)))
                           .slice(0, 10);
                         if (suggs.length === 0) return null;
                         return (
                           <div className="autocomplete-dropdown">
-                            {suggs.map((sub) => (
-                              <div
-                                key={sub}
-                                className="autocomplete-item"
-                                onMouseDown={() => handleSelectTypeSuggestion(idx, sub)}
-                              >
-                                {sub}
-                              </div>
-                            ))}
+                            {suggs.map((sub) => {
+                              const sq = stockMap[normItem(`${item.itemNameInput.trim()} ${sub}`)];
+                              return (
+                                <div
+                                  key={sub}
+                                  className="autocomplete-item autocomplete-item--stock"
+                                  onMouseDown={() => handleSelectTypeSuggestion(idx, sub)}
+                                >
+                                  <span>{sub}</span>
+                                  <span className="autocomplete-stock-hint">
+                                    {sq
+                                      ? `${Number(sq.qty).toFixed(2)} ${sq.unit || "karung"}`
+                                      : `0 ${freshCatalog.defaultUnit || "karung"}`}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       })()}
@@ -875,9 +975,9 @@ const TransactionForm = ({
                 )}
 
                 {/* Karung | Harga/Kg | Berat (Kg) | Subtotal */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+                <div className="item-fields-row">
                   <div>
-                    <label style={lStyle}>Jumlah Karung</label>
+                    <label className="item-field-label">Jumlah Karung</label>
                     <input
                       type="text"
                       inputMode="decimal"
@@ -899,7 +999,7 @@ const TransactionForm = ({
                   </div>
 
                   <div>
-                    <label style={lStyle}>Harga per Kg (IDR)</label>
+                    <label className="item-field-label">Harga per Kg (IDR)</label>
                     <RupiahInput
                       value={item.pricePerKg}
                       onChange={(v) => setItem(idx, "pricePerKg", v)}
@@ -909,7 +1009,7 @@ const TransactionForm = ({
                   </div>
 
                   <div>
-                    <label style={lStyle}>Berat (Kg)</label>
+                    <label className="item-field-label">Berat (Kg)</label>
                     <input
                       type="text"
                       inputMode="decimal"
@@ -930,7 +1030,7 @@ const TransactionForm = ({
                   </div>
 
                   <div>
-                    <label style={lStyle}>
+                    <label className="item-field-label">
                       Subtotal
                       <span style={{ fontWeight: 400, textTransform: "none", fontSize: 10, marginLeft: 4, color: "#10b981" }}>✓ auto</span>
                     </label>
@@ -1113,51 +1213,68 @@ const TransactionForm = ({
       </div>
 
       {/* ── New-item confirmation dialog ── */}
-      {newItemConfirm && (
-        <div className="modal-overlay" role="dialog" aria-modal="true">
-          <div className="modal-box" style={{ maxWidth: 480 }}>
-            <h3 className="modal-title">⚠ Barang Baru Terdeteksi</h3>
-            <div className="modal-body">
-              <p style={{ marginBottom: 8 }}>Barang berikut belum terdaftar di katalog:</p>
-              <ul style={{ margin: "0 0 12px 0", paddingLeft: 20 }}>
-                {newItemConfirm.items.map((itm, i) => (
-                  <li key={i} style={{ marginBottom: 4 }}>
-                    <strong>
-                      "{itm.typeName
-                        ? normalizeTitleCase(itm.baseName) + " " + normalizeTitleCase(itm.typeName)
-                        : normalizeTitleCase(itm.baseName)}"
-                    </strong>
-                    {" — "}
-                    {itm.status === "new_item"
-                      ? "barang baru"
-                      : `tipe baru untuk ${normalizeTitleCase(itm.baseName)}`}
-                  </li>
-                ))}
-              </ul>
-              <p style={{ fontSize: 13, color: "#6b7280" }}>
-                Barang/tipe baru akan otomatis ditambahkan ke katalog setelah transaksi disimpan.
-                Pastikan penulisan sudah benar untuk menghindari duplikasi.
-              </p>
-            </div>
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => { setNewItemConfirm(null); setSubmitting(false); }}
-              >
-                Periksa Kembali
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleConfirmNewItems}
-              >
-                Ya, Lanjutkan
-              </button>
+      {newItemConfirm && (() => {
+        const hasArchived = newItemConfirm.items.some(
+          (itm) => itm.status === "archived_item" || itm.status === "archived_subtype"
+        );
+        return (
+          <div className="modal-overlay" role="dialog" aria-modal="true">
+            <div className="modal-box" style={{ maxWidth: 480 }}>
+              <h3 className="modal-title">
+                {hasArchived ? "📦 Barang Diarsipkan" : "⚠ Barang Baru Terdeteksi"}
+              </h3>
+              <div className="modal-body">
+                <p style={{ marginBottom: 8 }}>
+                  {hasArchived
+                    ? "Barang berikut ada di arsip atau mengandung tipe yang diarsipkan:"
+                    : "Barang berikut belum terdaftar di katalog:"}
+                </p>
+                <ul style={{ margin: "0 0 12px 0", paddingLeft: 20 }}>
+                  {newItemConfirm.items.map((itm, i) => (
+                    <li key={i} style={{ marginBottom: 4 }}>
+                      <strong>
+                        "{itm.typeName
+                          ? normalizeTitleCase(itm.baseName) + " " + normalizeTitleCase(itm.typeName)
+                          : normalizeTitleCase(itm.baseName)}"
+                      </strong>
+                      {" — "}
+                      {itm.status === "archived_item"
+                        ? "ada di arsip — akan dikembalikan ke katalog aktif"
+                        : itm.status === "archived_subtype"
+                        ? `tipe diarsipkan — akan dikembalikan ke ${normalizeTitleCase(itm.baseName)}`
+                        : itm.status === "new_item"
+                        ? "barang baru"
+                        : `tipe baru untuk ${normalizeTitleCase(itm.baseName)}`}
+                    </li>
+                  ))}
+                </ul>
+                <p style={{ fontSize: 13, color: "#6b7280" }}>
+                  {hasArchived
+                    ? "Barang/tipe yang diarsipkan akan dikembalikan ke katalog aktif."
+                    : "Barang/tipe baru akan otomatis ditambahkan ke katalog setelah transaksi disimpan."}
+                  {" "}Pastikan penulisan sudah benar untuk menghindari duplikasi.
+                </p>
+              </div>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => { setNewItemConfirm(null); setSubmitting(false); }}
+                >
+                  Periksa Kembali
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleConfirmNewItems}
+                >
+                  Ya, Lanjutkan
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

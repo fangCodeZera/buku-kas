@@ -16,7 +16,7 @@
 **BukuKas** — digital bookkeeping for a small Indonesian family business (agricultural commodity trading).
 React 19.2.4, react-scripts 5.0.1. No router. No backend. `localStorage` only.
 UI language: **Indonesian**. All labels, toasts, errors, and status strings are in Indonesian.
-Current schema version: **NORM_VERSION = 14** (defined in `src/utils/storage.js`).
+Current schema version: **NORM_VERSION = 17** (defined in `src/utils/storage.js`).
 Single-page app — page switching is state-driven via `page` state in App.js.
 
 ---
