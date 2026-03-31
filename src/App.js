@@ -21,6 +21,8 @@ import Contacts  from "./pages/Contacts";
 import Reports   from "./pages/Reports";
 import Settings  from "./pages/Settings";
 import Outstanding from "./pages/Outstanding";
+import ArchivedItems    from "./pages/ArchivedItems";
+import ArchivedContacts from "./pages/ArchivedContacts";
 
 // ── Components ────────────────────────────────────────────────────────────────
 import TransactionForm    from "./components/TransactionForm";
@@ -45,7 +47,7 @@ import { generateCode }           from "./utils/categoryUtils";
  * Adjusts stockMap to remove the current transaction's contribution before
  * validation, preventing false stock-warning triggers on edit.
  */
-function EditModal({ transaction, contacts, transactions = [], stockMap, itemCatalog = [], onSave, onClose, onCreateContact, onAddCatalogItem = () => {}, onUpdateCatalogItem = () => {} }) {
+function EditModal({ transaction, contacts, transactions = [], stockMap, itemCatalog = [], onSave, onClose, onCreateContact, onAddCatalogItem = () => {}, onUpdateCatalogItem = () => {}, onUnarchiveCatalogItem = () => {}, onUnarchiveSubtype = () => {}, onUnarchiveContact = () => {} }) {
   const [stockWarn, setStockWarn] = useState(null);
 
   useEffect(() => {
@@ -85,6 +87,9 @@ function EditModal({ transaction, contacts, transactions = [], stockMap, itemCat
           onCreateContact={onCreateContact}
           onAddCatalogItem={onAddCatalogItem}
           onUpdateCatalogItem={onUpdateCatalogItem}
+          onUnarchiveCatalogItem={onUnarchiveCatalogItem}
+          onUnarchiveSubtype={onUnarchiveSubtype}
+          onUnarchiveContact={onUnarchiveContact}
           onSave={(t) => { onSave(t); onClose(); }}
           onCancel={onClose}
         />
@@ -400,9 +405,38 @@ export default function App() {
     if (!trimmed) return;
     update((d) => {
       if (d.contacts.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) return d;
-      return { ...d, contacts: [...d.contacts, { id: generateId(), name: trimmed, email: "", phone: "", address: "" }] };
+      return { ...d, contacts: [...d.contacts, { id: generateId(), name: trimmed, email: "", phone: "", address: "", archived: false }] };
     });
   };
+
+  // ── Archive / unarchive a contact ─────────────────────────────────────────
+  const archiveContact = (contactId) =>
+    update((d) => ({
+      ...d,
+      contacts: d.contacts.map((c) =>
+        c.id === contactId ? { ...c, archived: true } : c
+      ),
+    }));
+
+  const unarchiveContact = (contactId) =>
+    update((d) => ({
+      ...d,
+      contacts: d.contacts.map((c) =>
+        c.id === contactId ? { ...c, archived: false } : c
+      ),
+    }));
+
+  // ── Permanently delete a contact (0-transaction contacts only) ────────────
+  const deleteContact = (contactId) =>
+    update((d) => {
+      const contact = d.contacts.find((c) => c.id === contactId);
+      if (!contact) return d;
+      const hasTx = d.transactions.some(
+        (t) => t.counterparty.toLowerCase().trim() === contact.name.toLowerCase().trim()
+      );
+      if (hasTx) return d; // safety guard: never delete a contact that has transactions
+      return { ...d, contacts: d.contacts.filter((c) => c.id !== contactId) };
+    });
 
   // ── Update a contact and cascade name changes to transactions ───────────────
   const updateContact = (contact) => {
@@ -528,9 +562,67 @@ export default function App() {
     });
 
   const deleteCatalogItem = (itemId) =>
+    update((d) => {
+      const cat = (d.itemCatalog || []).find((c) => c.id === itemId);
+      if (!cat) return d;
+      // Safety guard: only permanently delete if no transactions reference this item
+      const allNames = [cat.name, ...(cat.subtypes || []).map((s) => `${cat.name} ${s}`)];
+      const hasTx = d.transactions.some((t) => {
+        const items = Array.isArray(t.items) && t.items.length > 0
+          ? t.items : [{ itemName: t.itemName }];
+        return items.some((it) => allNames.some((n) => normItem(n) === normItem(it.itemName)));
+      });
+      if (hasTx) return d; // block — UI should prevent this path for items with transactions
+      return {
+        ...d,
+        itemCatalog:      (d.itemCatalog || []).filter((c) => c.id !== itemId),
+        itemCategories:   (d.itemCategories || []).filter((c) => normItem(c.groupName) !== normItem(cat.name)),
+        stockAdjustments: (d.stockAdjustments || []).filter(
+          (a) => !allNames.some((n) => normItem(n) === normItem(a.itemName))
+        ),
+      };
+    });
+
+  // ── Archive / unarchive catalog items ─────────────────────────────────────
+  const archiveCatalogItem = (itemId) =>
     update((d) => ({
       ...d,
-      itemCatalog: (d.itemCatalog || []).filter((c) => c.id !== itemId),
+      itemCatalog: (d.itemCatalog || []).map((c) =>
+        c.id === itemId ? { ...c, archived: true } : c
+      ),
+    }));
+
+  const unarchiveCatalogItem = (itemId) =>
+    update((d) => ({
+      ...d,
+      itemCatalog: (d.itemCatalog || []).map((c) =>
+        c.id === itemId ? { ...c, archived: false, archivedSubtypes: [] } : c
+      ),
+    }));
+
+  const archiveSubtype = (itemId, subtypeName) =>
+    update((d) => ({
+      ...d,
+      itemCatalog: (d.itemCatalog || []).map((c) => {
+        if (c.id !== itemId) return c;
+        const existing = c.archivedSubtypes || [];
+        if (existing.some((s) => normItem(s) === normItem(subtypeName))) return c;
+        return { ...c, archivedSubtypes: [...existing, subtypeName] };
+      }),
+    }));
+
+  const unarchiveSubtype = (itemId, subtypeName) =>
+    update((d) => ({
+      ...d,
+      itemCatalog: (d.itemCatalog || []).map((c) => {
+        if (c.id !== itemId) return c;
+        return {
+          ...c,
+          archivedSubtypes: (c.archivedSubtypes || []).filter(
+            (s) => normItem(s) !== normItem(subtypeName)
+          ),
+        };
+      }),
     }));
 
   // ── Rename an inventory item across all transactions and adjustments ───────
@@ -773,6 +865,9 @@ export default function App() {
             onNavigateOutstanding={navigateToOutstanding}
             onAddCatalogItem={addCatalogItem}
             onUpdateCatalogItem={updateCatalogItem}
+            onUnarchiveCatalogItem={unarchiveCatalogItem}
+            onUnarchiveSubtype={unarchiveSubtype}
+            onUnarchiveContact={unarchiveContact}
             saved={saved}
           />
         )}
@@ -793,6 +888,9 @@ export default function App() {
             onNavigateOutstanding={navigateToOutstanding}
             onAddCatalogItem={addCatalogItem}
             onUpdateCatalogItem={updateCatalogItem}
+            onUnarchiveCatalogItem={unarchiveCatalogItem}
+            onUnarchiveSubtype={unarchiveSubtype}
+            onUnarchiveContact={unarchiveContact}
             saved={saved}
           />
         )}
@@ -814,6 +912,22 @@ export default function App() {
             onAddCatalogItem={addCatalogItem}
             onUpdateCatalogItem={updateCatalogItem}
             onDeleteCatalogItem={deleteCatalogItem}
+            onArchiveCatalogItem={archiveCatalogItem}
+            onUnarchiveCatalogItem={unarchiveCatalogItem}
+            onArchiveSubtype={archiveSubtype}
+            onUnarchiveSubtype={unarchiveSubtype}
+            onNavigateToArchive={() => setPage("archivedItems")}
+          />
+        )}
+        {page === "archivedItems" && (
+          <ArchivedItems
+            itemCatalog={data.itemCatalog || []}
+            stockMap={stockMap}
+            transactions={data.transactions}
+            onUnarchiveCatalogItem={unarchiveCatalogItem}
+            onUnarchiveSubtype={unarchiveSubtype}
+            onDeleteCatalogItem={deleteCatalogItem}
+            onBack={() => setPage("inventory")}
           />
         )}
         {page === "contacts" && (
@@ -821,12 +935,24 @@ export default function App() {
             contacts={data.contacts}
             transactions={data.transactions}
             balanceMap={balanceMap}
-            onAddContact={(c)     => update((d) => ({ ...d, contacts: [...d.contacts, c] }))}
+            onAddContact={(c) => update((d) => ({ ...d, contacts: [...d.contacts, { ...c, archived: false }] }))}
             onUpdateContact={updateContact}
-            onDeleteContact={(id) => update((d) => ({ ...d, contacts: d.contacts.filter((c) => c.id !== id) }))}
+            onDeleteContact={deleteContact}
+            onArchiveContact={archiveContact}
+            onUnarchiveContact={unarchiveContact}
+            onNavigateToArchive={() => setPage("archivedContacts")}
             onDeleteTransaction={deleteTransaction}
             onEditTransaction={setEditTx}
             onMarkPaid={applyPayment}
+          />
+        )}
+        {page === "archivedContacts" && (
+          <ArchivedContacts
+            contacts={data.contacts}
+            transactions={data.transactions}
+            onUnarchiveContact={unarchiveContact}
+            onDeleteContact={deleteContact}
+            onBack={() => setPage("contacts")}
           />
         )}
         {page === "reports" && (
@@ -873,6 +999,9 @@ export default function App() {
           onCreateContact={createContact}
           onAddCatalogItem={addCatalogItem}
           onUpdateCatalogItem={updateCatalogItem}
+          onUnarchiveCatalogItem={unarchiveCatalogItem}
+          onUnarchiveSubtype={unarchiveSubtype}
+          onUnarchiveContact={unarchiveContact}
         />
       )}
       {invoiceTxs && (

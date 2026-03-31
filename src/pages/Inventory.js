@@ -72,6 +72,11 @@ const Inventory = ({
   onAddCatalogItem      = () => {},
   onUpdateCatalogItem   = () => {},
   onDeleteCatalogItem   = () => {},
+  onArchiveCatalogItem  = () => {},
+  onUnarchiveCatalogItem = () => {},
+  onArchiveSubtype      = () => {},
+  onUnarchiveSubtype    = () => {},
+  onNavigateToArchive   = () => {},
 }) => {
   // Search / sort state
   const [search,  setSearch]  = useState("");
@@ -127,8 +132,9 @@ const Inventory = ({
   const [addSubtypeTarget,     setAddSubtypeTarget]     = useState(null);  // catalog item id
   const [addSubtypeInput,      setAddSubtypeInput]      = useState("");
   const [addSubtypeError,      setAddSubtypeError]      = useState("");
-  const [deleteCatalogConfirm, setDeleteCatalogConfirm] = useState(null);
-  const [removeSubtypeConfirm, setRemoveSubtypeConfirm] = useState(null); // { cat, sub }
+  // Unified delete confirm: { type: "catalog", catalogItem, displayName }
+  //                       | { type: "subtype", subtypeName, parentCatalogItem, displayName }
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   // Stock ledger state
   const [expandedStockItem, setExpandedStockItem] = useState(null);
@@ -163,20 +169,19 @@ const Inventory = ({
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
-      if (catalogForm)          { setCatalogForm(null); setCatalogFormError(""); setCatalogSubtypeError(""); return; }
-      if (deleteCatalogConfirm) { setDeleteCatalogConfirm(null); return; }
-      if (removeSubtypeConfirm) { setRemoveSubtypeConfirm(null); return; }
-      if (adjTarget)            { setAdjTarget(null); return; }
-      if (renameTarget)         { setRenameTarget(null); setRenameMergeConfirm(false); return; }
-      if (deleteTarget)         { setDeleteTarget(null); return; }
-      if (adjDeleteConfirm)     { setAdjDeleteConfirm(null); return; }
-      if (addSubtypeTarget)     { setAddSubtypeTarget(null); setAddSubtypeInput(""); setAddSubtypeError(""); return; }
-      if (expandedStockItem)    { setExpandedStockItem(null); return; }
-      if (showCategoryModal)    { setShowCategoryModal(false); return; }
+      if (catalogForm)       { setCatalogForm(null); setCatalogFormError(""); setCatalogSubtypeError(""); return; }
+      if (deleteConfirm)     { setDeleteConfirm(null); return; }
+      if (adjTarget)         { setAdjTarget(null); return; }
+      if (renameTarget)      { setRenameTarget(null); setRenameMergeConfirm(false); return; }
+      if (deleteTarget)      { setDeleteTarget(null); return; }
+      if (adjDeleteConfirm)  { setAdjDeleteConfirm(null); return; }
+      if (addSubtypeTarget)  { setAddSubtypeTarget(null); setAddSubtypeInput(""); setAddSubtypeError(""); return; }
+      if (expandedStockItem) { setExpandedStockItem(null); return; }
+      if (showCategoryModal) { setShowCategoryModal(false); return; }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [catalogForm, deleteCatalogConfirm, removeSubtypeConfirm, adjTarget, renameTarget, deleteTarget, adjDeleteConfirm, addSubtypeTarget, expandedStockItem, showCategoryModal]);
+  }, [catalogForm, deleteConfirm, adjTarget, renameTarget, deleteTarget, adjDeleteConfirm, addSubtypeTarget, expandedStockItem, showCategoryModal]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -369,6 +374,31 @@ const Inventory = ({
     return map;
   }, [stockAdjustments]);
 
+  // Transaction count per normalized item name — used to decide archive vs permanent delete
+  const txCountMap = useMemo(() => {
+    const map = {};
+    for (const t of transactions) {
+      const itemList = Array.isArray(t.items) && t.items.length > 0
+        ? t.items : [{ itemName: t.itemName }];
+      for (const it of itemList) {
+        if (!it.itemName) continue;
+        const key = normItem(it.itemName);
+        map[key] = (map[key] || 0) + 1;
+      }
+    }
+    return map;
+  }, [transactions]);
+
+  // Count of archived entries — base items + individually archived subtypes
+  // Drives "Lihat Arsip" button visibility
+  const archivedCount = useMemo(
+    () => (itemCatalog || []).reduce(
+      (sum, c) => sum + (c.archived ? 1 : 0) + (c.archivedSubtypes || []).length,
+      0
+    ),
+    [itemCatalog]
+  );
+
   // Flat item list from activeStockMap — used for summary cards + bar chart
   const items = useMemo(() => {
     const entries = Object.entries(activeStockMap).map(([key, s]) => ({ key, ...s }));
@@ -400,6 +430,14 @@ const Inventory = ({
     const flatRows = [];
 
     for (const cat of itemCatalog) {
+      if (cat.archived) {
+        // Mark all keys as covered so they don't leak into the uncatalogued section
+        coveredKeys.add(normItem(cat.name));
+        for (const sub of (cat.subtypes || [])) {
+          coveredKeys.add(normItem(`${cat.name} ${sub}`));
+        }
+        continue;
+      }
       const baseKey   = normItem(cat.name);
       coveredKeys.add(baseKey);
       const baseStock = activeStockMap[baseKey];
@@ -415,20 +453,25 @@ const Inventory = ({
         catalogItem: cat,   // full catalog item — used for "+ Tambah Tipe" button and delete
       });
 
+      const archivedSubs = new Set((cat.archivedSubtypes || []).map(normItem));
       for (const sub of (cat.subtypes || [])) {
         const fullName = `${cat.name} ${sub}`;
         const key      = normItem(fullName);
         coveredKeys.add(key);
+        if (archivedSubs.has(normItem(sub))) continue;  // skip archived subtypes
         const stock = activeStockMap[key];
         flatRows.push({
           key,
-          displayName:  fullName,
-          qty:          stock?.qty      ?? 0,
-          unit:         stock?.unit     || cat.defaultUnit || "karung",
-          lastDate:     stock?.lastDate || null,
-          lastTime:     stock?.lastTime || null,
-          txCount:      stock?.txCount  || 0,
-          catalogItem:  null,
+          displayName:       fullName,
+          qty:               stock?.qty      ?? 0,
+          unit:              stock?.unit     || cat.defaultUnit || "karung",
+          lastDate:          stock?.lastDate || null,
+          lastTime:          stock?.lastTime || null,
+          txCount:           stock?.txCount  || 0,
+          catalogItem:       null,
+          isSubtype:         true,
+          subtypeName:       sub,
+          parentCatalogItem: cat,
         });
       }
     }
@@ -595,25 +638,51 @@ const Inventory = ({
     setSubmitting(false);
   };
 
-  const handleRemoveSubtype = (catalogItem, sub) => {
-    if (submitting) return;
-    setSubmitting(true);
-    onUpdateCatalogItem({
-      ...catalogItem,
-      subtypes: (catalogItem.subtypes || []).filter((s) => normItem(s) !== normItem(sub)),
-    });
-    setRemoveSubtypeConfirm(null);
-    setToast(`Tipe berhasil dihapus`);
-    setSubmitting(false);
+  const handleDeleteRow = (row) => {
+    if (row.isSubtype) {
+      const hasTx = (txCountMap[row.key] || 0) > 0;
+      setDeleteConfirm({
+        type:              hasTx ? "archiveSubtype" : "subtype",
+        subtypeName:       row.subtypeName,
+        parentCatalogItem: row.parentCatalogItem,
+        displayName:       row.displayName,
+      });
+    } else {
+      // Base item: has transactions if this exact key OR any subtype key has transactions
+      const hasTx = (txCountMap[row.key] || 0) > 0 ||
+        (row.catalogItem?.subtypes || []).some(
+          (s) => (txCountMap[normItem(`${row.displayName} ${s}`)] || 0) > 0
+        );
+      setDeleteConfirm({
+        type:        hasTx ? "archiveCatalog" : "catalog",
+        catalogItem: row.catalogItem,
+        displayName: row.displayName,
+      });
+    }
   };
 
-  const handleDeleteCatalog = (catalogItem) => {
+  const handleConfirmDelete = (confirm) => {
     if (submitting) return;
     setSubmitting(true);
-    onDeleteCatalogItem(catalogItem.id);
-    onUpdateCategories(itemCategories.filter((c) => normItem(c.groupName) !== normItem(catalogItem.name)));
-    setDeleteCatalogConfirm(null);
-    setToast(`Barang berhasil dihapus dari katalog`);
+    if (confirm.type === "archiveCatalog") {
+      onArchiveCatalogItem(confirm.catalogItem.id);
+      setToast(`${confirm.displayName} diarsipkan dari katalog aktif`);
+    } else if (confirm.type === "archiveSubtype") {
+      onArchiveSubtype(confirm.parentCatalogItem.id, confirm.subtypeName);
+      setToast(`Tipe ${confirm.subtypeName} diarsipkan`);
+    } else if (confirm.type === "catalog") {
+      onDeleteCatalogItem(confirm.catalogItem.id);
+      onUpdateCategories(itemCategories.filter((c) => normItem(c.groupName) !== normItem(confirm.catalogItem.name)));
+      setToast(`${confirm.displayName} berhasil dihapus dari katalog`);
+    } else {
+      const parent = confirm.parentCatalogItem;
+      onUpdateCatalogItem({
+        ...parent,
+        subtypes: (parent.subtypes || []).filter((s) => normItem(s) !== normItem(confirm.subtypeName)),
+      });
+      setToast(`Tipe ${confirm.subtypeName} berhasil dihapus`);
+    }
+    setDeleteConfirm(null);
     setSubmitting(false);
   };
 
@@ -954,45 +1023,84 @@ const Inventory = ({
         </div>
       )}
 
-      {/* ── Catalog delete confirm ── */}
-      {deleteCatalogConfirm && (
-        <div className="modal-overlay" onClick={() => setDeleteCatalogConfirm(null)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 360 }}>
-            <h3 className="modal-title">Hapus dari Katalog?</h3>
+      {/* ── Unified delete/archive confirm (base item or subtype) ── */}
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 380 }}>
+            <h3 className="modal-title">
+              {deleteConfirm.type === "archiveCatalog" ? "📦 Arsipkan Barang?" :
+               deleteConfirm.type === "archiveSubtype" ? "📦 Arsipkan Tipe?" :
+               deleteConfirm.type === "catalog"        ? "Hapus dari Katalog?" :
+                                                         "Hapus Tipe dari Katalog?"}
+            </h3>
             <div className="modal-body">
-              <p>Hapus <strong>{deleteCatalogConfirm.name}</strong> dari katalog barang?</p>
-              <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
-                Data transaksi yang sudah ada tidak akan terpengaruh.
-              </p>
-            </div>
-            <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => setDeleteCatalogConfirm(null)}>Batal</button>
-              <button className="btn btn-danger" onClick={() => handleDeleteCatalog(deleteCatalogConfirm)}>Hapus</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Remove subtype confirm ── */}
-      {removeSubtypeConfirm && (
-        <div className="modal-overlay" onClick={() => setRemoveSubtypeConfirm(null)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 360 }}>
-            <h3 className="modal-title">Hapus Tipe?</h3>
-            <div className="modal-body">
-              <p>Hapus tipe <strong>{removeSubtypeConfirm.sub}</strong> dari katalog barang <strong>{removeSubtypeConfirm.cat.name}</strong>?</p>
-              {removeSubtypeConfirm.affectedCount > 0 ? (
-                <p style={{ fontSize: 13, color: "#f59e0b", marginTop: 4 }}>
-                  ⚠ {removeSubtypeConfirm.affectedCount} transaksi dengan tipe ini akan muncul di bagian "Tidak Terkatalog".
-                </p>
-              ) : (
-                <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
-                  Tidak ada transaksi yang terpengaruh.
-                </p>
+              {deleteConfirm.type === "archiveCatalog" && (
+                <>
+                  <p>Arsipkan <strong>{deleteConfirm.displayName}</strong> dari katalog aktif?</p>
+                  {(deleteConfirm.catalogItem.subtypes || []).length > 0 && (
+                    <>
+                      <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+                        Semua tipe di bawah barang ini juga akan diarsipkan:
+                      </p>
+                      <ul style={{ fontSize: 13, color: "#6b7280", margin: "4px 0 4px 16px", padding: 0, listStyle: "disc" }}>
+                        {(deleteConfirm.catalogItem.subtypes || []).map((sub) => {
+                          const fullName = `${deleteConfirm.displayName} ${sub}`;
+                          const cnt = txCountMap[normItem(fullName)] || 0;
+                          return <li key={sub}>{fullName}{cnt > 0 ? ` (${cnt} transaksi)` : ""}</li>;
+                        })}
+                      </ul>
+                    </>
+                  )}
+                  <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+                    Data transaksi tidak akan terpengaruh. Dapat dikembalikan kapan saja dari halaman arsip.
+                  </p>
+                </>
+              )}
+              {deleteConfirm.type === "archiveSubtype" && (
+                <>
+                  <p>Arsipkan tipe <strong>{deleteConfirm.subtypeName}</strong> dari <strong>{deleteConfirm.parentCatalogItem.name}</strong>?</p>
+                  <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+                    Tipe ini tidak akan muncul di pilihan transaksi baru.
+                    Data transaksi lama tetap tersimpan. Dapat dikembalikan kapan saja.
+                  </p>
+                </>
+              )}
+              {deleteConfirm.type === "catalog" && (
+                <>
+                  <p>Hapus <strong>{deleteConfirm.displayName}</strong> dari katalog barang?</p>
+                  {(deleteConfirm.catalogItem.subtypes || []).length > 0 && (
+                    <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+                      Semua tipe di bawah barang ini juga akan dihapus dari katalog.
+                    </p>
+                  )}
+                  <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+                    Data transaksi yang sudah ada tidak akan terpengaruh.
+                  </p>
+                </>
+              )}
+              {deleteConfirm.type === "subtype" && (
+                <>
+                  <p>Hapus tipe <strong>{deleteConfirm.subtypeName}</strong> dari <strong>{deleteConfirm.parentCatalogItem.name}</strong>?</p>
+                  <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+                    Data transaksi yang sudah ada tidak akan terpengaruh.
+                  </p>
+                </>
               )}
             </div>
             <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => setRemoveSubtypeConfirm(null)}>Batal</button>
-              <button className="btn btn-danger" onClick={() => handleRemoveSubtype(removeSubtypeConfirm.cat, removeSubtypeConfirm.sub)}>Hapus</button>
+              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>Batal</button>
+              {(deleteConfirm.type === "archiveCatalog" || deleteConfirm.type === "archiveSubtype") ? (
+                <button
+                  className="btn btn-primary"
+                  style={{ background: "#f59e0b", borderColor: "#f59e0b" }}
+                  onClick={() => handleConfirmDelete(deleteConfirm)}
+                  disabled={submitting}
+                >
+                  Arsipkan
+                </button>
+              ) : (
+                <button className="btn btn-danger" onClick={() => handleConfirmDelete(deleteConfirm)} disabled={submitting}>Hapus</button>
+              )}
             </div>
           </div>
         </div>
@@ -1167,6 +1275,11 @@ const Inventory = ({
               aria-label="Tambah item baru ke katalog"
             >
               ＋ Tambah Item Baru
+            </button>
+          )}
+          {archivedCount > 0 && (
+            <button onClick={onNavigateToArchive} className="btn btn-outline" aria-label="Lihat barang diarsipkan">
+              📦 Arsip ({archivedCount})
             </button>
           )}
           <button onClick={() => setShowCategoryModal(true)} className="btn btn-outline" aria-label="Kelola kategori barang">
@@ -1480,17 +1593,49 @@ const Inventory = ({
                                   <Icon name="edit" size={13} color="#007BFF" />
                                 </button>
                               )}
-                              {/* 5. Hapus — only for catalogued base items; uncatalogued rows have no delete */}
-                              {isToday && row.catalogItem && (
-                                <button
-                                  onClick={() => setDeleteCatalogConfirm(row.catalogItem)}
-                                  className="action-btn action-btn--delete"
-                                  title="Hapus dari Katalog"
-                                  aria-label={`Hapus ${row.displayName} dari katalog`}
-                                >
-                                  <Icon name="trash" size={13} color="#ef4444" />
-                                </button>
-                              )}
+                              {/* 5. Arsipkan/Hapus — catalog items get archive/delete; uncatalogued items with transactions get delete */}
+                              {isToday && (() => {
+                                if (row.catalogItem || row.isSubtype) {
+                                  const hasTx = row.isSubtype
+                                    ? (txCountMap[row.key] || 0) > 0
+                                    : (txCountMap[row.key] || 0) > 0 ||
+                                      (row.catalogItem?.subtypes || []).some(
+                                        (s) => (txCountMap[normItem(`${row.displayName} ${s}`)] || 0) > 0
+                                      );
+                                  return hasTx ? (
+                                    <button
+                                      onClick={() => handleDeleteRow(row)}
+                                      className="action-btn action-btn--archive"
+                                      title="Arsipkan dari Katalog"
+                                      aria-label={`Arsipkan ${row.displayName}`}
+                                    >
+                                      <Icon name="archive" size={13} color="#f59e0b" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleDeleteRow(row)}
+                                      className="action-btn action-btn--delete"
+                                      title="Hapus dari Katalog"
+                                      aria-label={`Hapus ${row.displayName} dari katalog`}
+                                    >
+                                      <Icon name="trash" size={13} color="#ef4444" />
+                                    </button>
+                                  );
+                                }
+                                // Uncatalogued item — show delete button if it has transactions
+                                const txCount = txCountMap[row.key] || 0;
+                                if (txCount === 0) return null;
+                                return (
+                                  <button
+                                    onClick={() => setDeleteTarget({ itemName: row.displayName, txCount })}
+                                    className="action-btn action-btn--delete"
+                                    title="Hapus Item"
+                                    aria-label={`Hapus ${row.displayName} dan semua transaksinya`}
+                                  >
+                                    <Icon name="trash" size={13} color="#ef4444" />
+                                  </button>
+                                );
+                              })()}
                             </div>
                           </td>
                         </tr>
