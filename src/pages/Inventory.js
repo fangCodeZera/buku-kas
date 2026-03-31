@@ -441,17 +441,24 @@ const Inventory = ({
       const baseKey   = normItem(cat.name);
       coveredKeys.add(baseKey);
       const baseStock = activeStockMap[baseKey];
-      // Always show base item row — represents the item "without a type"
-      flatRows.push({
-        key:         baseKey,
-        displayName: cat.name,
-        qty:         baseStock?.qty      ?? 0,
-        unit:        baseStock?.unit     || cat.defaultUnit || "karung",
-        lastDate:    baseStock?.lastDate || null,
-        lastTime:    baseStock?.lastTime || null,
-        txCount:     baseStock?.txCount  || 0,
-        catalogItem: cat,   // full catalog item — used for "+ Tambah Tipe" button and delete
-      });
+      // Hide base item row when: item has subtypes AND base has 0 stock AND 0 transactions.
+      // This avoids a phantom "Bawang Daun — 0 karung" row when only subtypes have been traded.
+      // Standalone items (no subtypes) are always shown.
+      const hasSubtypes   = (cat.subtypes || []).length > 0;
+      const baseQty       = baseStock?.qty    ?? 0;
+      const baseTxCount   = baseStock?.txCount || 0;
+      if (!hasSubtypes || baseQty > 0 || baseTxCount > 0) {
+        flatRows.push({
+          key:         baseKey,
+          displayName: cat.name,
+          qty:         baseStock?.qty      ?? 0,
+          unit:        baseStock?.unit     || cat.defaultUnit || "karung",
+          lastDate:    baseStock?.lastDate || null,
+          lastTime:    baseStock?.lastTime || null,
+          txCount:     baseStock?.txCount  || 0,
+          catalogItem: cat,   // full catalog item — used for "+ Tambah Tipe" button and delete
+        });
+      }
 
       const archivedSubs = new Set((cat.archivedSubtypes || []).map(normItem));
       for (const sub of (cat.subtypes || [])) {

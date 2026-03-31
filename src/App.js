@@ -927,6 +927,7 @@ export default function App() {
             onUnarchiveCatalogItem={unarchiveCatalogItem}
             onUnarchiveSubtype={unarchiveSubtype}
             onDeleteCatalogItem={deleteCatalogItem}
+            onViewItem={handleViewItem}
             onBack={() => setPage("inventory")}
           />
         )}
