@@ -108,7 +108,7 @@ export default function App() {
   const [saveError,   setSaveError]   = useState(false);
   const [editTx,      setEditTx]      = useState(null);
   const [invoiceTxs,  setInvoiceTxs]  = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 1024);
   const [reportItemFilter,   setReportItemFilter]   = useState(null); // item name pre-filter from Inventory "Lihat"
   const [outstandingHighlight, setOutstandingHighlight] = useState(null); // array of tx IDs to highlight on Outstanding page
   const [reportState, setReportState] = useState(null); // { transactions, dateFrom, dateTo }
@@ -192,6 +192,15 @@ export default function App() {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [saved]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 1024) setSidebarOpen(false);
+      else setSidebarOpen(true);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   // ── Pre-computed per-contact balance map (O(tx) once, not O(contacts×tx)) ─
   // Shape: { [lowerCaseName]: { totalIncome, totalExpense, ar, ap, netOut, txs } }

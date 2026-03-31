@@ -2824,3 +2824,82 @@ input[type="number"] {
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   TABLET — 769px to 1024px
+   Sits after all desktop styles so cascade order ensures these win.
+   Desktop (> 1024px) is untouched — no media query needed for it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* Sidebar & main layout */
+  .sidebar--open { width: 200px; }
+  .main-content  { padding: 20px 20px 32px; }
+  .page-title    { font-size: 20px; }
+
+  /* Summary cards — allow wrapping if viewport is tight */
+  .summary-grid      { flex-wrap: wrap; }
+  .summary-grid > *  { min-width: 180px; }
+
+  /* Day summary row (TransactionPage) — compact padding */
+  .day-summary-card        { padding: 8px 10px; }
+  .day-summary-card__value { font-size: 15px; }
+
+  /* Inventory search bar gap */
+  .inventory-search-sort { gap: 8px; }
+
+  /* Action buttons — tighter padding to save row width */
+  .action-btn { padding: 4px; }
+
+  /* Tables — guarantee horizontal scroll wrapper works */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Modals — add max-height + scroll so tall modals don't clip off-screen.
+     max-width is not overridden here because inline maxWidth values (420–720px)
+     are all fine at tablet widths; surat-jalan-modal has no inline max-width. */
+  .modal-box,
+  .edit-modal-box {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .surat-jalan-modal {
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
+
+/* ── Tablet narrow (769–900px): tighter layout adjustments ────────────────── */
+@media (min-width: 769px) and (max-width: 900px) {
+  /* TransactionForm 4-field row: collapse to 2×2 */
+  .item-fields-row { grid-template-columns: 1fr 1fr !important; }
+
+  /* TransactionPage & Outstanding: re-hide columns that .md:table-cell
+     exposed at min-width: 768px (No. Invoice, Stok, Jatuh Tempo) */
+  .md\:table-cell { display: none; }
+
+  /* Contacts split view: stack vertically at narrow tablet */
+  .contacts-page--split {
+    flex-direction: column;
+  }
+  .contacts-page--split .contacts-list-panel {
+    width: 100%;
+    max-width: 100%;
+    border-right: none;
+    padding-right: 0;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+  }
+  .contacts-detail-panel {
+    padding-left: 0;
+  }
+}
+
+/* ── Tablet wide (901–1024px): contacts split width adjustment ─────────────── */
+@media (min-width: 901px) and (max-width: 1024px) {
+  .contacts-page--split .contacts-list-panel {
+    width: 40%;
+    min-width: 260px;
+    max-width: 320px;
+  }
+}
+
