@@ -16,15 +16,17 @@ import { STORAGE_KEY } from "../utils/storage";
 /**
  * @param {{
  *   settings: Object,
+ *   transactions: Array,
  *   onSave: (settings: Object) => void,
  *   onImport: (data: Object) => void
  * }} props
  */
-const Settings = ({ settings, onSave, onImport }) => {
+const Settings = ({ settings, transactions = [], onSave, onImport }) => {
   const [form,        setForm]        = useState(settings);
   const [flash,       setFlash]       = useState(false);
   const [submitting,  setSubmitting]  = useState(false);
   const [importMsg,   setImportMsg]   = useState("");
+  const [exportFormat, setExportFormat] = useState("json");
   const [bizErrors,   setBizErrors]   = useState({});
   // String state for free-typing the due-date days field; validated on blur
   const [dueDaysStr,     setDueDaysStr]     = useState(String(settings.defaultDueDateDays ?? 14));
@@ -51,14 +53,76 @@ const Settings = ({ settings, onSave, onImport }) => {
     setTimeout(() => { setFlash(false); setSubmitting(false); }, 2000);
   };
 
-  const exportAll = () => {
-    if (submitting) return;
-    setSubmitting(true);
+  const csvEscape = (val) => {
+    const str = String(val ?? "");
+    if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const exportJSON = () => {
     const raw = localStorage.getItem(STORAGE_KEY) || "{}";
     const a = document.createElement("a");
     a.href = "data:application/json;charset=utf-8," + encodeURIComponent(raw);
     a.download = `bukukas_backup_${today()}.json`;
     a.click();
+  };
+
+  const exportCSV = () => {
+    const BOM = "\uFEFF";
+    const headers = ["Tanggal","Waktu","No. Invoice","Klien","Jenis","Barang","Karung","Berat (Kg)","Harga/Kg","Subtotal","Nilai Total","Status","Sisa Tagihan","Jatuh Tempo"];
+    const rows = [headers.join(",")];
+
+    const sorted = [...transactions].sort((a, b) => {
+      const da = (a.date || "") + (a.time || "");
+      const db = (b.date || "") + (b.time || "");
+      return db.localeCompare(da);
+    });
+
+    for (const t of sorted) {
+      const itemList = Array.isArray(t.items) && t.items.length > 0
+        ? t.items
+        : [{ itemName: t.itemName, sackQty: t.stockQty, weightKg: 0, pricePerKg: 0, subtotal: t.value }];
+      for (const item of itemList) {
+        rows.push([
+          t.date || "",
+          t.time || "",
+          csvEscape(t.txnId || ""),
+          csvEscape(t.counterparty || ""),
+          t.type === "income" ? "Penjualan" : "Pembelian",
+          csvEscape(item.itemName || ""),
+          item.sackQty || 0,
+          item.weightKg || 0,
+          item.pricePerKg || 0,
+          item.subtotal || 0,
+          t.value || 0,
+          csvEscape(t.status || ""),
+          t.outstanding || 0,
+          t.dueDate || "",
+        ].join(","));
+      }
+    }
+
+    const csv = BOM + rows.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `bukukas_transaksi_semua_${today()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExport = () => {
+    if (submitting) return;
+    setSubmitting(true);
+
+    if (exportFormat === "json") {
+      exportJSON();
+    } else {
+      exportCSV();
+    }
 
     const now = new Date().toISOString();
     set("lastExportDate", now);
@@ -353,20 +417,29 @@ const Settings = ({ settings, onSave, onImport }) => {
       <div className="settings-card">
         <h3 className="settings-section-title">Cadangan Data</h3>
         <p style={{ fontSize: 13, color: "#6b7280", marginTop: 0, marginBottom: 16 }}>
-          Data tersimpan otomatis di browser. Ekspor cadangan JSON untuk keamanan ekstra,
+          Data tersimpan otomatis di browser. Ekspor cadangan untuk keamanan ekstra,
           atau impor cadangan yang sudah ada.
         </p>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+          <select
+            value={exportFormat}
+            onChange={(e) => setExportFormat(e.target.value)}
+            className="sort-select"
+            style={{ width: 110 }}
+            aria-label="Format ekspor"
+          >
+            <option value="json">JSON</option>
+            <option value="csv">CSV</option>
+          </select>
           <button
-            onClick={exportAll}
+            onClick={handleExport}
             disabled={submitting}
             className="btn btn-outline"
-            aria-label="Ekspor semua data sebagai JSON"
+            aria-label="Ekspor semua data"
           >
-            <Icon name="download" size={14} color="#007bff" /> Ekspor Data (JSON)
+            <Icon name="download" size={14} color="#007bff" /> Ekspor Backup
           </button>
-
           <button
             onClick={() => fileRef.current && fileRef.current.click()}
             className="btn btn-outline"
@@ -386,6 +459,11 @@ const Settings = ({ settings, onSave, onImport }) => {
             aria-hidden="true"
           />
         </div>
+        <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 4px" }}>
+          {exportFormat === "json"
+            ? "Backup lengkap — dapat diimpor kembali ke aplikasi"
+            : "Format tabel — dapat dibuka di Excel / Google Sheets"}
+        </p>
 
         {importMsg && (
           <div

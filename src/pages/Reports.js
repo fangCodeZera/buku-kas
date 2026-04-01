@@ -76,6 +76,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [toast,           setToast]           = useState(null);
   const [confirmCount,    setConfirmCount]    = useState(null);
+  const [exportFormat,    setExportFormat]    = useState("csv");
 
   const applyPeriod = (p) => {
     // "all-time" period option: clears date filters to show all transactions
@@ -183,6 +184,29 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     a.click();
   };
 
+  const exportJSON = () => {
+    const payload = {
+      exportDate: today(),
+      dateFrom,
+      dateTo,
+      filters: { clients: selectedClients, items: selectedItems },
+      transactions: filtered,
+      summary: { totalIncome: income, totalExpense: expense, netProfit: income - expense },
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Laporan_${dateFrom || "semua"}_sd_${dateTo || "semua"}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExport = () => {
+    if (exportFormat === "csv") exportCSV();
+    else exportJSON();
+  };
+
   const handleGenerateReport = () => {
     if (filtered.length === 0) { setToast("Tidak ada transaksi yang cocok dengan filter saat ini."); return; }
     if (filtered.length > 50)  { setConfirmCount(filtered.length); return; }
@@ -204,9 +228,21 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
       <div className="page-header">
         <h2 className="page-title">Laporan</h2>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-          <button onClick={exportCSV} className="btn btn-outline" aria-label="Ekspor CSV">
-            <Icon name="download" size={14} color="#007bff" /> Ekspor CSV
-          </button>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <select
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value)}
+              className="sort-select"
+              style={{ width: 90 }}
+              aria-label="Format ekspor"
+            >
+              <option value="csv">CSV</option>
+              <option value="json">JSON</option>
+            </select>
+            <button onClick={handleExport} className="btn btn-outline" aria-label="Ekspor laporan">
+              <Icon name="download" size={14} color="#007bff" /> Ekspor
+            </button>
+          </div>
           <button onClick={handleGenerateReport} className="btn btn-primary" aria-label="Cetak laporan">
             🧾 Cetak Laporan Sales
           </button>

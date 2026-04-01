@@ -992,6 +992,7 @@ export default function App() {
         {page === "settings" && (
           <Settings
             settings={data.settings}
+            transactions={data.transactions}
             onSave={(s) => update((d) => ({ ...d, settings: s }))}
             onImport={handleImport}
           />
