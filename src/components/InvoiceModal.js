@@ -109,7 +109,7 @@ const InvoiceModal = ({ transactions, settings, onClose }) => {
     },
     kepadaLabel: { fontSize: 10, textTransform: "uppercase", color: "#94a3b8", fontWeight: 700, letterSpacing: 1 },
     kepadaName: { fontSize: 15, fontWeight: 700, color: "#1e293b", marginTop: 2 },
-    table: { width: "100%", borderCollapse: "collapse", fontSize: 13, margin: "12px 0" },
+    table: { width: "100%", borderCollapse: "collapse", fontSize: 13, margin: "12px 0", tableLayout: "fixed" },
     th: {
       background: "#1e3a5f", color: "#fff", padding: "10px 12px",
       textAlign: "left", fontSize: 11, fontWeight: 700,
@@ -206,7 +206,7 @@ const InvoiceModal = ({ transactions, settings, onClose }) => {
             <thead>
               <tr>
                 <th style={{ ...s.th, ...s.thC, width: 40 }}>No</th>
-                <th style={s.th}>Jenis Barang</th>
+                <th style={{ ...s.th, maxWidth: "200px" }}>Jenis Barang</th>
                 <th style={{ ...s.th, ...s.thR }}>Karung</th>
                 <th style={{ ...s.th, ...s.thR }}>Berat (Kg)</th>
                 <th style={{ ...s.th, ...s.thR }}>Harga/Kg</th>
@@ -217,7 +217,7 @@ const InvoiceModal = ({ transactions, settings, onClose }) => {
               {lineItems.map((it, i) => (
                 <tr key={i} style={i % 2 !== 0 ? s.rowAlt : {}}>
                   <td style={{ ...s.td, ...s.tdC }}>{i + 1}</td>
-                  <td style={s.td}>
+                  <td style={{ ...s.td, maxWidth: "200px", wordBreak: "break-word", whiteSpace: "normal", overflowWrap: "break-word" }}>
                     <strong>{it.itemName}</strong>
 
                   </td>

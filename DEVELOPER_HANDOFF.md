@@ -4,7 +4,7 @@ Digital bookkeeping for a small Indonesian family business (agricultural commodi
 
 **Stack:** React 19.2.4, react-scripts 5.0.1. No router. No backend. `localStorage` only.
 **UI Language:** Indonesian (all labels, toasts, status strings).
-**Schema version:** NORM_VERSION = 17 (in `src/utils/storage.js`).
+**Schema version:** NORM_VERSION = 18 (in `src/utils/storage.js`).
 **Storage key:** `"bukukas_data_v2"` (`STORAGE_KEY` in `storage.js`).
 **Print portal:** `<div id="print-portal">` in `public/index.html` — used by `printWithPortal()`.
 
@@ -24,12 +24,12 @@ npm run build    # production build
 
 ```
 src/
-  App.js                          1054  Root component — all state, all handlers, nav
-  styles.css                      2917  All styling (BEM-inspired, no CSS modules)
+  App.js                         ~1100  Root component — all state, all handlers, nav
+  styles.css                     ~2950  All styling (BEM-inspired, no CSS modules)
   index.js                              React root render
 
   utils/
-    storage.js                     392  loadData, saveData, defaultData, NORM_VERSION, migrateData
+    storage.js                    ~400  loadData, saveData, defaultData, NORM_VERSION, migrateData
     idGenerators.js                168  generateId, fmtIDR, today, addDays, diffDays, nowTime,
                                         fmtDate, normItem, normalizeTitleCase, generateTxnId,
                                         toCommaDisplay, numToDisplay, displayToNum
@@ -39,6 +39,7 @@ src/
     balanceUtils.js                 72  computeARandAP, computeCashIncome, computeCashExpense, computeNetCash
     printUtils.js                   30  printWithPortal
     stockUtils.js                  114  computeStockMap, computeStockMapForDate
+    textFormatter.js              ~200  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan)
 
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
@@ -47,7 +48,7 @@ src/
     Contacts.js                    634  Contact list + detail panel + transaction history
     Reports.js                     476  Date-range financial report + CSV/JSON export
     Outstanding.js                 557  AR/AP outstanding transactions view
-    Settings.js                    480  Business settings + JSON/CSV backup/restore
+    Settings.js                   ~500  Business settings + JSON/CSV backup/restore + printer type toggle
     ArchivedItems.js               286  Archived catalog items — restore or delete
     ArchivedContacts.js            219  Archived contacts — restore or delete
 
@@ -57,8 +58,9 @@ src/
     PaymentHistoryPanel.js         290  Expandable payment timeline
     PaymentUpdateModal.js          174  Record payment modal
     DeleteConfirmModal.js          105  Dual-mode (transaction/contact) delete confirm
-    InvoiceModal.js                337  Printable invoice
-    SuratJalanModal.js             284  Printable delivery note
+    InvoiceModal.js                337  Printable A4 invoice
+    SuratJalanModal.js             284  Printable A4 delivery note
+    DotMatrixPrintModal.js        ~150  Dot matrix preview + print modal (invoice & surat jalan)
     StockWarningModal.js            77  Negative-stock warning
     CategoryModal.js               488  Category management with drag-and-drop
     StockReportModal.js            330  Printable stock report
@@ -93,9 +95,10 @@ All data lives in a single localStorage key (`"bukukas_data_v2"`). The full obje
     "bankAccounts":             [],
     "maxBankAccountsOnInvoice": 1,
     "lastExportDate":           null,
-    "defaultDueDateDays":       14
+    "defaultDueDateDays":       14,
+    "printerType":              "A4"
   },
-  "_normVersion": 17
+  "_normVersion": 18
 }
 ```
 
@@ -162,6 +165,7 @@ Runs on every `loadData()`. Skipped when `_normVersion >= NORM_VERSION`. Applies
 | v15 | Add `archived: false` and `archivedSubtypes: []` fields to all catalog items |
 | v16 | Add `archived: false` field to all contacts |
 | v17 | Deduplicate `itemCatalog` by normalized name — merges subtypes and archivedSubtypes from duplicates into first entry |
+| v18 | Add `printerType: "A4"` to settings (for dot matrix printer support) |
 
 ---
 
@@ -182,6 +186,7 @@ const [reportState,           setReportState]           = useState(null);
 const [backupBannerDismissed, setBackupBannerDismissed] = useState(false);
 const [suratJalanTx,          setSuratJalanTx]          = useState(null);
 const [showStockReport,       setShowStockReport]       = useState(false);
+const [dotMatrixData,         setDotMatrixData]         = useState(null);
 ```
 
 ### useRef
@@ -213,7 +218,24 @@ const normTx = (t) => ...           // title-cases itemName + counterparty befor
 const ensureContact = (cp, contacts) => ...  // auto-creates contact for new counterparty
 ```
 
-### Handlers (see Section 5 of CLAUDE.md for full signatures)
+### Print routing handlers (v18)
+```js
+const handleInvoice = (txOrArray) => {
+  // Checks data.settings.printerType
+  // "Dot Matrix" → setDotMatrixData({ transaction: txOrArray, mode: "invoice" })
+  // "A4" → setInvoiceTxs(txOrArray)
+};
+
+const handleSuratJalan = (tx) => {
+  // Checks data.settings.printerType
+  // "Dot Matrix" → setDotMatrixData({ transaction: tx, mode: "suratJalan" })
+  // "A4" → setSuratJalanTx(tx)
+};
+```
+
+These wrappers are passed as `onInvoice` and `onSuratJalan` props to all pages. No useCallback — matches existing handler pattern.
+
+### Handlers
 ```
 addTransaction, editTransaction, deleteTransaction, applyPayment,
 createContact, archiveContact, unarchiveContact, deleteContact, updateContact,
@@ -247,6 +269,7 @@ renameInventoryItem, deleteInventoryItem, handleViewItem, navigateToOutstanding,
   {suratJalanTx && <SuratJalanModal ...>}
   {reportState  && <ReportModal ...>}
   {showStockReport && <StockReportModal ...>}
+  {dotMatrixData && <DotMatrixPrintModal ...>}
 </div>
 ```
 
@@ -311,6 +334,29 @@ Always pass BOTH arguments — never omit `stockAdjustments`.
 
 ### src/utils/printUtils.js
 `printWithPortal(htmlString)` — injects into `#print-portal`, adds `print-portal-active` class to body, calls `window.print()` synchronously, cleans up in finally{}.
+
+### src/utils/textFormatter.js (NEW — v18)
+ASCII layout engine for dot matrix printing. Pure functions, no React, no DOM.
+
+**Exports:**
+| Function | Signature | Returns |
+|----------|-----------|---------|
+| `formatInvoice(transactions, settings)` | `(Array, Object)` | `string` — full 80-column ASCII invoice |
+| `formatSuratJalan(transaction, settings)` | `(Object, Object)` | `string` — full 80-column ASCII surat jalan |
+
+**Internal helpers:** `padRight`, `padLeft`, `centerText`, `fmtNum`, `fmtRp`, `getItemsArray`, `wrapText`
+
+**Invoice column widths (total = 80):**
+No(3) + `" | "` + Barang(24) + `" | "` + Krg(6) + `" | "` + Berat(9) + `" | "` + Harga/Kg(10) + `" | "` + Subtotal(13)
+
+**Surat Jalan column widths (total = 80):**
+No(3) + `" | "` + Barang(50) + `" | "` + Jumlah(8) + `" | "` + Satuan(10)
+
+**Invoice layout sections:** `formatInvoiceHeader(settings)` → `formatInvoiceMeta(transactions)` → `formatItemsTable(transactions)` → `formatInvoiceFooter(transactions, settings)`
+
+**Surat Jalan layout sections:** `formatSuratJalanHeader(settings)` → `formatSuratJalanMeta(transaction)` → `formatSuratJalanItems(transaction)` → `formatSuratJalanFooter()`
+
+Uses `fmtDate()` from idGenerators for consistent date formatting. Flattens all transactions' items into one invoice (matching InvoiceModal's flatMap behavior).
 
 ---
 
@@ -402,9 +448,11 @@ Note: `onInvoice` prop is not used in the current code (was removed). `onReport`
 ### pages/Settings.js
 **Props:** `settings, transactions, onSave, onImport`
 
-**Features:** Business info, bank accounts CRUD, due-date defaults, low-stock threshold, JSON backup export, CSV export (14-column), JSON import.
+**Features:** Business info, bank accounts CRUD, due-date defaults, low-stock threshold, **printer type toggle (A4 / Dot Matrix)**, JSON backup export, CSV export (14-column), JSON import.
 
 **Key state:** `form, flash, submitting, importMsg, exportFormat, bizErrors, dueDaysStr, lowStockStr, maxBankStr`
+
+The `form` state includes `printerType` (initialized from `settings.printerType || "A4"`). The "Format Cetak" section uses `.filter-btn` / `.filter-btn--active` toggle buttons. `onSave(form)` persists the full form including `printerType`.
 
 **CSV export:** 14-column format: Tanggal, Waktu, No. Invoice, Klien, Jenis, Barang, Karung, Berat (Kg), Harga/Kg, Subtotal, Nilai Total, Status, Sisa Tagihan, Jatuh Tempo. Expands `items[]` into separate rows. Includes BOM (`\uFEFF`) for Excel compatibility.
 
@@ -454,11 +502,20 @@ Always-mounted — guards Escape key with visibility check.
 
 ### InvoiceModal.js
 **Props:** `transactions, settings, onClose`
-Prints via `printWithPortal()`. Bank accounts filtered by `showOnInvoice` + limited by `maxBankAccountsOnInvoice`. Invoice notes (`invoiceNote` state) NOT saved — session-only.
+Prints via `printWithPortal()`. Bank accounts filtered by `showOnInvoice` + limited by `maxBankAccountsOnInvoice`. Invoice notes (`invoiceNote` state) NOT saved — session-only. Used only when `printerType === "A4"`.
 
 ### SuratJalanModal.js
 **Props:** `transaction, onClose`
-Uses `t.stockUnit` (transaction-level). Inline styles throughout for print portal compatibility.
+Uses `t.stockUnit` (transaction-level). Inline styles throughout for print portal compatibility. Used only when `printerType === "A4"`.
+
+### DotMatrixPrintModal.js (NEW — v18)
+**Props:** `transaction, mode, settings, onClose`
+- `mode`: `"invoice"` | `"suratJalan"`
+- `transaction`: array when mode is `"invoice"` (matches `invoiceTxs`), single object when mode is `"suratJalan"`
+
+Computes formatted ASCII text via `useMemo` using `formatInvoice()` or `formatSuratJalan()` from `textFormatter.js`. Renders preview in `.dot-matrix-preview` `<pre>` block (monospace, gray background, scrollable). "Konfirmasi Cetak" button calls `printWithPortal()` with inline-styled `<pre>` (font: Courier New, 12pt, line-height 1). "Batal" button and Escape key close the modal. Conditionally mounted — no Escape guard needed.
+
+HTML in print output is escaped (`<` → `&lt;`, `>` → `&gt;`) to prevent injection.
 
 ### StockWarningModal.js
 **Props:** `data: { items[], item?, current?, selling?, onConfirm, onCancel? } | null, onClose`
@@ -509,7 +566,10 @@ Inline SVG icons. Valid names: `income, expense, inventory, contacts, reports, w
 
 ## 9. Print System
 
-All printing goes through `printWithPortal(htmlString)` in `src/utils/printUtils.js`.
+BukuKas has two print paths:
+
+### A4 Print Path (Standard)
+Used when `settings.printerType === "A4"` (default). All printing goes through `printWithPortal(htmlString)` in `src/utils/printUtils.js`.
 
 1. Sets `innerHTML` of `#print-portal` (in `public/index.html`)
 2. Adds `body.print-portal-active` class
@@ -519,11 +579,22 @@ All printing goes through `printWithPortal(htmlString)` in `src/utils/printUtils
 
 **Rule:** Print-bound components (InvoiceModal, SuratJalanModal, StockReportModal) must use 100% inline styles on the printable area. Do NOT use CSS classes in the printed content — they won't be available in the portal context.
 
+### Dot Matrix Print Path (v18)
+Used when `settings.printerType === "Dot Matrix"`. Optimized for Epson LX-300+II with 9.5×11 NCR paper.
+
+1. `handleInvoice` / `handleSuratJalan` in App.js check `data.settings.printerType`
+2. If "Dot Matrix": opens `DotMatrixPrintModal` with preview
+3. `textFormatter.js` generates 80-column ASCII text (monospace, pipe-separated columns)
+4. User reviews in `<pre>` preview, clicks "Konfirmasi Cetak"
+5. Same `printWithPortal()` is called with `<pre>` wrapped in inline styles (Courier New, 12pt, line-height 1)
+
+**Scope:** Invoice (Penjualan + Pembelian) and Surat Jalan only. Reports and stock reports always use A4.
+
 ---
 
 ## 10. CSS Structure
 
-File: `src/styles.css` — 2917 lines. BEM-inspired kebab-case. No CSS modules.
+File: `src/styles.css` — ~2950 lines. BEM-inspired kebab-case. No CSS modules.
 
 **Color palette:**
 | Role | Value |
@@ -548,7 +619,8 @@ File: `src/styles.css` — 2917 lines. BEM-inspired kebab-case. No CSS modules.
 - Modals: `.modal-overlay`, `.modal-box`, `.modal-title`, `.modal-body`, `.modal-actions`
 - Forms: `.form-input--error`, `.form-select--error`, `.field-error`
 - Inventory: `.inventory-group-header` (hover locked to `#1e3a5f` to prevent flicker)
-- Print: `@media print` section hides `#root`, shows `#print-portal`
+- Dot matrix: `.dot-matrix-preview` (monospace pre block for preview)
+- Print: `@media print` section hides `#root`, shows `#print-portal`; `#print-portal pre { page-break-inside: auto; }`
 
 Always search `styles.css` before adding a new class.
 
@@ -562,6 +634,7 @@ Always search `styles.css` before adding a new class.
 4. **Division safety:** Always guard `denominator > 0` before dividing.
 5. **Modal pattern:** Parent holds `null`-or-data state. Modal renders `null` when data is `null`. Always-mounted modals guard Escape key. Conditionally-mounted modals don't need guard.
 6. **Catalog:** `itemCatalog[]` is canonical for item selection. `itemCategories[]` is for grouping/display. They are synced by `addCatalogItem` and `updateCatalogItem`.
+7. **Print routing:** `handleInvoice` / `handleSuratJalan` in App.js check `printerType` setting to route to A4 or Dot Matrix modal. Pages never check printer type directly.
 
 ---
 

@@ -204,11 +204,11 @@ const SuratJalanModal = ({ transaction, onClose }) => {
             </div>
 
             {/* Items table */}
-            <table className="surat-jalan-doc__table">
+            <table className="surat-jalan-doc__table" style={{ tableLayout: "fixed", width: "100%" }}>
               <thead>
                 <tr>
                   <th style={{ padding: sc.cellPadding, fontSize: sc.tableFont }}>NO</th>
-                  <th style={{ padding: sc.cellPadding, fontSize: sc.tableFont }}>JENIS BARANG</th>
+                  <th style={{ padding: sc.cellPadding, fontSize: sc.tableFont, maxWidth: "250px" }}>JENIS BARANG</th>
                   <th style={{ padding: sc.cellPadding, fontSize: sc.tableFont }}>JUMLAH BARANG</th>
                 </tr>
               </thead>
@@ -216,7 +216,7 @@ const SuratJalanModal = ({ transaction, onClose }) => {
                 {items.map((it, i) => (
                   <tr key={i}>
                     <td style={{ padding: sc.cellPadding, fontSize: sc.tableFont }}>{i + 1}</td>
-                    <td style={{ padding: sc.cellPadding, fontSize: sc.tableFont, textAlign: "left" }}>{it.nama}</td>
+                    <td style={{ padding: sc.cellPadding, fontSize: sc.tableFont, textAlign: "left", maxWidth: "250px", wordBreak: "break-word", whiteSpace: "normal", overflowWrap: "break-word" }}>{it.nama}</td>
                     <td style={{ padding: sc.cellPadding, fontSize: sc.tableFont }}>{it.jumlah} {it.unit}</td>
                   </tr>
                 ))}

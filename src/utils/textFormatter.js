@@ -35,6 +35,49 @@ const centerText = (str, width = LINE_WIDTH) => {
   return " ".repeat(pad) + s + " ".repeat(width - pad - s.length);
 };
 
+/**
+ * Word-wrap text to fit within a given character width.
+ * Splits at word boundaries (spaces). Hard-truncates a single word
+ * that alone exceeds the full width. Returns array of strings, each <= width chars.
+ */
+const wrapText = (str, width) => {
+  const s = String(str ?? "").trim();
+  if (s.length <= width) return [s];
+  const words = s.split(/\s+/);
+  const lines = [];
+  let currentLine = "";
+  for (const word of words) {
+    if (currentLine === "") {
+      if (word.length > width) {
+        let remaining = word;
+        while (remaining.length > width) {
+          lines.push(remaining.slice(0, width));
+          remaining = remaining.slice(width);
+        }
+        currentLine = remaining;
+      } else {
+        currentLine = word;
+      }
+    } else if (currentLine.length + 1 + word.length <= width) {
+      currentLine += " " + word;
+    } else {
+      lines.push(currentLine);
+      if (word.length > width) {
+        let remaining = word;
+        while (remaining.length > width) {
+          lines.push(remaining.slice(0, width));
+          remaining = remaining.slice(width);
+        }
+        currentLine = remaining;
+      } else {
+        currentLine = word;
+      }
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  return lines;
+};
+
 /** Format number without Rp prefix: 5215000 → "5.215.000" */
 const fmtNum = (n) => Math.round(Number(n) || 0).toLocaleString("id-ID");
 
@@ -130,19 +173,15 @@ const formatItemsTable = (transactions) => {
     getItemsArray(t).map((it) => ({ ...it, txType: t.type }))
   );
 
-  const rows = lineItems.map((it, i) => {
+  const rows = lineItems.flatMap((it, i) => {
     const qty      = it.sackQty != null ? it.sackQty : 0;
     const beratStr = it.weightKg ? fmtNum(it.weightKg) + " Kg" : "—";
     const hargaStr = it.pricePerKg ? fmtNum(it.pricePerKg) : "—";
     const subStr   = fmtNum(it.subtotal || 0);
-    return mkRow(
-      String(i + 1),
-      it.itemName || "—",
-      String(qty),
-      beratStr,
-      hargaStr,
-      subStr
-    );
+    const nameLines = wrapText(it.itemName || "—", COL_BARANG);
+    const firstRow = mkRow(String(i + 1), nameLines[0], String(qty), beratStr, hargaStr, subStr);
+    const contRows = nameLines.slice(1).map(line => mkRow("", line, "", "", "", ""));
+    return [firstRow, ...contRows];
   });
 
   return [header, divider, ...rows, SEP_MAJOR];
@@ -152,7 +191,7 @@ const formatItemsTable = (transactions) => {
  * Invoice footer: totals (right-aligned), bank accounts, notes.
  * Totals are summed across all transactions.
  */
-const formatInvoiceFooter = (transactions, settings) => {
+const formatInvoiceFooter = (transactions, settings, note = "") => {
   const total      = transactions.reduce((a, t) => a + (Number(t.value)       || 0), 0);
   const outstanding = transactions.reduce((a, t) => a + (Number(t.outstanding) || 0), 0);
   const lines = [];
@@ -190,6 +229,18 @@ const formatInvoiceFooter = (transactions, settings) => {
     lines.push("Catatan: " + notes.trim());
   }
 
+  // Session-only invoice note (entered at print time, not saved to data)
+  if (note.trim()) {
+    lines.push("");
+    const prefix = "Catatan Invoice: ";
+    const firstLineWidth = LINE_WIDTH - prefix.length;
+    const noteLines = wrapText(note.trim(), firstLineWidth);
+    lines.push(padRight(prefix + (noteLines[0] || ""), LINE_WIDTH));
+    for (let i = 1; i < noteLines.length; i++) {
+      lines.push(padRight("  " + noteLines[i], LINE_WIDTH));
+    }
+  }
+
   return lines;
 };
 
@@ -210,15 +261,19 @@ const formatSuratJalanHeader = (settings) => {
 /**
  * Surat jalan meta: two-column (No / Tanggal), then Kepada full-width.
  */
-const formatSuratJalanMeta = (transaction) => {
-  const noStr   = "No     : " + (transaction.txnId || "—");
-  const tglStr  = "Tanggal: " + (fmtDate(transaction.date) || "—");
-  const kepada  = "Kepada : " + (transaction.counterparty || "—");
-  return [
+const formatSuratJalanMeta = (transaction, platNomor = "") => {
+  const noStr  = "No     : " + (transaction.txnId        || "—");
+  const tglStr = "Tanggal: " + (fmtDate(transaction.date) || "—");
+  const kepada = "Kepada : " + (transaction.counterparty  || "—");
+  const lines = [
     padRight(noStr, 40) + padLeft(tglStr, 40),
     padRight(kepada, LINE_WIDTH),
-    SEP_MINOR,
   ];
+  if (platNomor.trim()) {
+    lines.push(padRight("Plat Mobil : " + platNomor.trim(), LINE_WIDTH));
+  }
+  lines.push(SEP_MINOR);
+  return lines;
 };
 
 /**
@@ -243,9 +298,12 @@ const formatSuratJalanItems = (transaction) => {
   const divider = SEP_MINOR;
 
   const unit = transaction.stockUnit || "karung";
-  const items = getItemsArray(transaction).map((it, i) => {
+  const items = getItemsArray(transaction).flatMap((it, i) => {
     const qty = it.sackQty != null ? it.sackQty : 0;
-    return mkRow(String(i + 1), it.itemName || "—", String(qty), unit);
+    const nameLines = wrapText(it.itemName || "—", COL_BARANG);
+    const firstRow = mkRow(String(i + 1), nameLines[0], String(qty), unit);
+    const contRows = nameLines.slice(1).map(line => mkRow("", line, "", ""));
+    return [firstRow, ...contRows];
   });
 
   return [header, divider, ...items, SEP_MAJOR];
@@ -255,7 +313,7 @@ const formatSuratJalanItems = (transaction) => {
  * Surat jalan footer: signature blocks for Pengirim and Penerima.
  * Each side gets 2 blank lines for signature space.
  */
-const formatSuratJalanFooter = () => {
+const formatSuratJalanFooter = (catatanPengiriman = "") => {
   const leftLabel  = padRight("Pengirim,", 40);
   const rightLabel = padLeft("Penerima,", 40);
   const blankLine  = " ".repeat(LINE_WIDTH);
@@ -263,12 +321,21 @@ const formatSuratJalanFooter = () => {
     padRight("( ________________________ )", 40) +
     padLeft("( ________________________ )", 40);
 
-  return [
-    leftLabel + rightLabel,
-    blankLine,
-    blankLine,
-    sigLine,
-  ];
+  const lines = [];
+
+  if (catatanPengiriman.trim()) {
+    const prefix = "Catatan: ";
+    const firstLineWidth = LINE_WIDTH - prefix.length;
+    const noteLines = wrapText(catatanPengiriman.trim(), firstLineWidth);
+    lines.push(padRight(prefix + (noteLines[0] || ""), LINE_WIDTH));
+    for (let i = 1; i < noteLines.length; i++) {
+      lines.push(padRight("  " + noteLines[i], LINE_WIDTH));
+    }
+    lines.push(blankLine);
+  }
+
+  lines.push(leftLabel + rightLabel, blankLine, blankLine, sigLine);
+  return lines;
 };
 
 // ─── Public exports ──────────────────────────────────────────────────────────
@@ -282,15 +349,16 @@ const formatSuratJalanFooter = () => {
  * @param {Object}   settings     - app settings (businessName, bankAccounts, etc.)
  * @returns {string} formatted invoice text, lines joined by "\n"
  */
-export const formatInvoice = (transactions, settings) => {
-  const txs = Array.isArray(transactions) ? transactions : [transactions];
-  const s   = settings || {};
+export const formatInvoice = (transactions, settings, options = {}) => {
+  const txs        = Array.isArray(transactions) ? transactions : [transactions];
+  const s          = settings || {};
+  const { note = "" } = options;
 
   const lines = [
     ...formatInvoiceHeader(s),
     ...formatInvoiceMeta(txs),
     ...formatItemsTable(txs),
-    ...formatInvoiceFooter(txs, s),
+    ...formatInvoiceFooter(txs, s, note),
   ];
 
   return lines.join("\n");
@@ -303,15 +371,16 @@ export const formatInvoice = (transactions, settings) => {
  * @param {Object} settings    - app settings (businessName, etc.)
  * @returns {string} formatted surat jalan text, lines joined by "\n"
  */
-export const formatSuratJalan = (transaction, settings) => {
+export const formatSuratJalan = (transaction, settings, options = {}) => {
   const t = transaction || {};
   const s = settings    || {};
+  const { platNomor = "", catatanPengiriman = "" } = options;
 
   const lines = [
     ...formatSuratJalanHeader(s),
-    ...formatSuratJalanMeta(t),
+    ...formatSuratJalanMeta(t, platNomor),
     ...formatSuratJalanItems(t),
-    ...formatSuratJalanFooter(),
+    ...formatSuratJalanFooter(catatanPengiriman),
   ];
 
   return lines.join("\n");

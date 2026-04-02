@@ -11,7 +11,7 @@
  *   settings    {Object}       — app settings (businessName, bankAccounts, etc.)
  *   onClose     {() => void}
  */
-import React, { useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { formatInvoice, formatSuratJalan } from "../utils/textFormatter";
 import { printWithPortal } from "../utils/printUtils";
 
@@ -23,12 +23,16 @@ const DotMatrixPrintModal = ({ transaction, mode, settings, onClose }) => {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  const [invoiceNote,       setInvoiceNote]       = useState("");
+  const [platNomor,         setPlatNomor]         = useState("");
+  const [catatanPengiriman, setCatatanPengiriman] = useState("");
+
   const formattedText = useMemo(() => {
     if (mode === "invoice") {
-      return formatInvoice(transaction, settings);
+      return formatInvoice(transaction, settings, { note: invoiceNote });
     }
-    return formatSuratJalan(transaction, settings);
-  }, [transaction, mode, settings]);
+    return formatSuratJalan(transaction, settings, { platNomor, catatanPengiriman });
+  }, [transaction, mode, settings, invoiceNote, platNomor, catatanPengiriman]);
 
   const handlePrint = () => {
     // Escape HTML special chars to prevent injection; pre-tag uses inline styles
@@ -46,10 +50,59 @@ const DotMatrixPrintModal = ({ transaction, mode, settings, onClose }) => {
     ? "Pratinjau Cetak Dot Matrix \u2014 Invoice"
     : "Pratinjau Cetak Dot Matrix \u2014 Surat Jalan";
 
+  const inputStyle = {
+    width: "100%", border: "1px solid #e2e8f0", borderRadius: 6,
+    padding: "8px 10px", fontSize: 13, boxSizing: "border-box",
+  };
+  const labelStyle = {
+    display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 4,
+  };
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={title}>
       <div className="modal-box" style={{ maxWidth: 750, width: "100%" }}>
         <h3 className="modal-title" style={{ marginTop: 0, marginBottom: 16 }}>{title}</h3>
+
+        {/* ── Input fields (not printed — values flow into formattedText via useMemo) ── */}
+        {mode === "invoice" && (
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>Catatan Invoice (opsional)</label>
+            <textarea
+              value={invoiceNote}
+              onChange={(e) => setInvoiceNote(e.target.value)}
+              placeholder="Tulis catatan untuk invoice ini (opsional)"
+              rows={2}
+              maxLength={500}
+              style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
+            />
+          </div>
+        )}
+        {mode === "suratJalan" && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 8 }}>
+              <label style={labelStyle}>Plat Nomor Kendaraan (opsional)</label>
+              <input
+                type="text"
+                value={platNomor}
+                onChange={(e) => setPlatNomor(e.target.value)}
+                placeholder="Contoh: BG 8868 ID"
+                maxLength={20}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Catatan Pengiriman (opsional)</label>
+              <textarea
+                value={catatanPengiriman}
+                onChange={(e) => setCatatanPengiriman(e.target.value)}
+                placeholder="Contoh: Barang dikirim dengan truk, harap hati-hati"
+                rows={2}
+                maxLength={500}
+                style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
+              />
+            </div>
+          </div>
+        )}
 
         <pre className="dot-matrix-preview">{formattedText}</pre>
 
