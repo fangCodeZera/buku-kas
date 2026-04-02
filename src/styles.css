@@ -482,19 +482,31 @@ body {
 .data-table tbody tr { border-bottom: 1px solid #f0f6ff; }
 .data-table tbody tr:hover { background: #eef5ff !important; }
 
-/* ── Outstanding row highlight (from banner "Lihat" navigation) ─────────── */
-.outstanding-row--highlighted {
-  background: #fff3cd !important;
-  border-left: 4px solid #f59e0b;
-  box-shadow: inset 0 0 0 1px #f59e0b33;
-  animation: highlight-fade 8s ease-out forwards;
+/* ── Outstanding row permanent highlights (always visible) ──────────────── */
+.outstanding-row--overdue {
+  background-color: #fef2f2 !important;
+  border-left: 3px solid #fca5a5;
 }
-.outstanding-row--highlighted td {
-  background: #fff3cd !important;
+.outstanding-row--overdue td {
+  background-color: #fef2f2 !important;
 }
-@keyframes highlight-fade {
-  0%, 60% { background: #fff3cd; }
-  100% { background: transparent; }
+
+.outstanding-row--near-due {
+  background-color: #fffbeb !important;
+  border-left: 3px solid #fcd34d;
+}
+.outstanding-row--near-due td {
+  background-color: #fffbeb !important;
+}
+
+/* Flash highlight — from "Lihat" navigation, declared last to win cascade */
+.outstanding-row--flash {
+  background-color: #dbeafe !important;
+  border-left: 4px solid #3b82f6;
+  box-shadow: inset 0 0 0 1px #3b82f633;
+}
+.outstanding-row--flash td {
+  background-color: #dbeafe !important;
 }
 
 .td-date  { color: #6b7280; font-size: 11px; white-space: nowrap; }

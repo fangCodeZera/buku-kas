@@ -58,24 +58,17 @@ function sortTxs(txs, sortBy) {
 }
 
 // ─── Section table ─────────────────────────────────────────────────────────────
-function OutstandingTable({ txs, emptyMsg, onEdit, onMarkPaid, onDelete, onInvoice, highlightTxIds }) {
+function OutstandingTable({ txs, emptyMsg, onEdit, onMarkPaid, onDelete, onInvoice, flashIds }) {
   const [deleteTx,     setDeleteTx]     = useState(null);
   const [paidTx,       setPaidTx]       = useState(null);
   const [toast,        setToast]        = useState(null);
   const [page,         setPage]         = useState(0);
   const [expandedTxId, setExpandedTxId] = useState(null);
 
-  const firstHighlightRef = useRef(null);
+  const todayStr = today();
 
   // Collapse expanded row when the user changes pages
   useEffect(() => { setExpandedTxId(null); }, [page]);
-
-  // Scroll to first highlighted row
-  useEffect(() => {
-    if (highlightTxIds && highlightTxIds.length > 0 && firstHighlightRef.current) {
-      firstHighlightRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [highlightTxIds]);
 
   const totalPages = Math.max(1, Math.ceil(txs.length / PAGE_SIZE));
   const paginated  = txs.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -115,12 +108,25 @@ function OutstandingTable({ txs, emptyMsg, onEdit, onMarkPaid, onDelete, onInvoi
           </thead>
           <tbody>
             {paginated.map((t, i) => {
-              const isHighlighted = highlightTxIds && highlightTxIds.includes(t.id);
+              let permanentClass = "";
+              try {
+                if (t.dueDate && (t.outstanding || 0) > 0) {
+                  const d = diffDays(todayStr, t.dueDate);
+                  if (d !== null) {
+                    if (d < 0)       permanentClass = "outstanding-row--overdue";
+                    else if (d <= 3) permanentClass = "outstanding-row--near-due";
+                  }
+                }
+              } catch { /* diffDays has internal try/catch; safety net */ }
+              const isFlash = flashIds ? flashIds.has(t.id) : false;
               return (
               <React.Fragment key={t.id}>
               <tr
-                className={`${i % 2 === 0 ? "" : "row-alt"} ${isHighlighted ? "outstanding-row--highlighted" : ""}`}
-                ref={isHighlighted ? (el) => { if (el && !firstHighlightRef.current) firstHighlightRef.current = el; } : undefined}
+                className={[
+                  i % 2 === 0 ? "" : "row-alt",
+                  permanentClass,
+                  isFlash ? "outstanding-row--flash" : "",
+                ].filter(Boolean).join(" ")}
               >
                 <td className="td-date whitespace-nowrap">
                   {fmtDate(t.date)}
@@ -342,7 +348,9 @@ const Outstanding = ({
   highlightTxIds,
   onClearHighlight,
 }) => {
-  const [sortBy, setSortBy] = useState("nearestDue");
+  const [sortBy,   setSortBy]   = useState("nearestDue");
+  const [flashIds, setFlashIds] = useState(new Set());
+  const clearFlashRef = useRef(null);
 
   // ── Filter and sort — no mutation of original array ─────────────────────────
   const piutangTxs = useMemo(() => {
@@ -380,13 +388,51 @@ const Outstanding = ({
     }).length;
   }, [piutangTxs, hutangTxs, todayStr]);
 
-  // Auto-clear highlight after 8 seconds (matches CSS animation duration)
+  // Sync flashIds when arriving from "Lihat" navigation
   useEffect(() => {
-    if (highlightTxIds && highlightTxIds.length > 0 && onClearHighlight) {
-      const timer = setTimeout(() => onClearHighlight(), 8000);
-      return () => clearTimeout(timer);
+    if (highlightTxIds && highlightTxIds.length > 0) {
+      setFlashIds(new Set(highlightTxIds));
     }
-  }, [highlightTxIds, onClearHighlight]);
+  }, [highlightTxIds]);
+
+  const hasFlash = flashIds.size > 0;
+
+  // Scroll to first flash row after render (50ms lets React commit the new classes)
+  useEffect(() => {
+    if (!hasFlash) return;
+    const timer = setTimeout(() => {
+      const firstRow = document.querySelector("tr.outstanding-row--flash");
+      if (firstRow) firstRow.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [hasFlash]);
+
+  // Clear flash on first user interaction (500ms delay skips scroll-into-view event)
+  useEffect(() => {
+    if (!hasFlash) return;
+
+    const clearFlash = () => {
+      setFlashIds(new Set());
+      if (onClearHighlight) onClearHighlight();
+    };
+
+    const timer = setTimeout(() => {
+      clearFlashRef.current = clearFlash;
+      document.addEventListener("click",   clearFlash, { once: true, capture: true });
+      document.addEventListener("keydown", clearFlash, { once: true, capture: true });
+      document.addEventListener("scroll",  clearFlash, { once: true, capture: true, passive: true });
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+      if (clearFlashRef.current) {
+        document.removeEventListener("click",   clearFlashRef.current, { capture: true });
+        document.removeEventListener("keydown", clearFlashRef.current, { capture: true });
+        document.removeEventListener("scroll",  clearFlashRef.current, { capture: true });
+        clearFlashRef.current = null;
+      }
+    };
+  }, [hasFlash, onClearHighlight]);
 
   const hasAny = piutangTxs.length > 0 || hutangTxs.length > 0;
 
@@ -479,7 +525,7 @@ const Outstanding = ({
             onMarkPaid={onMarkPaid}
             onDelete={onDelete}
             onInvoice={onInvoice}
-            highlightTxIds={highlightTxIds}
+            flashIds={flashIds}
           />
         </SectionCard>
       )}
@@ -501,7 +547,7 @@ const Outstanding = ({
             onMarkPaid={onMarkPaid}
             onDelete={onDelete}
             onInvoice={onInvoice}
-            highlightTxIds={highlightTxIds}
+            flashIds={flashIds}
           />
         </SectionCard>
       )}
