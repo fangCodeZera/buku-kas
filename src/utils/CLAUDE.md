@@ -4,11 +4,11 @@
 
 ---
 
-### `src/utils/idGenerators.js`
+### `src/utils/idGenerators.js` (168 lines)
 
 ```
 function: generateId()
-returns:  string — e.g. "1742000000000-abc1234" (timestamp + random suffix)
+returns:  string — e.g. "1742000000000-abc1234" (timestamp + 7-char random suffix)
 throws:   never
 rules:    Use for all new entity IDs (transactions, contacts, adjustments, paymentHistory entries)
 example:  id: generateId()
@@ -16,7 +16,7 @@ example:  id: generateId()
 
 ```
 function: fmtIDR(n)
-returns:  string — Indonesian Rupiah e.g. "Rp 5.215.000"
+returns:  string — Indonesian Rupiah e.g. "Rp 5.215.000" using Intl.NumberFormat("id-ID")
 throws:   never (handles null/undefined via || 0)
 rules:    Always use for displaying monetary values. Never format manually.
 example:  fmtIDR(t.value) → "Rp 5.215.000"
@@ -68,6 +68,7 @@ params:   d: string (YYYY-MM-DD) or falsy
 returns:  string — e.g. "15 Mar 2026" (Indonesian locale) or "-" if falsy
 throws:   never
 rules:    Always use for displaying dates. Never format dates manually.
+          Parses as local midnight (T00:00:00 without Z) — correct for display.
 example:  fmtDate("2026-03-15") → "15 Mar 2026"
           fmtDate(null)         → "-"
 ```
@@ -77,7 +78,7 @@ function: normItem(s)
 params:   s: string or falsy
 returns:  string — trimmed, lowercase. e.g. "bawang merah"
 throws:   never
-rules:    Use ONLY as stockMap key. Never display a normItem result to users.
+rules:    Use ONLY as stockMap key or for name comparison. Never display a normItem result to users.
 example:  normItem("Bawang Merah") → "bawang merah"
           normItem(null)            → ""
 ```
@@ -95,12 +96,12 @@ example:  normalizeTitleCase("bawang PUTIH") → "Bawang Putih"
 
 ```
 function: generateTxnId(transactions, dateStr)
-params:   transactions: Array (ONLY income transactions are counted internally),
+params:   transactions: Array (pass the FULL array — function filters to income internally),
           dateStr: string (YYYY-MM-DD)
 returns:  string — e.g. "26-03-00009" (YY-MM-NNNNN serial)
 throws:   never
-rules:    ONLY call for income transactions. Pass the FULL transactions array —
-          the function internally filters to type === "income" only.
+rules:    ONLY call for income transactions. The serial is based on max existing serial
+          for the same YY- prefix — not count (safe after deletions).
           Serial resets each year (based on YY prefix).
           Never call for expense transactions — they use manual supplier invoice no.
 example:  generateTxnId(data.transactions, "2026-03-15") → "26-03-00009"
@@ -112,7 +113,6 @@ params:   digits: string (raw digit string, no commas)
 returns:  string — comma-formatted e.g. "5,000,000"
 throws:   never
 rules:    Used internally by RupiahInput. Rarely needed directly.
-example:  toCommaDisplay("5000000") → "5,000,000"
 ```
 
 ```
@@ -121,7 +121,6 @@ params:   n: number
 returns:  string — comma-formatted e.g. "5,000,000"
 throws:   never
 rules:    Used internally by RupiahInput.
-example:  numToDisplay(5000000) → "5,000,000"
 ```
 
 ```
@@ -130,12 +129,11 @@ params:   s: string — comma-formatted or raw digits
 returns:  number — integer e.g. 5000000
 throws:   never
 rules:    Used internally by RupiahInput.
-example:  displayToNum("5,000,000") → 5000000
 ```
 
 ---
 
-### `src/utils/statusUtils.js`
+### `src/utils/statusUtils.js` (54 lines)
 
 ```
 constant: STATUS
@@ -173,7 +171,7 @@ rules:    Used ONLY inside storage.js migrateData(). Do not use elsewhere.
 
 ---
 
-### `src/utils/balanceUtils.js`
+### `src/utils/balanceUtils.js` (72 lines)
 
 ```
 function: computeARandAP(transactions)
@@ -191,7 +189,6 @@ params:   transactions: Array
 returns:  number — sum of (value - outstanding) for all income transactions
 throws:   never
 rules:    Cash-basis only — does NOT count uncollected outstanding amounts.
-example:  computeCashIncome(data.transactions) → 3715000
 ```
 
 ```
@@ -200,7 +197,6 @@ params:   transactions: Array
 returns:  number — sum of (value - outstanding) for all expense transactions
 throws:   never
 rules:    Cash-basis only.
-example:  computeCashExpense(data.transactions) → 2000000
 ```
 
 ```
@@ -208,21 +204,21 @@ function: computeNetCash(transactions)
 params:   transactions: Array
 returns:  number — computeCashIncome - computeCashExpense
 throws:   never
-example:  computeNetCash(data.transactions) → 1715000
 ```
 
 ---
 
-### `src/utils/stockUtils.js`
+### `src/utils/stockUtils.js` (114 lines)
 
 ```
 function: computeStockMap(transactions, stockAdjustments = [])
-params:   transactions: Array, stockAdjustments: Array (optional, defaults to [])
+params:   transactions: Array, stockAdjustments: Array (required — pass [] if none)
 returns:  Object — { [normalizedItemName]: { displayName, qty, unit, lastDate, lastTime, txCount } }
 throws:   never
 rules:    ALWAYS pass both arguments. Never omit stockAdjustments.
-          expense (+qty), income (-qty). Processes chronologically.
+          expense (+qty), income (-qty). Processes chronologically (oldest first).
           Uses normItem() as key — never use displayName as a key.
+          stockAdjustments applied after transactions; sorted by date.
 example:  computeStockMap(data.transactions, data.stockAdjustments)
           → { "bawang merah": { displayName: "Bawang Merah", qty: 45, unit: "karung", ... } }
 ```
@@ -234,12 +230,13 @@ returns:  Object — same shape as computeStockMap but filtered to date <= viewD
 throws:   never
 rules:    Used by Inventory.js for historical stock view.
           viewDate is inclusive (transactions ON that date are included).
+          Simply filters both arrays then calls computeStockMap.
 example:  computeStockMapForDate(data.transactions, "2026-03-01", data.stockAdjustments)
 ```
 
 ---
 
-### `src/utils/categoryUtils.js`
+### `src/utils/categoryUtils.js` (310 lines)
 
 ```
 function: generateCode(groupName)
@@ -247,7 +244,7 @@ params:   groupName: string
 returns:  string — short uppercase code. e.g. "BP" for "Bawang Putih"
 throws:   never
 rules:    Multi-word: first letter of each word. Single-word: consonants, capped at 4.
-          For parent-child-aware codes, use generateCodes() instead.
+          For parent-child-aware codes across multiple groups, use generateCodes() instead.
 example:  generateCode("Bawang Putih") → "BP"
           generateCode("Ketumbar")     → "KTMB"
 ```
@@ -257,20 +254,22 @@ function: generateCodes(groupNames)
 params:   groupNames: string[] — array of group name strings
 returns:  Object — { [groupName]: code } map with parent-child awareness
 throws:   never
-rules:    If "Lada Mulya" has parent "Lada", child code = parent code + suffix.
+rules:    If "Lada Mulya" has parent "Lada", child code = parent code + suffix letters.
           Process all groups together for consistent results.
 example:  generateCodes(["Lada", "Lada Mulya"]) → { "Lada": "LD", "Lada Mulya": "LDM" }
 ```
 
 ```
-function: autoDetectCategories(stockMap, existingCategories)
-params:   stockMap: Object (keyed by normalized item name),
+function: autoDetectCategories(stockMap, existingCategories = [])
+params:   stockMap: Object (keyed by normalized item name, values have .displayName),
           existingCategories: Array (default [])
 returns:  Array — merged categories: existing (updated) + new auto-detected
 throws:   never
 rules:    Groups uncategorized items by shared word-level prefix (capped at 2 words).
+          Words are cleaned (quotes/parens stripped) before prefix comparison.
           Merges into existing categories when group name matches.
           Preserves user overrides in existingCategories.
+          Multi-member 1-word prefix groups may be promoted to 2-word sub-groups.
 example:  autoDetectCategories(stockMap, []) → [{ id, groupName: "Bawang Merah", code: "BM", items: [...] }, ...]
 ```
 
@@ -286,18 +285,35 @@ example:  getCategoryForItem("bawang putih kating", categories) → { id, groupN
 
 ---
 
-### `src/utils/paymentUtils.js`
+### `src/utils/paymentUtils.js` (20 lines)
 
 ```
 function: computePaymentProgress(value, outstanding)
 params:   value: number (total transaction value),
           outstanding: number (remaining outstanding)
-returns:  { percent: number } | null (null if value is 0)
+returns:  { percent: number } | null  (null if value is 0)
 throws:   never
 rules:    Uses Number() coercion + division zero-guard.
           percent = Math.round(((value - outstanding) / value) * 100)
 example:  computePaymentProgress(5000000, 1500000) → { percent: 70 }
           computePaymentProgress(0, 0)              → null
+```
+
+---
+
+### `src/utils/printUtils.js` (30 lines)
+
+```
+function: printWithPortal(htmlString)
+params:   htmlString: string — full HTML to print (may include <style> tags)
+returns:  void
+throws:   never (fallback to window.print() if portal not found)
+rules:    1. Sets innerHTML of #print-portal
+          2. Adds body.print-portal-active class
+          3. window.print() (synchronous — blocks until dialog closes)
+          4. Cleans up in finally{}
+          Components using this MUST use 100% inline styles on printable content.
+          Do NOT use CSS class names in printed HTML — they won't resolve.
 ```
 
 ---
@@ -309,10 +325,10 @@ This is the **most common bug source** in this codebase. Incorrect date handling
 ### USE UTC (`T00:00:00Z` + `getUTCDate` / `setUTCDate`)
 
 ```
-✓ addDays(dateStr, days)        — date arithmetic
-✓ diffDays(date1, date2)        — days between dates
-✓ dueDate calculations          — always UTC
-✓ Any "date + N days" operation
+addDays(dateStr, days)        — date arithmetic
+diffDays(date1, date2)        — days between dates
+dueDate calculations          — always UTC
+Badge counts (todayMs)        — new Date(today() + "T00:00:00Z").getTime()
 ```
 
 **Why:** Jakarta is UTC+7. `new Date("2026-03-15T00:00:00")` in Jakarta = `"2026-03-14T17:00:00Z"`. Adding 14 days UTC-aware gives `"2026-03-29"`. Without Z, you get `"2026-03-28"` — one day early.
@@ -320,9 +336,9 @@ This is the **most common bug source** in this codebase. Incorrect date handling
 ### USE LOCAL (`getFullYear()` / `getMonth()` / `getDate()`)
 
 ```
-✓ today()                       — must return user's local date
-✓ transaction.date field        — what date the user sees on their clock
-✓ viewDate (Dashboard/Inventory) — calendar date the user is viewing
+today()                       — must return user's local date
+transaction.date field        — what date the user sees on their clock
+viewDate (TransactionPage/Inventory) — calendar date the user is viewing
 ```
 
 **Why:** User in Jakarta at 2AM on March 15 sees "March 15" on their calendar. `new Date().toISOString().slice(0,10)` would return `"2026-03-14"` (UTC). Wrong.
@@ -330,25 +346,19 @@ This is the **most common bug source** in this codebase. Incorrect date handling
 ### NEVER DO THIS
 
 ```js
-// ✗ No Z = local time = off-by-1 in UTC+ zones
+// No Z = local time = off-by-1 in UTC+ zones
 new Date(dateStr + "T00:00:00")
 
-// ✗ Returns UTC date, not local
+// Returns UTC date, not local
 new Date().toISOString().slice(0, 10)
-
-// ✗ Returns UTC date
-new Date().toUTCString().slice(5, 16)
-
-// ✗ Local midnight arithmetic (unreliable across DST)
-new Date(date).setDate(new Date(date).getDate() + days)
 ```
 
-### Correct pattern (copy exactly from idGenerators.js)
+### Correct patterns (copy exactly from idGenerators.js)
 
 ```js
 // Date arithmetic — always UTC:
-const d = new Date(dateStr + "T00:00:00Z");  // ← Z mandatory
-d.setUTCDate(d.getUTCDate() + days);          // ← UTC methods mandatory
+const d = new Date(dateStr + "T00:00:00Z");  // Z mandatory
+d.setUTCDate(d.getUTCDate() + days);          // UTC methods mandatory
 return d.toISOString().slice(0, 10);
 
 // Today's date — always local:
@@ -360,6 +370,19 @@ return [
 ].join("-");
 ```
 
+**Exception:** `fmtDate()` parses as local midnight (T00:00:00 without Z) — this is intentional for display formatting and does not cause off-by-1 in display context. Do not change it.
+
+---
+
+## Stock Computation Rules
+
+- `expense` transactions → `+qty` (purchase adds to stock)
+- `income` transactions → `−qty` (sale removes from stock)
+- Multi-item: use `items[]` if `Array.isArray(t.items) && t.items.length > 0`; fall back to `t.itemName`/`t.sackQty ?? t.stockQty ?? 0`
+- Manual adjustments applied AFTER transaction-derived quantities
+- Stock map key = `normItem(itemName)` (lowercase, trimmed) — never use displayName as key
+- `computeStockMapForDate` filters by `date <= viewDate` (string comparison — YYYY-MM-DD format sorts correctly)
+
 ---
 
 ## Adding a New Utility Function
@@ -369,6 +392,9 @@ return [
   - Status → `statusUtils.js`
   - Balance/AR/AP → `balanceUtils.js`
   - Stock → `stockUtils.js`
+  - Category/grouping → `categoryUtils.js`
+  - Payment progress → `paymentUtils.js`
+  - Print → `printUtils.js`
 - [ ] Pure function — **no React imports, no component imports**
 - [ ] Wrap date/number operations in `try/catch` returning `null` on failure
 - [ ] Export with named export

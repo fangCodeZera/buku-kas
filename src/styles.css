@@ -327,6 +327,22 @@ body {
 .filter-btn--active { border-color: #007bff; background: #007bff; color: #fff; }
 .filter-btn:focus-visible { outline: 2px solid #007bff; }
 
+.type-filter-btn {
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1.5px solid #c7ddf7;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+.type-filter-btn.active-all     { border-color: #007bff; background: #007bff; color: #fff; }
+.type-filter-btn.active-income  { border-color: #10b981; background: #10b981; color: #fff; }
+.type-filter-btn.active-expense { border-color: #ef4444; background: #ef4444; color: #fff; }
+.type-filter-btn:focus-visible  { outline: 2px solid #007bff; }
+
 .sort-select {
   padding: 7px 10px;
   border: 1.5px solid #c7ddf7;

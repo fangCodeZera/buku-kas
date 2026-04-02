@@ -5,7 +5,7 @@
 ---
 
 ### Component: `TransactionPage`
-**File:** `TransactionPage.js`
+**File:** `TransactionPage.js` (600 lines)
 **Purpose:** Shared base component for Penjualan and Pembelian — day-view transaction table with search, sort, payment history timeline, and all action buttons.
 **Props:** See `src/pages/CLAUDE.md` → TransactionPage Base Component section.
 **Used by:** `Penjualan.js`, `Pembelian.js` (both via spread `{...props}`)
@@ -14,54 +14,57 @@
 - History button renders as icon-only `[🕐]` with red corner badge when `paymentHistory.length > 1` (class: `action-btn action-btn--history`)
 - Nilai (Rp) cell shows payment progress bar for all payment states
 - `confirmPaid(amount, note)` passes note through to `onMarkPaid`
-- No checkbox/multi-select column — per-row invoice button in Aksi column is the only invoice trigger
+- Overdue/near-due alert banners, each dismissible per session
 
 ---
 
 ### Component: `TransactionForm`
-**File:** `TransactionForm.js`
+**File:** `TransactionForm.js` (1282 lines)
 **Purpose:** Full transaction input form — supports multi-item rows, enhanced counterparty selector, auto/manual txnId, stock warning integration, custom due days, and catalog-based item selection via smart text inputs.
 **Props:**
 - `onSave: (tx) => void` — required
 - `onCancel?: () => void` — optional
-- `initial?: Object` — pre-fills form for edit mode (uses `mapItemFromCatalog` for catalog lookup)
+- `initial?: Object` — pre-fills form for edit mode
 - `contacts: Array` — required
 - `transactions?: Array` — optional (for contact balance preview)
 - `stockMap: Object` — required
-- `onStockWarning?: (warning) => void` — optional (receives `{ items: [...], onConfirm }` for multi-item)
+- `onStockWarning?: (warning) => void` — optional
 - `onCreateContact?: (name) => void` — optional
 - `defaultDueDateDays?: number` — optional, defaults to 14
 - `initType?: "income" | "expense"` — optional, defaults to `"income"`
-- `itemCatalog: Array` — **required** — `{ id, name, defaultUnit, subtypes[] }[]` from App.js data
-- `onAddCatalogItem?: (item) => void` — called when user confirms a new item/subtype
-- `onUpdateCatalogItem?: (item) => void` — called when user confirms a new subtype on an existing item
+- `itemCatalog: Array` — required
+- `onAddCatalogItem?: (item) => void`
+- `onUpdateCatalogItem?: (item) => void`
+- `onUnarchiveCatalogItem?: (id) => void`
+- `onUnarchiveSubtype?: (id, name) => void`
+- `onUnarchiveContact?: (id) => void`
 
 **Used by:** `TransactionPage.js` (inline add form), `App.js` (inside `EditModal` wrapper)
+
 **Special behaviour:**
+- **`activeCatalog`**: Filters `itemCatalog` to non-archived items (or archived items with at least one active subtype).
 - **Smart text-input item system**: Each item row has two text inputs with live autocomplete dropdowns, NOT `<select>` elements:
-  1. **Nama Barang**: free text; dropdown shows matching `itemCatalog[].name` values as user types. Match stored in `catalogItemId` + `matchedCatalog` per row.
-  2. **Tipe** (shown after Nama Barang filled): free text; dropdown shows `matchedCatalog.subtypes[]`. User can type an unknown subtype.
+  1. **Nama Barang**: free text; dropdown shows matching `activeCatalog[].name` values. Match stored in `catalogItemId` + `matchedCatalog` per row.
+  2. **Tipe** (shown after Nama Barang filled): free text; dropdown shows active `matchedCatalog.subtypes[]`. User can type unknown subtype.
   3. Full item name = `itemNameInput + " " + itemTypeInput` (or just `itemNameInput` if no type).
-  4. Unit auto-fills from `catalogItem.defaultUnit` when a catalog match is found.
-- **`mapItemFromCatalog(itemName)`**: Used in edit mode to pre-populate inputs. Walks catalog for matching `name` or `name + " " + subtype`. Falls back to free text with empty `catalogItemId` when no match — no `__legacy__` sentinel.
-- **New-item confirmation dialog** (`newItemConfirm` state): If user types an item or subtype not in the catalog, a dialog fires before save. On confirm, calls `onAddCatalogItem()` or `onUpdateCatalogItem()` then proceeds to save. Catalog grows organically from transaction entry.
-- **`submitting` state**: Boolean flag, prevents double-submit. Save button disabled while `submitting === true`.
-- **`errors` object**: Per-field inline validation. Error border applied via `iStyle()` helper. Error text via `.field-error` class below the field. Fields validated: `counterparty`, `items[idx]`, `value`, `paidAmount`.
-- **Auto-focus on mount**: Counterparty input (`cpInputRef`) receives focus. `skipNextFocusOpen` ref prevents the programmatic focus from opening the counterparty dropdown.
-- **Multi-item stock warning**: Before saving, collects ALL items that would push stock negative into `negItems[]` array, then calls `onStockWarning({ items: negItems, onConfirm })`. Single-item warnings still work (array of length 1).
-- **Stock display per item row**: Each item row shows current stock qty from `stockMap` inline.
-- Income transactions: txnId field is read-only and auto-generated on save
-- Expense transactions: txnId field is editable (supplier invoice number, `txnIdInput` state)
-- Multi-item support: `items[]` array, Add/Remove item rows, auto-totals
+  4. Unit auto-fills from `catalogItem.defaultUnit` when catalog match found.
+- **`mapItemFromCatalog(itemName)`**: Used in edit mode. Walks catalog for matching `name` or `name + " " + subtype`. Falls back to free text with empty `catalogItemId` — no `__legacy__` sentinel.
+- **New-item confirmation dialog** (`newItemConfirm` state): Fires before save when user typed unknown item or subtype. On confirm, calls `onAddCatalogItem()` or `onUpdateCatalogItem()`, then proceeds to save.
+- **`submitting` state**: Prevents double-submit. Save button disabled while true.
+- **`errors` object**: Per-field inline validation. Error border via `iStyle()` helper. Error text via `.field-error` class.
+- **Auto-focus on mount**: Counterparty input (`cpInputRef`) receives focus. `skipNextFocusOpen` ref prevents programmatic focus from opening counterparty dropdown.
+- **Multi-item stock warning**: Collects ALL items that would push stock negative into `negItems[]`, calls `onStockWarning({ items: negItems, item: negItems[0].item, current: ..., selling: ..., onConfirm, onCancel })`.
+- Income transactions: txnId field is read-only (auto-generated on save).
+- Expense transactions: txnId field is editable — `txnIdInput` state (supplier invoice number).
 
 ---
 
 ### Component: `PaymentHistoryPanel`
-**File:** `PaymentHistoryPanel.js`
+**File:** `PaymentHistoryPanel.js` (290 lines)
 **Purpose:** Expandable payment history timeline rendered in a colSpan row below a transaction row.
 **Props:**
 - `transaction: Object` — required (the full transaction object)
-- `onClose: () => void` — required (called by ✕ Tutup button)
+- `onClose: () => void` — required
 
 **Used by:** `TransactionPage.js`, `Contacts.js`, `Outstanding.js`
 **Special behaviour:**
@@ -72,15 +75,14 @@
 - Data lama entries show ⚠ icon with tooltip, NOT the raw "(data lama)" text
 - 10+ entries: shows first 3 + expand toggle + last 1
 - Pending node (dashed amber dot) when `outstanding > 0`
-- `onClose` fires when ✕ Tutup clicked — parent sets `expandedTxId(null)`
 
 ---
 
 ### Component: `PaymentUpdateModal`
-**File:** `PaymentUpdateModal.js`
+**File:** `PaymentUpdateModal.js` (174 lines)
 **Purpose:** Modal for recording a payment (full or partial) against a transaction's outstanding balance.
 **Props:**
-- `transaction: Object | null` — null = modal hidden
+- `transaction: Object | null` — null = modal hidden (always-mounted)
 - `onConfirm: (paidAmount: number, paymentNote: string) => void`
 - `onCancel: () => void`
 
@@ -90,14 +92,13 @@
 - Shows live preview of result (Lunas vs remaining)
 - Optional "Catatan Pembayaran" note field (max 100 chars, single line)
 - Note resets when transaction changes
-- `onConfirm` signature: `(amount, note)` — all callers pass both arguments
-- **Auto-focus**: Uses `amountFieldRef` with `querySelector("input")` inside a ref-div, since `RupiahInput` does not forward refs. Auto-focus fires when `transaction` changes (50ms setTimeout).
-- **Escape key**: Calls `onCancel()`. Guards with `if (!transaction) return` before registering listener.
+- **Auto-focus**: Uses `amountFieldRef` with `querySelector("input")` inside a ref-div (RupiahInput does not forward refs). Auto-focus fires when `transaction` changes (50ms setTimeout).
+- **Always-mounted**: Escape key handler guards with `if (!transaction) return`.
 
 ---
 
 ### Component: `DeleteConfirmModal`
-**File:** `DeleteConfirmModal.js`
+**File:** `DeleteConfirmModal.js` (105 lines)
 **Purpose:** Dual-mode confirmation dialog for deleting a transaction OR a contact.
 **Props:**
 - `transaction?: Object | null` — for transaction delete mode
@@ -111,30 +112,28 @@
 - Shows different title/body text based on `isContact` flag
 - Transaction delete warns about stock/balance side effects
 - Contact delete clarifies transactions are NOT deleted
-- **Escape key**: Calls `onCancel()`. Guards with visibility check (`isContact ? !!contact : !!transaction`) before registering listener.
+- **Always-mounted**: Escape key handler guards with `(isContact ? !!contact : !!transaction)`.
 
 ---
 
 ### Component: `StockWarningModal`
-**File:** `StockWarningModal.js`
-**Purpose:** Warning dialog when a sale would push one or more items' stock into negative territory. User can override and proceed, or cancel to fix the quantity.
+**File:** `StockWarningModal.js` (77 lines)
+**Purpose:** Warning dialog when a sale would push one or more items' stock into negative territory.
 **Props:**
-- `data: { items: Array<{ item: string, current: number, selling: number }>, item?: string, current?: number, selling?: number, onConfirm: () => void, onCancel?: () => void } | null`
+- `data: { items: Array<{ item, current, selling }>, item?, current?, selling?, onConfirm: () => void, onCancel?: () => void } | null`
 - `onClose: () => void`
 
 **Used by:** `TransactionPage.js`, `App.js` (inside EditModal)
 **Special behaviour:**
-- TransactionForm passes both `items` array AND flat `item/current/selling` fields simultaneously: `{ items: negItems, item: negItems[0].item, current: negItems[0].current, selling: negItems[0].selling, onConfirm, onCancel }`.
-- When `data.items.length > 1`: renders a bullet list of all affected items (multi-item path).
-- When `data.items.length === 1`: falls back to flat `data.item / data.current / data.selling` — renders the single-item prose format.
-- `data.onConfirm()` is called when user chooses to proceed despite negative stock.
-- `data.onCancel?.()` is called when user cancels (in addition to `onClose`).
-- **Escape key**: Calls both `data.onCancel?.()` and `onClose()`. Guards with `if (!data) return`.
+- TransactionForm passes both `items` array AND flat fields: `{ items: negItems, item: negItems[0].item, current: negItems[0].current, selling: negItems[0].selling, onConfirm, onCancel }`.
+- When `data.items.length > 1`: renders bullet list of all affected items.
+- When `data.items.length === 1`: falls back to flat `data.item / data.current / data.selling` — renders single-item prose.
+- **Always-mounted**: Escape key handler guards with `if (!data) return`.
 
 ---
 
 ### Component: `InvoiceModal`
-**File:** `InvoiceModal.js`
+**File:** `InvoiceModal.js` (337 lines)
 **Purpose:** Printable invoice display. Renders one or more transactions with business header, line items, totals, and bank details.
 **Props:**
 - `transactions: Array` — one or more transactions
@@ -143,16 +142,16 @@
 
 **Used by:** `App.js` (global `invoiceTxs` state)
 **Special behaviour:**
-- Print button triggers `printWithPortal()` (NOT `window.print()` directly). Uses 100% inline styles on the printable area for portal compatibility — do NOT migrate to CSS classes.
+- Print button triggers `printWithPortal()`. Uses 100% inline styles on printable area for portal compatibility — do NOT migrate to CSS classes.
 - Shows bank accounts filtered by `showOnInvoice === true`, limited by `maxBankAccountsOnInvoice`.
-- **`catatan` / invoice notes**: Has an `invoiceNote` text area entered at print time inside the modal. Notes are NOT saved to transaction data — they exist only in local modal state (`useState("")`) while the modal is open. This is a deliberate product decision.
-- **Escape key**: Calls `onClose()`. No visibility guard needed — modal is conditionally mounted.
+- **Invoice notes**: `invoiceNote` text area entered at print time — NOT saved to transaction data (local modal state only). Deliberate product decision.
+- **Conditionally-mounted**: Escape key no guard needed.
 
 ---
 
 ### Component: `ReportModal`
 **File:** `ReportModal.js`
-**Purpose:** Printable transaction report in landscape layout. 11-column table (NO, TANGGAL, NO. INVOICE, KLIEN, BARANG, STOK, JENIS, STATUS, JATUH TEMPO, NILAI (RP), PIUTANG/HUTANG) with cash-basis summary. Columns match the on-screen Laporan table exactly.
+**Purpose:** Printable transaction report in landscape layout. 11-column table (NO, TANGGAL, NO. INVOICE, KLIEN, BARANG, STOK, JENIS, STATUS, JATUH TEMPO, NILAI (RP), PIUTANG/HUTANG) with cash-basis summary.
 **Props:**
 - `transactions: Array`
 - `settings: Object`
@@ -162,151 +161,58 @@
 
 **Used by:** `App.js` (global `reportState` state)
 **Special behaviour:**
-- **Escape key**: Calls `onClose()`. No visibility guard needed — conditionally mounted.
+- **Conditionally-mounted**: Escape key no guard needed.
 
 ---
 
-### Component: `StatusBadge`
-**File:** `Badge.js` (named export)
-**Purpose:** Coloured pill badge for payment status.
-**Props:** `status: string`
-**Valid `status` values:**
-- `"Lunas"` → green ✅
-- `"Belum Lunas (Piutang)"` → amber ⏳ (income, client owes us)
-- `"Belum Lunas (Utang)"` → red ⏳ (expense, we owe supplier)
-- Legacy strings also handled (see `STATUS_MAP` in Badge.js)
-
-**Rule: Always pass a value from `STATUS` constants or `deriveStatus()` — never raw strings in new code.**
-
----
-
-### Component: `TypeBadge`
-**File:** `Badge.js` (named export)
-**Purpose:** Coloured pill badge for transaction type.
-**Props:** `type: "income" | "expense"`
-**Used by:** `Contacts.js`, `Outstanding.js`, `Reports.js`
-
----
-
-### Component: `DueBadge`
-**File:** `DueBadge.js`
-**Purpose:** Shows jatuh tempo (due date) status — days remaining, overdue, or due today.
+### Component: `SuratJalanModal`
+**File:** `SuratJalanModal.js` (284 lines)
+**Purpose:** Printable delivery note (surat jalan) for a single transaction.
 **Props:**
-- `dueDate: string | null | undefined` — YYYY-MM-DD
-- `outstanding?: number` — if `<= 0`, renders `—`
+- `transaction: Object | null` — null = modal hidden
+- `onClose: () => void`
 
-**Used by:** `TransactionPage.js`, `Contacts.js`, `Outstanding.js`
-
----
-
-### Component: `MultiSelect`
-**File:** `MultiSelect.js`
-**Purpose:** Zero-dependency multi-select dropdown with search and select-all.
-**Props:**
-- `options: string[]`
-- `selected: string[]`
-- `onChange: (selected: string[]) => void`
-- `placeholder?: string`
-
-**Used by:** `Reports.js` (client filter, item filter)
-
----
-
-### Component: `RupiahInput`
-**File:** `RupiahInput.js`
-**Purpose:** Currency input that displays comma-formatted Rupiah and returns a clean integer.
-**Props:**
-- `value: number`
-- `onChange: (numericValue: number) => void`
-- `hasError?: boolean`
-- `placeholder?: string`
-
-**Used by:** `TransactionForm.js`, `PaymentUpdateModal.js`
-
----
-
-### Component: `StockChip`
-**File:** `StockChip.js`
-**Purpose:** Coloured pill showing stock quantity with status colouring (green/amber/red).
-**Props:**
-- `qty: number`
-- `unit: string`
-- `threshold?: number` — defaults to 10
-
-**Used by:** `Inventory.js`
-
----
-
-### Component: `Toast`
-**File:** `Toast.js`
-**Purpose:** Auto-dismissing slide-in notification. Disappears after 3 seconds.
-**Props:**
-- `message: string`
-- `type?: "success" | "error"` — defaults to `"success"`
-- `onDone?: () => void` — called after dismiss (use to clear parent toast state)
-
-**Used by:** Every page that has mutation actions (TransactionPage, Contacts, Outstanding, Inventory)
-
----
-
-### Component: `Icon`
-**File:** `Icon.js`
-**Purpose:** Lightweight SVG icon system. Renders inline SVGs by name.
-**Props:**
-- `name: string` — see Icon.js for full list of valid names
-- `size?: number` — defaults to 16
-- `color?: string` — defaults to `"currentColor"`
-
-**Available icon names (from Icon.js):** `income`, `expense`, `inventory`, `contacts`, `reports`, `warning`, `settings`, `menu`, `plus`, `edit`, `trash`, `invoice`, `check`, `clock`, `search`, `download`, `link`, `upload`, `eye`, `adjust`, `truck`, `dashboard`
-
----
-
-### Component: `SaveIndicator`
-**File:** `SaveIndicator.js`
-**Purpose:** Small inline "Tersimpan ✓ · HH:MM" / "Menyimpan..." indicator showing autosave status and time of last save.
-**Props:**
-- `saved: boolean` — whether data is currently saved
-
-**Used by:** `TransactionPage.js` (rendered in page header)
+**Used by:** `App.js` (global `suratJalanTx` state; button is in `TransactionPage.js`)
 **Special behaviour:**
-- Tracks `false → true` transition via `prevSaved` ref (initialized to `true` matching App.js initial state)
-- Records `nowTime()` into internal `lastSavedTime` state ONLY when `saved` transitions from `false` to `true` (actual save event) — not on initial mount
-- Renders `"Tersimpan ✓ · HH:MM"` when saved and `lastSavedTime` is set; the timestamp is in `<span className="save-indicator__time">` (muted gray, 0.9em)
-- Renders `"Menyimpan..."` when `saved === false`
-- Note: `lastSavedTime` is internal state derived from the `false → true` transition — it is NOT a prop
+- Uses `t.stockUnit` (transaction-level) — NOT `it.stockUnit` (item-level, does not exist).
+- `settings` prop is passed by App.js but NOT destructured/used by the component internally.
+- Uses 100% inline styles for print portal compatibility.
+- **Conditionally-mounted**: Escape key no guard needed.
 
 ---
 
 ### Component: `CategoryModal`
-**File:** `CategoryModal.js`
-**Purpose:** Modal for managing item categories/groups. Supports inline editing of group names and codes, HTML5 drag-and-drop for moving items between groups and merging groups, and auto-detection of categories for uncategorized items.
+**File:** `CategoryModal.js` (488 lines)
+**Purpose:** Modal for managing item categories/groups. Supports inline editing, HTML5 drag-and-drop for moving items between groups and merging groups, and auto-detection of categories for uncategorized items.
 **Props:**
 - `categories: Array` — existing category objects
 - `stockMap: Object` — keyed by normalized item name
-- `onSave: (categories: Array) => void` — called with cleaned categories on save
-- `onClose: () => void` — called on cancel (with unsaved-changes confirmation if dirty)
+- `onSave: (categories: Array) => void`
+- `onClose: () => void`
 
 **Used by:** `Inventory.js`
 **Special behaviour:**
-- On mount, runs `autoDetectCategories(stockMap, categories)` to pre-populate
+- On mount: runs `autoDetectCategories(stockMap, categories)` to pre-populate
 - Group drag onto another group = merge (items combined, source deleted)
 - Item drag between groups = move
-- Uncategorized items shown in a dashed amber "Belum Dikategorikan" section
+- Uncategorized items in dashed amber "Belum Dikategorikan" section
 - Confirm dialog when cancelling with unsaved changes
 - Codes auto-regenerated with parent-child awareness when group names change
-- **Escape key**: Calls `onClose()`. No visibility guard needed — conditionally mounted.
+- `commitName` validates duplicate group names via `normItem()`, stays in edit mode with error on duplicate
+- `commitCode` cascades to children by name-prefix match
+- **Conditionally-mounted**: Escape key no guard needed.
 
 ---
 
 ### Component: `StockReportModal`
-**File:** `StockReportModal.js`
-**Purpose:** Printable stock report modal — groups items by category, shows quantities (no prices). Uses 100% inline styles on the printable area for `printWithPortal()` compatibility.
+**File:** `StockReportModal.js` (330 lines)
+**Purpose:** Printable stock report modal — groups items by category, shows quantities (no prices).
 **Props:**
-- `stockMap: Object` — current stock map
-- `categories: Array` — category objects for grouping
-- `settings: Object` — business name, address
-- `transactions: Array` — for historical stock computation
-- `stockAdjustments: Array` — for historical stock computation
+- `stockMap: Object`
+- `categories: Array`
+- `settings: Object`
+- `transactions: Array`
+- `stockAdjustments: Array`
 - `onClose: () => void`
 
 **Used by:** `Inventory.js`
@@ -315,23 +221,82 @@
 - Toggle to show/hide zero-stock items
 - Prints via `printWithPortal()` with injected `<style>` block
 - Guard: renders `null` if `stockMap` is falsy
-- **Escape key**: Calls `onClose()`. No visibility guard needed — conditionally mounted.
+- **Conditionally-mounted**: Escape key no guard needed.
 
 ---
 
-### Component: `SuratJalanModal`
-**File:** `SuratJalanModal.js`
-**Purpose:** Printable delivery note (surat jalan) for a single transaction.
-**Props:**
-- `transaction: Object | null` — null = modal hidden
-- `onClose: () => void`
+### Component: `StatusBadge` / `TypeBadge`
+**File:** `Badge.js` (113 lines)
+**Exports:** `StatusBadge` (named), `TypeBadge` (named), default = `StatusBadge`
 
-**Used by:** `App.js` (global `suratJalanTx` state; button is in `TransactionPage.js`)
-**Special behaviour:**
-- Uses `t.stockUnit` (transaction-level field) — NOT `it.stockUnit` (item-level, does not exist)
-- Note: `settings` is passed by App.js at the call site but the component only destructures `{ transaction, onClose }` — settings are not used internally
-- Uses 100% inline styles for `printWithPortal()` compatibility
-- **Escape key**: Calls `onClose()`. No visibility guard needed — conditionally mounted.
+**StatusBadge props:** `status: string`
+- `STATUS.LUNAS` → green "✅ Lunas"
+- `STATUS.PARTIAL_INCOME` → amber "⏳ Piutang"
+- `STATUS.PARTIAL_EXPENSE` → red "⏳ Utang"
+- Legacy v1/v2 strings also handled
+
+**TypeBadge props:** `type: "income" | "expense"`
+- `income` → green "🛒 Penjualan"
+- `expense` → red "📦 Pembelian"
+
+**Rule: Always pass a value from `STATUS` constants or `deriveStatus()` — never raw strings in new code.**
+
+---
+
+### Component: `DueBadge`
+**File:** `DueBadge.js` (32 lines)
+**Props:** `dueDate?: string | null`, `outstanding?: number`
+Renders `—` when `outstanding <= 0`. Shows days remaining, "Hari Ini", or overdue in red.
+**Used by:** `TransactionPage.js`, `Contacts.js`, `Outstanding.js`
+
+---
+
+### Component: `MultiSelect`
+**File:** `MultiSelect.js` (151 lines)
+**Props:** `options: string[]`, `selected: string[]`, `onChange: (selected) => void`, `placeholder?: string`
+Zero-dependency multi-select dropdown with search and select-all.
+**Used by:** `Reports.js` (client filter, item filter)
+
+---
+
+### Component: `RupiahInput`
+**File:** `RupiahInput.js` (107 lines)
+**Props:** `value: number`, `onChange: (numericValue: number) => void`, `hasError?: boolean`, `placeholder?: string`
+Displays comma-formatted Rupiah, returns integer. Does NOT forward refs — use a wrapping div ref.
+**Used by:** `TransactionForm.js`, `PaymentUpdateModal.js`
+
+---
+
+### Component: `StockChip`
+**File:** `StockChip.js` (25 lines)
+**Props:** `qty: number`, `unit: string`, `threshold?: number` (defaults 10)
+Green (>threshold), amber (0..threshold), red (<0).
+**Used by:** `Inventory.js`
+
+---
+
+### Component: `Toast`
+**File:** `Toast.js` (50 lines)
+**Props:** `message: string`, `type?: "success" | "error"`, `onDone?: () => void`
+Auto-dismisses after 3 seconds. Slide-in animation. `onDone` called after dismiss.
+**Used by:** Every page with mutation actions.
+
+---
+
+### Component: `SaveIndicator`
+**File:** `SaveIndicator.js` (41 lines)
+**Props:** `saved: boolean`
+Tracks `false → true` transition via `prevSaved` ref. Records `nowTime()` into `lastSavedTime` state ONLY on actual save event. Renders "Tersimpan ✓ · HH:MM" when saved, "Menyimpan..." when unsaved.
+**Used by:** `TransactionPage.js` (rendered in page header)
+
+---
+
+### Component: `Icon`
+**File:** `Icon.js` (72 lines)
+**Props:** `name: string`, `size?: number` (defaults 16), `color?: string` (defaults "currentColor")
+Inline SVG icons by name.
+**Valid names:** `income, expense, inventory, contacts, reports, warning, settings, menu, plus, edit, trash, invoice, check, clock, search, download, link, upload, eye, adjust, truck, dashboard`
+**Used by:** App.js sidebar, all pages and some components.
 
 ---
 
@@ -356,7 +321,7 @@ const [deleteTx, setDeleteTx] = useState(null);  // null = hidden
 - Modal never holds its own `isOpen` boolean state
 - `onCancel`/`onClose` always sets parent state back to `null`
 
-**Escape key is implemented on ALL modals.** Standard pattern:
+**Escape key on ALL modals.** Standard pattern:
 ```js
 useEffect(() => {
   const handleKeyDown = (e) => { if (e.key === "Escape") onClose(); };
@@ -365,15 +330,15 @@ useEffect(() => {
 }, [onClose]);
 ```
 
-**Important distinction by mount style:**
+**Mount style distinction:**
 
-- **Always-mounted modals** (rendered unconditionally, visibility controlled by data prop being null):
+- **Always-mounted** (rendered unconditionally, visibility from data prop being null):
   `DeleteConfirmModal`, `PaymentUpdateModal`, `StockWarningModal`
-  → Escape effect **must** guard with `if (!data) return` before registering, to avoid firing when the modal is invisible.
+  → Escape effect **must** guard with `if (!data) return` before registering.
 
-- **Conditionally-mounted modals** (parent only renders them when open):
+- **Conditionally-mounted** (parent only renders when open):
   `InvoiceModal`, `SuratJalanModal`, `ReportModal`, `CategoryModal`, `StockReportModal`
-  → Escape effect runs **without guard** — the component only exists when visible.
+  → Escape effect runs **without guard** — component only exists when visible.
 
 ---
 
@@ -400,9 +365,10 @@ STATUS.PARTIAL_EXPENSE // "Belum Lunas (Utang)"
 ## New Component Checklist
 
 - [ ] Create `src/components/NewComponent.js`
-- [ ] Default export
+- [ ] Default export (named exports for Badge variants only)
 - [ ] JSDoc comment at top with `@param` types
 - [ ] Import from `utils/` only — never from `pages/`
 - [ ] Guard against null/undefined props at top of component body
+- [ ] If modal: follow Modal Contract above (null-data guard, Escape key, correct mount style)
 - [ ] Add to Component Inventory section in this file
 - [ ] Run `npm run build` — zero errors

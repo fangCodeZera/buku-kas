@@ -34,22 +34,23 @@ const deleteTransaction = (id) =>
 - Modal visibility: `deleteTx`, `paidTx`, `expandedTxId`
 - Toast messages: `toast`
 - Transient error strings: `error`
-- `submitting` — boolean debounce flag to prevent double-submit (new pattern)
-- `fieldErrors` — object with per-field error messages (new pattern)
+- `submitting` — boolean debounce flag to prevent double-submit
+- `fieldErrors` — object with per-field error messages
 - `nameError` — inline contact name error string
+- `exportFormat` — JSON/CSV selector in Settings and Reports
 
 **What must go through App.js `update()`:**
-- Any change to `transactions[]`, `contacts[]`, `stockAdjustments[]`, or `settings`
-- Payment applications, transaction edits, deletions, imports
+- Any change to `transactions[]`, `contacts[]`, `stockAdjustments[]`, `itemCatalog[]`, `itemCategories[]`, or `settings`
+- Payment applications, transaction edits, deletions, imports, archive/unarchive
 
 **Global state variables in App.js:**
 - `data` — full app data
 - `page` — current page key
-- `saved` — save status (true = saved)
+- `saved` — save status (true = saved to localStorage)
 - `saveError` — localStorage quota error flag
 - `editTx` — opens global EditModal; null = hidden
 - `invoiceTxs` — opens InvoiceModal; null = hidden
-- `sidebarOpen` — sidebar expanded/collapsed
+- `sidebarOpen` — sidebar expanded/collapsed (auto-collapses at ≤1024px)
 - `reportItemFilter` — pre-filter from Inventory "Lihat" button
 - `outstandingHighlight` — array of tx IDs to highlight on Outstanding page
 - `reportState` — `{ transactions, dateFrom, dateTo }` — opens ReportModal
@@ -61,7 +62,7 @@ const deleteTransaction = (id) =>
 - `stockMap` — from `computeStockMap(data.transactions, data.stockAdjustments)`
 - `balanceMap` — per-contact AR/AP summary, passed to Contacts.js
 - `globalAR`, `globalAP` — from `computeARandAP(data.transactions)`
-- `penjualanBadge`, `pembelianBadge`, `outstandingBadge` — near-due counts
+- `penjualanBadge`, `pembelianBadge`, `outstandingBadge` — near-due counts (≤3 days)
 - `alertCount` — negative + low-stock item count
 
 **`persist` and `retrySave` pattern:**
@@ -75,7 +76,7 @@ const persist = useCallback((nd) => {
   saveTimer.current = setTimeout(() => {
     const ok = saveData(nd);
     if (ok) { setSaved(true); setSaveError(false); }
-    else { setSaveError(true); } // quota exceeded
+    else { setSaveError(true); }
   }, 500);
 }, []);
 
@@ -91,13 +92,13 @@ const retrySave = useCallback(() => {
 ## CSS Conventions
 
 **Naming pattern:** BEM-inspired kebab-case. Block name + double-dash modifier.
-Examples: `.btn`, `.btn--primary`, `.summary-card`, `.summary-card__label`, `.summary-card__value`
+Examples: `.btn`, `.btn--primary`, `.summary-card`, `.summary-card__label`
 
 **Color values used throughout (from styles.css):**
 
 | Role | Value |
 |------|-------|
-| Primary blue | `#007BFF` / `#007bff` |
+| Primary blue | `#007bff` |
 | Dark blue | `#0056b3` |
 | Deep navy | `#1e3a5f` |
 | Green (income/lunas) | `#10b981` |
@@ -128,9 +129,10 @@ Table:      .data-table, .th-center, .th-right, .th-check, .td-center, .td-right
             .td-check, .td-date, .td-name, .td-value, .row-alt
 Badges:     .badge, .nav-item__badge, .stock-chip, .order-num, .stock-delta
 Text:       .text-muted, .whitespace-nowrap, .hidden, .section-subtitle
-Alerts:     .alert-banner, .alert-banner--warning, .alert-banner--danger
+Alerts:     .alert-banner, .alert-banner--warning, .alert-banner--danger, .backup-banner
 Filter:     .filter-bar, .pagination-bar
 Modals:     .modal-overlay, .modal-box, .modal-title, .modal-body, .modal-actions
+            .edit-modal-overlay, .edit-modal-box
 Toast:      .toast
 Progress:   .payment-progress-wrap, .payment-progress-bar, .payment-progress-bar__fill
             .payment-progress-pct
@@ -143,16 +145,13 @@ Save:       .save-indicator, .save-indicator.saved, .save-indicator.saving
             .save-indicator__time
 Contact:    .contact-item, .contact-item--active, .contact-detail-card
 Form valid: .form-input--error, .form-select--error, .field-error
-Inventory:  .inventory-cards, .inventory-item-card, .inventory-item-card__header
-            .inventory-item-card__name, .inventory-item-card__unit-badge
-            .inventory-item-card__stock-row, .inventory-item-card__subtype-name
-            .inventory-item-card__subtype-qty, .inventory-item-card__subtype-actions
-            .inventory-item-card__add-subtype, .inventory-item-card__body
-            .inventory-item-card__header-actions, .inventory-item-card--uncataloged
+Inventory:  .inventory-group-header (hover locked to #1e3a5f — do not remove)
+            .inventory-item-card, .inventory-item-card__* (full set in styles.css)
+            .inventory-item-card--uncataloged
 Utility:    .whitespace-nowrap, .hidden, .md\:table-cell
 ```
 
-**Rule:** Always search `styles.css` before adding a new CSS class. The file is ~2800+ lines and likely has what you need.
+**Rule:** Always search `styles.css` before adding a new CSS class. The file is 2917 lines and likely has what you need.
 
 ---
 
@@ -176,7 +175,6 @@ export const addDays = (dateStr, days) => {
 
 **Division safety pattern** (copy exactly):
 ```js
-// From Reports.js
 const combinedProportionalOutstanding = totalTransactionValue > 0
   ? Math.round((combinedSubtotal / totalTransactionValue) * totalOutstanding)
   : 0;
@@ -198,8 +196,8 @@ const out = Number(t.outstanding) || 0;
 
 **Submit debounce pattern** (prevents double-submit):
 ```js
-// Local state: const [submitting, setSubmitting] = useState(false);
-const handleSubmit = async () => {
+const [submitting, setSubmitting] = useState(false);
+const handleSubmit = () => {
   if (submitting) return;
   setSubmitting(true);
   try {
@@ -213,7 +211,7 @@ const handleSubmit = async () => {
 
 **Field error pattern** (inline validation):
 ```js
-// Local state: const [fieldErrors, setFieldErrors] = useState({});
+const [fieldErrors, setFieldErrors] = useState({});
 const validate = () => {
   const errs = {};
   if (!form.name.trim()) errs.name = "Nama wajib diisi.";
@@ -225,20 +223,51 @@ const validate = () => {
 // {fieldErrors.name && <div className="field-error">{fieldErrors.name}</div>}
 ```
 
-**Catalog autocomplete pattern** (TransactionForm item selection):
-```js
-// TransactionForm uses smart text inputs (not <select> dropdowns) per item row:
-// 1. Nama Barang: free text, autocomplete against itemCatalog[].name
+---
+
+## Catalog Autocomplete System
+
+TransactionForm uses smart text inputs (not `<select>` dropdowns) for item selection:
+
+```
+// Per item row — two text inputs with live autocomplete:
+// 1. Nama Barang: free text, autocomplete against activeCatalog[].name
+//    activeCatalog = itemCatalog filtered to non-archived (or has active subtypes)
 // 2. Tipe (shown after Nama Barang filled): free text, autocomplete against
-//    matchedCatalog.subtypes[] — user can type new subtypes not yet in catalog
+//    matchedCatalog.subtypes[] filtered by archivedSubtypes[]
+//    — user can type new subtypes not yet in catalog
 // Unit auto-fills from catalogItem.defaultUnit when catalog match found
 //
 // mapItemFromCatalog(itemName):
 //   - Walks catalog to find matching name or name + " " + subtype
-//   - Not found: returns empty catalogItemId (free-text fallback, no __legacy__ sentinel)
+//   - Not found: returns empty catalogItemId (free-text fallback)
 //
 // New item/subtype confirmation dialog fires before save if user typed an unknown name.
 // On confirm, calls onAddCatalogItem() or onUpdateCatalogItem() to grow the catalog.
 //
 // Required props: itemCatalog, onAddCatalogItem, onUpdateCatalogItem
+// Optional props: onUnarchiveCatalogItem, onUnarchiveSubtype, onUnarchiveContact
+```
+
+---
+
+## Date Handling — UTC vs Local
+
+**USE UTC** (`T00:00:00Z` + `getUTCDate`/`setUTCDate`):
+- `addDays(dateStr, days)` — date arithmetic
+- `diffDays(date1, date2)` — days between dates
+- `dueDate` calculations — always UTC
+- Badge counts in App.js (todayMs + `T00:00:00Z`)
+
+**USE LOCAL** (`getFullYear()`/`getMonth()`/`getDate()`):
+- `today()` — must return user's local date
+- `transaction.date` field — what date the user sees on their clock
+- `viewDate` in TransactionPage/Inventory — calendar date the user is viewing
+
+**Why this matters:** Jakarta is UTC+7. At 2AM on March 15, `new Date().toISOString().slice(0,10)` returns `"2026-03-14"` (UTC). Wrong for display. But `new Date("2026-03-15T00:00:00")` (no Z) in Jakarta = `"2026-03-14T17:00:00Z"`, causing date arithmetic to lose a day. Both bugs are fixed; don't reintroduce them.
+
+**NEVER DO:**
+```js
+new Date(dateStr + "T00:00:00")   // no Z = local time = off-by-1 in UTC+
+new Date().toISOString().slice(0, 10)  // UTC date, not local
 ```

@@ -74,6 +74,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
   useEffect(() => {
     if (initItemFilter) onClearItemFilter();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [typeFilter,      setTypeFilter]      = useState("all"); // "all" | "income" | "expense"
   const [toast,           setToast]           = useState(null);
   const [confirmCount,    setConfirmCount]    = useState(null);
   const [exportFormat,    setExportFormat]    = useState("csv");
@@ -114,6 +115,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
   const filtered = useMemo(
     () =>
       [...transactions]
+        .filter((t) => typeFilter === "all" || t.type === typeFilter)
         .filter((t) => (!dateFrom || t.date >= dateFrom) && (!dateTo || t.date <= dateTo))
         .filter((t) => selectedClients.length === 0 || selectedClients.includes(t.counterparty))
         .filter((t) => selectedItems.length === 0 ||
@@ -125,7 +127,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
           const tb = b.createdAt ? new Date(b.createdAt).getTime() : new Date((b.date||"1970-01-01")+"T"+(b.time||"00:00")+":00Z").getTime();
           return tb - ta;
         }),
-    [transactions, dateFrom, dateTo, selectedClients, selectedItems]
+    [transactions, dateFrom, dateTo, selectedClients, selectedItems, typeFilter]
   );
 
   const income  = useMemo(() => filtered.filter((t) => t.type === "income").reduce((a, t) => {
@@ -217,11 +219,12 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
 
   const activeFiltersLabel = useMemo(() => {
     const parts = [];
+    if (typeFilter !== "all") parts.push(typeFilter === "income" ? "Penjualan" : "Pembelian");
     if (selectedClients.length > 0) parts.push(selectedClients.length === 1 ? `Klien: ${selectedClients[0]}` : `${selectedClients.length} klien dipilih`);
     if (selectedItems.length > 0)   parts.push(selectedItems.length === 1   ? `Item: ${selectedItems[0]}`   : `${selectedItems.length} item dipilih`);
     if (dateFrom) parts.push(`${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`);
     return parts.length ? parts.join(" · ") : "Semua transaksi";
-  }, [selectedClients, selectedItems, dateFrom, dateTo]);
+  }, [typeFilter, selectedClients, selectedItems, dateFrom, dateTo]);
 
   return (
     <div>
@@ -299,6 +302,26 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
               Item / Barang {selectedItems.length > 0 && <span className="ms-filter-badge">{selectedItems.length}</span>}
             </label>
             <MultiSelect options={itemOptions} selected={selectedItems} onChange={setSelectedItems} placeholder="Semua Item" allLabel="Semua Item" />
+          </div>
+          <div>
+            <label className="field-label">Jenis Transaksi</label>
+            <div style={{ display:"flex", gap:6 }}>
+              <button
+                onClick={() => setTypeFilter("all")}
+                className={`type-filter-btn${typeFilter === "all" ? " active-all" : ""}`}
+                aria-pressed={typeFilter === "all"}
+              >Semua</button>
+              <button
+                onClick={() => setTypeFilter("income")}
+                className={`type-filter-btn${typeFilter === "income" ? " active-income" : ""}`}
+                aria-pressed={typeFilter === "income"}
+              >Penjualan</button>
+              <button
+                onClick={() => setTypeFilter("expense")}
+                className={`type-filter-btn${typeFilter === "expense" ? " active-expense" : ""}`}
+                aria-pressed={typeFilter === "expense"}
+              >Pembelian</button>
+            </div>
           </div>
           {hasActiveFilters && (
             <div style={{ display:"flex", alignItems:"flex-end" }}>
