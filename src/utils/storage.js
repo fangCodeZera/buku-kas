@@ -7,7 +7,7 @@ import { deriveStatus, LEGACY_STATUS_MAP } from "./statusUtils";
 import { addDays, generateId, normItem } from "./idGenerators";
 
 export const STORAGE_KEY    = "bukukas_data_v2";
-export const NORM_VERSION   = 17; // bump when a new migration is needed
+export const NORM_VERSION   = 18; // bump when a new migration is needed
 
 export const defaultData = {
   transactions: [],
@@ -24,6 +24,7 @@ export const defaultData = {
     maxBankAccountsOnInvoice: 1,
     lastExportDate: null,
     defaultDueDateDays: 14,
+    printerType: "A4",
   },
 };
 
@@ -53,6 +54,7 @@ const tc = (s) =>
  * v15: add `archived` (boolean) and `archivedSubtypes` (string[]) fields to all catalog items
  * v16: add `archived` (boolean) field to all contacts
  * v17: deduplicate itemCatalog by normalized name (merge subtypes from duplicates into first entry)
+ * v18: add printerType field to settings ("A4" default)
  */
 function migrateData(data) {
   if ((data._normVersion || 0) >= NORM_VERSION) return data;
@@ -349,6 +351,11 @@ function migrateData(data) {
       }
     }
     itemCatalog = deduped;
+  }
+
+  // ── v18: add printerType to settings ────────────────────────────────────────
+  if (!settings.printerType) {
+    settings = { ...settings, printerType: "A4" };
   }
 
   return { ...data, transactions, contacts, settings, stockAdjustments, itemCategories, itemCatalog, _normVersion: NORM_VERSION };

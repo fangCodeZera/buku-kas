@@ -22,7 +22,7 @@ import { STORAGE_KEY } from "../utils/storage";
  * }} props
  */
 const Settings = ({ settings, transactions = [], onSave, onImport }) => {
-  const [form,        setForm]        = useState(settings);
+  const [form,        setForm]        = useState({ ...settings, printerType: settings.printerType || "A4" });
   const [flash,       setFlash]       = useState(false);
   const [submitting,  setSubmitting]  = useState(false);
   const [importMsg,   setImportMsg]   = useState("");
@@ -274,6 +274,38 @@ const Settings = ({ settings, transactions = [], onSave, onImport }) => {
           disabled={submitting}
           className="btn btn-primary"
           aria-label="Simpan pengaturan"
+        >
+          {flash ? "✓ Tersimpan!" : "Simpan Pengaturan"}
+        </button>
+      </div>
+
+      {/* ── Print format ── */}
+      <div className="settings-card">
+        <h3 className="settings-section-title">Format Cetak</h3>
+        <p style={{ fontSize: 13, color: "#6b7280", marginTop: 0, marginBottom: 16 }}>
+          Untuk cetak Invoice dan Surat Jalan.
+        </p>
+        <label style={labelStyle}>Format Cetak Default</label>
+        <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+          <button
+            onClick={() => set("printerType", "A4")}
+            className={`filter-btn${form.printerType === "A4" ? " filter-btn--active" : ""}`}
+            aria-pressed={form.printerType === "A4"}
+          >A4 (Standar)</button>
+          <button
+            onClick={() => set("printerType", "Dot Matrix")}
+            className={`filter-btn${form.printerType === "Dot Matrix" ? " filter-btn--active" : ""}`}
+            aria-pressed={form.printerType === "Dot Matrix"}
+          >Dot Matrix</button>
+        </div>
+        <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8, marginBottom: 14 }}>
+          Simpan pengaturan untuk menerapkan perubahan.
+        </p>
+        <button
+          onClick={handleSave}
+          disabled={submitting}
+          className="btn btn-primary"
+          aria-label="Simpan format cetak"
         >
           {flash ? "✓ Tersimpan!" : "Simpan Pengaturan"}
         </button>

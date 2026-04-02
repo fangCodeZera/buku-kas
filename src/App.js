@@ -32,6 +32,7 @@ import SuratJalanModal    from "./components/SuratJalanModal";
 import Icon               from "./components/Icon";
 import ReportModal        from "./components/ReportModal";
 import StockReportModal   from "./components/StockReportModal";
+import DotMatrixPrintModal from "./components/DotMatrixPrintModal";
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
 import { loadData, saveData, STORAGE_KEY } from "./utils/storage";
@@ -115,6 +116,7 @@ export default function App() {
   const [backupBannerDismissed, setBackupBannerDismissed] = useState(false);
   const [suratJalanTx, setSuratJalanTx] = useState(null);
   const [showStockReport, setShowStockReport] = useState(false);
+  const [dotMatrixData, setDotMatrixData] = useState(null); // { transaction, mode } | null
   const saveTimer = useRef();
 
   // ── Persistence ─────────────────────────────────────────────────────────────
@@ -701,6 +703,23 @@ export default function App() {
     setPage("outstanding");
   };
 
+  // Print routing: checks printerType before opening A4 or dot matrix modal
+  const handleInvoice = (txOrArray) => {
+    if (data.settings.printerType === "Dot Matrix") {
+      setDotMatrixData({ transaction: txOrArray, mode: "invoice" });
+    } else {
+      setInvoiceTxs(txOrArray);
+    }
+  };
+
+  const handleSuratJalan = (tx) => {
+    if (data.settings.printerType === "Dot Matrix") {
+      setDotMatrixData({ transaction: tx, mode: "suratJalan" });
+    } else {
+      setSuratJalanTx(tx);
+    }
+  };
+
   // ── Backup Warning Logic ──────────────────────────────────────────────────
   const lastExport = data.settings.lastExportDate;
   const daysSinceExport = lastExport
@@ -869,10 +888,10 @@ export default function App() {
             onAdd={addTransaction}
             onEdit={setEditTx}
             onDelete={deleteTransaction}
-            onInvoice={setInvoiceTxs}
+            onInvoice={handleInvoice}
             onMarkPaid={applyPayment}
             onCreateContact={createContact}
-            onSuratJalan={setSuratJalanTx}
+            onSuratJalan={handleSuratJalan}
             onNavigateOutstanding={navigateToOutstanding}
             onAddCatalogItem={addCatalogItem}
             onUpdateCatalogItem={updateCatalogItem}
@@ -893,7 +912,7 @@ export default function App() {
             onAdd={addTransaction}
             onEdit={setEditTx}
             onDelete={deleteTransaction}
-            onInvoice={setInvoiceTxs}
+            onInvoice={handleInvoice}
             onMarkPaid={applyPayment}
             onCreateContact={createContact}
             onNavigateOutstanding={navigateToOutstanding}
@@ -972,7 +991,7 @@ export default function App() {
             transactions={data.transactions}
             contacts={data.contacts}
             settings={data.settings}
-            onInvoice={setInvoiceTxs}
+            onInvoice={handleInvoice}
             onReport={setReportState}
             initItemFilter={reportItemFilter}
             onClearItemFilter={() => setReportItemFilter(null)}
@@ -984,7 +1003,7 @@ export default function App() {
             onEdit={setEditTx}
             onMarkPaid={applyPayment}
             onDelete={deleteTransaction}
-            onInvoice={setInvoiceTxs}
+            onInvoice={handleInvoice}
             highlightTxIds={outstandingHighlight}
             onClearHighlight={() => setOutstandingHighlight(null)}
           />
@@ -1048,6 +1067,14 @@ export default function App() {
           transactions={data.transactions}
           stockAdjustments={data.stockAdjustments || []}
           onClose={() => setShowStockReport(false)}
+        />
+      )}
+      {dotMatrixData && (
+        <DotMatrixPrintModal
+          transaction={dotMatrixData.transaction}
+          mode={dotMatrixData.mode}
+          settings={data.settings}
+          onClose={() => setDotMatrixData(null)}
         />
       )}
     </div>
