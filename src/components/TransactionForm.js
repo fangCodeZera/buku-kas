@@ -27,6 +27,7 @@ const blankItem = () => ({
   catalogItemId: "",    // matched catalog item id (empty = no match / new item)
   matchedCatalog: null, // matched catalog item object for quick subtype access
   sackQty: "", weightKg: "", pricePerKg: 0, subtotal: 0,
+  duplicateConfirmed: false, // user confirmed this row is a duplicate and will be merged on save
 });
 
 /**
@@ -160,6 +161,8 @@ const TransactionForm = ({
   const [showTypeSugg, setShowTypeSugg] = useState(null);
   // New-item confirmation dialog state
   const [newItemConfirm, setNewItemConfirm] = useState(null); // { items: [...], unit: string } | null
+  // Duplicate item confirmation dialog state
+  const [duplicateItemConfirm, setDuplicateItemConfirm] = useState(null); // { rowIndex, itemName } | null
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -212,6 +215,8 @@ const TransactionForm = ({
       const items = f.items.map((it, i) => {
         if (i !== idx) return it;
         const updated = { ...it, [key]: val };
+        // Reset duplicate confirmation when the merge key fields change
+        if (key === "pricePerKg") updated.duplicateConfirmed = false;
         const p = key === "pricePerKg" ? Number(val) || 0 : Number(it.pricePerKg) || 0;
         const w = key === "weightKg"   ? parseFloat(val) || 0 : parseFloat(it.weightKg) || 0;
         updated.subtotal = p * w;
@@ -234,6 +239,7 @@ const TransactionForm = ({
           itemTypeInput: "",          // clear type when base name changes
           catalogItemId: cat ? cat.id : "",
           matchedCatalog: cat || null,
+          duplicateConfirmed: false,
         };
       });
       return { ...f, items };
@@ -253,7 +259,7 @@ const TransactionForm = ({
   const handleItemTypeChange = (idx, value) => {
     setForm((f) => ({
       ...f,
-      items: f.items.map((it, i) => i !== idx ? it : { ...it, itemTypeInput: value }),
+      items: f.items.map((it, i) => i !== idx ? it : { ...it, itemTypeInput: value, duplicateConfirmed: false }),
     }));
   };
 
@@ -268,6 +274,7 @@ const TransactionForm = ({
           itemTypeInput: "",
           catalogItemId: cat.id,
           matchedCatalog: cat,
+          duplicateConfirmed: false,
         }
       );
       return { ...f, items };
@@ -279,8 +286,33 @@ const TransactionForm = ({
     setShowTypeSugg(null);
     setForm((f) => ({
       ...f,
-      items: f.items.map((it, i) => i !== idx ? it : { ...it, itemTypeInput: sub }),
+      items: f.items.map((it, i) => i !== idx ? it : { ...it, itemTypeInput: sub, duplicateConfirmed: false }),
     }));
+  };
+
+  /** Check if the item at idx is a duplicate of another row (same normalized name + same price).
+   *  If so, open the duplicate confirmation dialog. Skip if already confirmed. */
+  const checkDuplicate = (idx, nameInput, typeInput, price) => {
+    if (!nameInput.trim() || !price) return;
+    if (form.items[idx]?.duplicateConfirmed) return;
+    const fullNorm = normItem(
+      typeInput.trim() ? nameInput.trim() + " " + typeInput.trim() : nameInput.trim()
+    );
+    const hasDup = form.items.some((it, j) => {
+      if (j === idx) return false;
+      const otherNorm = normItem(
+        it.itemTypeInput.trim()
+          ? it.itemNameInput.trim() + " " + it.itemTypeInput.trim()
+          : it.itemNameInput.trim()
+      );
+      return otherNorm === fullNorm && Number(it.pricePerKg) === Number(price);
+    });
+    if (hasDup) {
+      const displayName = typeInput.trim()
+        ? nameInput.trim() + " " + typeInput.trim()
+        : nameInput.trim();
+      setDuplicateItemConfirm({ rowIndex: idx, itemName: displayName });
+    }
   };
 
   // ── Counterparty (client) selector ──────────────────────────────────────────
@@ -456,6 +488,7 @@ const TransactionForm = ({
   const doStockCheckAndSave = (unit) => {
     if (form.type === "income") {
       const negItems = [];
+      const committedMap = {}; // tracks qty committed by prior items for the same normalized name
       for (const item of form.items) {
         const combinedName = item.itemTypeInput.trim()
           ? `${item.itemNameInput.trim()} ${item.itemTypeInput.trim()}`
@@ -475,10 +508,13 @@ const TransactionForm = ({
         const prevQty   = prevKey ? parseFloat(
           (initial.items?.find((i) => normItem(i.itemName) === prevKey) ?? initial)?.sackQty || 0
         ) : 0;
-        const projected = cur + prevQty - qty;
+        const alreadyCommitted = committedMap[key] || 0;
+        const available = cur + prevQty - alreadyCommitted;
+        const projected = available - qty;
         if (projected < 0) {
-          negItems.push({ item: combinedName, current: cur + prevQty, selling: qty });
+          negItems.push({ item: combinedName, current: available, selling: qty });
         }
+        committedMap[key] = alreadyCommitted + qty;
       }
       if (negItems.length > 0 && onStockWarning) {
         onStockWarning({
@@ -597,13 +633,30 @@ const TransactionForm = ({
     doStockCheckAndSave(unit);
   };
 
+  /** Merge duplicate items (same normalized name + same pricePerKg) by summing their quantities. */
+  const mergeItems = (rawItems) => {
+    const groups = new Map();
+    for (const item of rawItems) {
+      const key = normItem(item.itemName) + "|" + (item.pricePerKg || 0);
+      if (groups.has(key)) {
+        const ex = groups.get(key);
+        ex.sackQty  += item.sackQty;
+        ex.weightKg += item.weightKg;
+        ex.subtotal += item.subtotal;
+      } else {
+        groups.set(key, { ...item });
+      }
+    }
+    return Array.from(groups.values());
+  };
+
   const doSave = (unit) => {
     const firstItem    = form.items[0] || {};
     const totalSackQty = form.items.reduce((s, it) => s + (parseFloat(it.sackQty) || 0), 0);
     const totalVal     = form.items.reduce((s, it) => s + (it.subtotal || 0), 0);
     onSave({
       ...form,
-      items: form.items.map((it) => {
+      items: mergeItems(form.items.map((it) => {
         const fullName = it.itemTypeInput.trim()
           ? normalizeTitleCase(it.itemNameInput.trim() + " " + it.itemTypeInput.trim())
           : normalizeTitleCase(it.itemNameInput.trim());
@@ -614,7 +667,7 @@ const TransactionForm = ({
           pricePerKg: Number(it.pricePerKg)    || 0,
           subtotal:   it.subtotal              || 0,
         };
-      }),
+      })),
       // Backward compat: top-level fields mirror first item
       itemName: firstItem.itemTypeInput?.trim()
         ? normalizeTitleCase(firstItem.itemNameInput.trim() + " " + firstItem.itemTypeInput.trim())
@@ -831,6 +884,19 @@ const TransactionForm = ({
               ? `${item.itemNameInput.trim()} ${item.itemTypeInput.trim()}`
               : item.itemNameInput.trim();
             const curStock = combinedName ? stockMap[normItem(combinedName)] : null;
+            // For income: subtract qty already committed by prior rows with the same item
+            const committedQty = form.type === "income"
+              ? form.items.slice(0, idx).reduce((sum, it) => {
+                  const otherName = normItem(
+                    it.itemTypeInput.trim()
+                      ? it.itemNameInput.trim() + " " + it.itemTypeInput.trim()
+                      : it.itemNameInput.trim()
+                  );
+                  return normItem(combinedName) === otherName
+                    ? sum + (parseFloat(it.sackQty) || 0)
+                    : sum;
+                }, 0)
+              : 0;
 
             return (
               <div
@@ -858,6 +924,13 @@ const TransactionForm = ({
                   )}
                 </div>
 
+                {/* Duplicate merge indicator */}
+                {item.duplicateConfirmed && (
+                  <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 6 }}>
+                    ⚠ Akan digabung saat simpan
+                  </div>
+                )}
+
                 {/* NAMA BARANG + TIPE inputs */}
                 <div style={{ display: "grid", gridTemplateColumns: item.itemNameInput.trim() ? "3fr 2fr" : "1fr", gap: 10, marginBottom: 10 }}>
 
@@ -869,7 +942,10 @@ const TransactionForm = ({
                       value={item.itemNameInput}
                       onChange={(e) => handleItemNameChange(idx, e.target.value)}
                       onFocus={() => setShowItemSugg(idx)}
-                      onBlur={() => setTimeout(() => setShowItemSugg(null), 200)}
+                      onBlur={() => {
+                        setTimeout(() => setShowItemSugg(null), 200);
+                        checkDuplicate(idx, item.itemNameInput, item.itemTypeInput, item.pricePerKg);
+                      }}
                       placeholder="Ketik nama barang..."
                       style={iStyle("", !!ie.itemName)}
                       className="item-name-input"
@@ -920,7 +996,10 @@ const TransactionForm = ({
                         value={item.itemTypeInput}
                         onChange={(e) => handleItemTypeChange(idx, e.target.value)}
                         onFocus={() => setShowTypeSugg(idx)}
-                        onBlur={() => setTimeout(() => setShowTypeSugg(null), 200)}
+                        onBlur={() => {
+                          setTimeout(() => setShowTypeSugg(null), 200);
+                          checkDuplicate(idx, item.itemNameInput, item.itemTypeInput, item.pricePerKg);
+                        }}
                         placeholder="Tipe (opsional)"
                         style={iStyle("")}
                         autoComplete="off"
@@ -962,13 +1041,20 @@ const TransactionForm = ({
                   )}
                 </div>
 
-                {/* Stock display for combined item name */}
+                {/* Stock display for combined item name (adjusted for prior rows in same form) */}
                 {item.itemNameInput.trim() && !ie.itemName && (
                   <div style={{ fontSize: 12, marginBottom: 8 }}>
-                    {curStock
-                      ? <span style={{ color: curStock.qty > 0 ? "#10b981" : "#ef4444" }}>
-                          Stok: {Number(curStock.qty).toFixed(2)} {curStock.unit || "karung"}
-                        </span>
+                    {curStock != null
+                      ? (() => {
+                          const aq = curStock.qty - committedQty;
+                          const sq = parseFloat(item.sackQty) || 0;
+                          const color = aq > 0 ? "#10b981" : "#ef4444";
+                          return (
+                            <span style={{ color }}>
+                              Stok: {aq.toFixed(2)} {curStock.unit || "karung"}
+                            </span>
+                          );
+                        })()
                       : <span style={{ color: "#9ca3af" }}>Stok: 0 karung</span>
                     }
                   </div>
@@ -1002,7 +1088,10 @@ const TransactionForm = ({
                     <label className="item-field-label">Harga per Kg (IDR)</label>
                     <RupiahInput
                       value={item.pricePerKg}
-                      onChange={(v) => setItem(idx, "pricePerKg", v)}
+                      onChange={(v) => {
+                        setItem(idx, "pricePerKg", v);
+                        checkDuplicate(idx, item.itemNameInput, item.itemTypeInput, v);
+                      }}
                       hasError={!!ie.pricePerKg}
                     />
                     {ie.pricePerKg && <span className="field-error">{ie.pricePerKg}</span>}
@@ -1052,14 +1141,22 @@ const TransactionForm = ({
                 {/* Stock delta preview */}
                 {curStock && item.sackQty !== "" && !isNaN(item.sackQty) && (
                   <div className="stock-preview" style={{ marginTop: 8 }}>
-                    Stok saat ini:{" "}
-                    <strong style={{ color: curStock.qty > 0 ? "#10b981" : "#ef4444" }}>
-                      {Number(curStock.qty).toFixed(2)}
-                    </strong>
-                    {" → "}
-                    <strong style={{ color: "#007bff" }}>
-                      {(curStock.qty + (form.type === "expense" ? 1 : -1) * parseFloat(item.sackQty)).toFixed(2)} karung
-                    </strong>
+                    {(() => {
+                      const aqd = curStock.qty - committedQty;
+                      const projected = aqd + (form.type === "expense" ? 1 : -1) * parseFloat(item.sackQty);
+                      return (
+                        <>
+                          Stok saat ini:{" "}
+                          <strong style={{ color: aqd > 0 ? "#10b981" : "#ef4444" }}>
+                            {aqd.toFixed(2)}
+                          </strong>
+                          {" → "}
+                          <strong style={{ color: "#007bff" }}>
+                            {projected.toFixed(2)} karung
+                          </strong>
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -1275,6 +1372,48 @@ const TransactionForm = ({
           </div>
         );
       })()}
+
+      {/* ── Duplicate item confirmation dialog ── */}
+      {duplicateItemConfirm && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-box" style={{ maxWidth: 420 }}>
+            <h3 className="modal-title">⚠ Barang Duplikat</h3>
+            <div className="modal-body">
+              <p>
+                <strong>"{duplicateItemConfirm.itemName}"</strong> sudah ada di daftar dengan harga
+                yang sama. Item akan digabung otomatis saat disimpan. Lanjutkan?
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setForm((f) => ({
+                    ...f,
+                    items: f.items.map((it, i) =>
+                      i === duplicateItemConfirm.rowIndex ? blankItem() : it
+                    ),
+                  }));
+                  setDuplicateItemConfirm(null);
+                }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setItem(duplicateItemConfirm.rowIndex, "duplicateConfirmed", true);
+                  setDuplicateItemConfirm(null);
+                }}
+              >
+                Ya, Lanjutkan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

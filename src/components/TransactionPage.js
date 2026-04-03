@@ -446,7 +446,7 @@ const TransactionPage = ({
                         {Array.isArray(t.items) && t.items.length > 1 ? (
                           <div className="item-list">
                             {t.items.map((item, idx) => (
-                              <div key={idx} className="item-list__row">
+                              <div key={idx} className="item-list__row" style={{ minHeight: 28, alignItems: "flex-start" }}>
                                 <span className="item-list__bullet">•</span>
                                 <span>{item.itemName}</span>
                               </div>
@@ -464,7 +464,7 @@ const TransactionPage = ({
                         {Array.isArray(t.items) && t.items.length > 1 ? (
                           <div className="item-list" style={{ alignItems: "center" }}>
                             {t.items.map((item, idx) => (
-                              <div key={idx} className="item-list__row" style={{ justifyContent: "center" }}>
+                              <div key={idx} className="item-list__row" style={{ justifyContent: "center", minHeight: 28, alignItems: "flex-start" }}>
                                 <span className="stock-delta" style={{ color: type === "income" ? "#ef4444" : "#10b981" }}>
                                   {type === "income" ? "-" : "+"}{parseFloat(item.sackQty) || 0} karung
                                 </span>
