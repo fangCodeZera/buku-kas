@@ -50,10 +50,14 @@
   4. Unit auto-fills from `catalogItem.defaultUnit` when catalog match found.
 - **`mapItemFromCatalog(itemName)`**: Used in edit mode. Walks catalog for matching `name` or `name + " " + subtype`. Falls back to free text with empty `catalogItemId` — no `__legacy__` sentinel.
 - **New-item confirmation dialog** (`newItemConfirm` state): Fires before save when user typed unknown item or subtype. On confirm, calls `onAddCatalogItem()` or `onUpdateCatalogItem()`, then proceeds to save.
-- **`submitting` state**: Prevents double-submit. Save button disabled while true.
+- **`submitting` state**: `setSubmitting(true)` called as the very first line of `handleSubmit` (before validation) to block rapid double-clicks. Each early-return validation path calls `setSubmitting(false)`. `doSave` wrapped in `try/finally { setSubmitting(false) }`.
 - **`errors` object**: Per-field inline validation. Error border via `iStyle()` helper. Error text via `.field-error` class.
 - **Auto-focus on mount**: Counterparty input (`cpInputRef`) receives focus. `skipNextFocusOpen` ref prevents programmatic focus from opening counterparty dropdown.
-- **Multi-item stock warning**: Collects ALL items that would push stock negative into `negItems[]`, calls `onStockWarning({ items: negItems, item: negItems[0].item, current: ..., selling: ..., onConfirm, onCancel })`.
+- **Duplicate item detection**: `checkDuplicate()` scans `items[]` for rows with same `normItem(name)` + `pricePerKg`. If duplicate found and neither row has `duplicateConfirmed: true`, shows `duplicateItemConfirm` dialog. User confirms (merge) or cancels (fix manually).
+- **Merge-on-save (`mergeItems`)**: Called in `doSave()` after duplicate confirmation. Groups rows by `normItem(name) + pricePerKg`, sums `sackQty`/`weightKg`/`subtotal`.
+- **Sequential stock deduction**: Each row computes `committedQty` (sum of same item's qty from prior rows) to show accurate per-row stock feedback.
+- **`customDueDays` minimum**: Enforced via `Math.max(1, Number(customDueDays) || 14)` in `doSave`.
+- **Multi-item stock warning**: Collects ALL items that would push stock negative into `negItems[]`, calls `onStockWarning({ items: negItems, item: negItems[0].item, current: ..., selling: ..., onConfirm, onCancel: () => setSubmitting(false) })`.
 - Income transactions: txnId field is read-only (auto-generated on save).
 - Expense transactions: txnId field is editable — `txnIdInput` state (supplier invoice number).
 
@@ -92,6 +96,7 @@
 - Shows live preview of result (Lunas vs remaining)
 - Optional "Catatan Pembayaran" note field (max 100 chars, single line)
 - Note resets when transaction changes
+- **`submitting` state**: `handleConfirm` guards with `if (submitting) return`, then `setSubmitting(true)` before `try/finally { setSubmitting(false) }`. Button shows "Memproses..." and is `disabled` when submitting.
 - **Auto-focus**: Uses `amountFieldRef` with `querySelector("input")` inside a ref-div (RupiahInput does not forward refs). Auto-focus fires when `transaction` changes (50ms setTimeout).
 - **Always-mounted**: Escape key handler guards with `if (!transaction) return`.
 
@@ -144,6 +149,8 @@
 **Special behaviour:**
 - Print button triggers `printWithPortal()`. Uses 100% inline styles on printable area for portal compatibility — do NOT migrate to CSS classes.
 - Shows bank accounts filtered by `showOnInvoice === true`, limited by `maxBankAccountsOnInvoice`.
+- **Invoice date**: Uses `fmtDate(transactions[0]?.date)` — shows the transaction's date, NOT today's date.
+- **Long item names**: `table-layout: fixed` + `maxWidth: 200px` + `word-break: break-word` on item cells prevents layout overflow.
 - **Invoice notes**: `invoiceNote` text area entered at print time — NOT saved to transaction data (local modal state only). Deliberate product decision.
 - **Conditionally-mounted**: Escape key no guard needed.
 
@@ -175,8 +182,9 @@
 **Used by:** `App.js` (global `suratJalanTx` state; button is in `TransactionPage.js`)
 **Special behaviour:**
 - Uses `t.stockUnit` (transaction-level) — NOT `it.stockUnit` (item-level, does not exist).
+- **Long item names**: `table-layout: fixed` + `maxWidth: 250px` + `word-break: break-word` on item cells.
 - `settings` prop is passed by App.js but NOT destructured/used by the component internally.
-- Uses 100% inline styles for print portal compatibility.
+- Uses 100% inline styles for print portal compatibility. Known quirk: some older sections use CSS class names (`modal-overlay`, `modal-box`) while the printable area uses inline styles — comment in source documents this inconsistency.
 - **Conditionally-mounted**: Escape key no guard needed.
 
 ---

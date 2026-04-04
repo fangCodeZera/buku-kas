@@ -68,7 +68,9 @@
 
 **Table layout:** Group header rows (dark navy `.inventory-group-header`) → base item row → indented subtype rows. "LAINNYA — UNC" group catches items not matched to any category.
 
-**Ledger:** Expandable per-item panel (`expandedStockItem`) showing all transactions and adjustments, running totals, date filter, type filter, PERIODE quick-select (Hari Ini / Minggu Ini / Bulan Ini / Semua) with active state.
+**Ledger:** Expandable per-item panel (`expandedStockItem`) showing all transactions and adjustments, running totals, date filter, type filter, PERIODE quick-select (Hari Ini / Minggu Ini / Bulan Ini / Semua) with active state. Ledger accumulates ALL matching item rows in multi-item transactions (does not break on first match). Sort order matches `computeStockMap` comparator (date+time string first, then `createdAt` as tiebreak).
+
+**eslint-disable note:** The `useEffect` syncing `ledgerDateFrom`/`ledgerDateTo` to `inventoryDate` intentionally excludes `expandedStockItem` from its deps array — the effect should only fire on date changes, not when the expanded item changes. Comment in source explains this.
 
 ---
 
@@ -213,6 +215,8 @@
 **Key local state:** `search`, `toast`, `deleteConfirm` (contact object), `submitting`
 
 **Delete eligibility:** `txCountMap[name.toLowerCase()] === 0` — permanent delete only for zero-transaction contacts.
+
+**Delete flow:** Uses its own inline confirm dialog (not `DeleteConfirmModal`). "Hapus Permanen" button only rendered when `txCount === 0` — so the confirm dialog can never be triggered for a contact that has transactions. Comment in source documents this.
 
 ---
 

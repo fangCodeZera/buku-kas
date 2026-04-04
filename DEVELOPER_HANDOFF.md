@@ -37,30 +37,30 @@ src/
     categoryUtils.js               310  generateCode, generateCodes, autoDetectCategories, getCategoryForItem
     paymentUtils.js                 20  computePaymentProgress
     balanceUtils.js                 72  computeARandAP, computeCashIncome, computeCashExpense, computeNetCash
-    printUtils.js                   30  printWithPortal
+    printUtils.js                   47  printWithPortal, escapeHtml
     stockUtils.js                  114  computeStockMap, computeStockMapForDate
-    textFormatter.js              ~200  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan)
+    textFormatter.js              ~387  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText)
 
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
-    Inventory.js                  1662  Stock inventory with catalog table + ledger
-    Contacts.js                    634  Contact list + detail panel + transaction history
-    Reports.js                     476  Date-range financial report + CSV/JSON export
+    Inventory.js                  1665  Stock inventory with catalog table + ledger
+    Contacts.js                    639  Contact list + detail panel + transaction history
+    Reports.js                     501  Date-range financial report + CSV/JSON export
     Outstanding.js                 557  AR/AP outstanding transactions view
-    Settings.js                   ~500  Business settings + JSON/CSV backup/restore + printer type toggle
+    Settings.js                   ~553  Business settings + JSON/CSV backup/restore + printer type toggle
     ArchivedItems.js               286  Archived catalog items — restore or delete
-    ArchivedContacts.js            219  Archived contacts — restore or delete
+    ArchivedContacts.js            222  Archived contacts — restore or delete
 
   components/
     TransactionPage.js             600  Shared base: Penjualan + Pembelian day-view
-    TransactionForm.js            1282  Full transaction input form (multi-item, catalog autocomplete)
+    TransactionForm.js            1430  Full transaction input form (multi-item, catalog autocomplete)
     PaymentHistoryPanel.js         290  Expandable payment timeline
-    PaymentUpdateModal.js          174  Record payment modal
+    PaymentUpdateModal.js          183  Record payment modal
     DeleteConfirmModal.js          105  Dual-mode (transaction/contact) delete confirm
     InvoiceModal.js                337  Printable A4 invoice
-    SuratJalanModal.js             284  Printable A4 delivery note
-    DotMatrixPrintModal.js        ~150  Dot matrix preview + print modal (invoice & surat jalan)
+    SuratJalanModal.js             289  Printable A4 delivery note
+    DotMatrixPrintModal.js         122  Dot matrix preview + print modal (invoice & surat jalan)
     StockWarningModal.js            77  Negative-stock warning
     CategoryModal.js               488  Category management with drag-and-drop
     StockReportModal.js            330  Printable stock report
@@ -333,7 +333,10 @@ Always pass BOTH arguments — never omit `stockAdjustments`.
 `computePaymentProgress(value, outstanding)` → `{ percent }` or `null` if value=0.
 
 ### src/utils/printUtils.js
-`printWithPortal(htmlString)` — injects into `#print-portal`, adds `print-portal-active` class to body, calls `window.print()` synchronously, cleans up in finally{}.
+| Export | Description |
+|--------|-------------|
+| `printWithPortal(htmlString)` | Injects into `#print-portal`, adds `print-portal-active` class to body, calls `window.print()` synchronously, cleans up in `finally{}`. |
+| `escapeHtml(str)` | Escapes `&`, `<`, `>`, `"`, `'` for safe insertion into raw HTML template literals outside React. **Not** for JSX text nodes (React escapes those automatically — applying escapeHtml to JSX would cause double-encoding). |
 
 ### src/utils/textFormatter.js (NEW — v18)
 ASCII layout engine for dot matrix printing. Pure functions, no React, no DOM.
@@ -341,10 +344,16 @@ ASCII layout engine for dot matrix printing. Pure functions, no React, no DOM.
 **Exports:**
 | Function | Signature | Returns |
 |----------|-----------|---------|
-| `formatInvoice(transactions, settings)` | `(Array, Object)` | `string` — full 80-column ASCII invoice |
-| `formatSuratJalan(transaction, settings)` | `(Object, Object)` | `string` — full 80-column ASCII surat jalan |
+| `formatInvoice(transactions, settings, options)` | `(Array, Object, Object?)` | `string` — full 80-column ASCII invoice |
+| `formatSuratJalan(transaction, settings, options)` | `(Object, Object, Object?)` | `string` — full 80-column ASCII surat jalan |
+
+**Options objects:**
+- `formatInvoice` options: `{ note: string }` — appended as "Catatan Invoice:" in footer
+- `formatSuratJalan` options: `{ platNomor: string, catatanPengiriman: string }` — plate number in meta, delivery note in footer
 
 **Internal helpers:** `padRight`, `padLeft`, `centerText`, `fmtNum`, `fmtRp`, `getItemsArray`, `wrapText`
+
+**`wrapText(str, width)`:** Word-boundary wrapping that returns an array of strings each ≤ width chars. Hard-truncates a single word that alone exceeds the width. Used by `formatItemsTable` and `formatSuratJalanItems` for long item names via `flatMap`.
 
 **Invoice column widths (total = 80):**
 No(3) + `" | "` + Barang(24) + `" | "` + Krg(6) + `" | "` + Berat(9) + `" | "` + Harga/Kg(10) + `" | "` + Subtotal(13)
@@ -483,9 +492,21 @@ Full transaction input form. Uses smart text inputs (NOT `<select>`) for item se
 
 **`activeCatalog`:** Filters out fully-archived items that have no active subtypes. Archived base items with at least one active subtype still appear.
 
-**Key state:** `form` (all field values), `items[]` (per-row state), `cpOpen`/`cpQuery` (counterparty dropdown), `itemNameOpen`/`itemTypeOpen` (per-row dropdowns), `errors` (per-field), `submitting`, `newItemConfirm`, `txnIdInput` (expense only), `skipNextFocusOpen` ref.
+**Duplicate item detection (`checkDuplicate`):** Before each save, scans `items[]` for rows with the same `normItem(name)` + `pricePerKg`. If a duplicate pair is found and neither row has `duplicateConfirmed: true`, shows `duplicateItemConfirm` dialog. User can confirm (rows will be merged) or cancel (to fix manually).
 
-**Multi-item stock warning:** Collects ALL items that would go negative into `negItems[]`, calls `onStockWarning({ items: negItems, item, current, selling, onConfirm, onCancel })`.
+**Merge-on-save (`mergeItems`):** Called in `doSave()` after duplicate confirmation. Groups rows by `normItem(name) + pricePerKg` and sums `sackQty`, `weightKg`, `subtotal`. Merged result replaces the `items[]` before the transaction is saved.
+
+**`blankItem()`:** Each new item row initializes with `duplicateConfirmed: false`.
+
+**Sequential stock deduction:** Each item row in the multi-item form computes `committedQty` — the sum of the same item's qty from all prior rows. This value is used to adjust the "stok saat ini" and "akan dijual" display lines, giving accurate per-row stock feedback during form entry.
+
+**Double-submit guard:** `setSubmitting(true)` is called as the very first line of `handleSubmit`, before validation runs (prevents race on rapid double-click). Each validation early-return path calls `setSubmitting(false)`. `doSave` is wrapped in `try/finally { setSubmitting(false) }`.
+
+**`customDueDays` minimum:** `doSave` enforces `Math.max(1, Number(customDueDays) || 14)` — prevents 0-day due dates.
+
+**Key state:** `form` (all field values), `items[]` (per-row state with `duplicateConfirmed`), `cpOpen`/`cpQuery` (counterparty dropdown), `itemNameOpen`/`itemTypeOpen` (per-row dropdowns), `errors` (per-field), `submitting`, `newItemConfirm`, `duplicateItemConfirm`, `txnIdInput` (expense only), `skipNextFocusOpen` ref.
+
+**Multi-item stock warning:** Collects ALL items that would go negative into `negItems[]`, calls `onStockWarning({ items: negItems, item, current, selling, onConfirm, onCancel: () => setSubmitting(false) })`.
 
 ### PaymentHistoryPanel.js
 Rendered in a `<tr colSpan={...}>` below a transaction row. Vertical timeline.
@@ -513,9 +534,13 @@ Uses `t.stockUnit` (transaction-level). Inline styles throughout for print porta
 - `mode`: `"invoice"` | `"suratJalan"`
 - `transaction`: array when mode is `"invoice"` (matches `invoiceTxs`), single object when mode is `"suratJalan"`
 
-Computes formatted ASCII text via `useMemo` using `formatInvoice()` or `formatSuratJalan()` from `textFormatter.js`. Renders preview in `.dot-matrix-preview` `<pre>` block (monospace, gray background, scrollable). "Konfirmasi Cetak" button calls `printWithPortal()` with inline-styled `<pre>` (font: Courier New, 12pt, line-height 1). "Batal" button and Escape key close the modal. Conditionally mounted — no Escape guard needed.
+**Local state:** `invoiceNote`, `platNomor`, `catatanPengiriman` — input fields rendered above the preview, conditional on `mode`.
 
-HTML in print output is escaped (`<` → `&lt;`, `>` → `&gt;`) to prevent injection.
+Computes formatted ASCII text via `useMemo` (deps: `transaction, mode, settings, invoiceNote, platNomor, catatanPengiriman`) using `formatInvoice(transaction, settings, { note: invoiceNote })` or `formatSuratJalan(transaction, settings, { platNomor, catatanPengiriman })`. Preview updates live as user types in input fields.
+
+Renders preview in `.dot-matrix-preview` `<pre>` block (monospace, gray background, scrollable). "Konfirmasi Cetak" button manually escapes `&`, `<`, `>` then calls `printWithPortal()` with inline-styled `<pre>` (Courier New, 12pt, line-height 1). "Batal" button and Escape key close the modal. Conditionally mounted — no Escape guard needed.
+
+Note: Uses manual `replace(/&/g, ...)` chain in `handlePrint` rather than `escapeHtml()` from `printUtils.js` — both approaches are equivalent.
 
 ### StockWarningModal.js
 **Props:** `data: { items[], item?, current?, selling?, onConfirm, onCancel? } | null, onClose`
@@ -650,6 +675,14 @@ Key patterns to never reintroduce:
 - `generateTxnId` with expense transactions: filter to income only (function handles this internally)
 - `editLog[].prev` as full copy: only store the 11-field slim snapshot
 - `deleteInventoryItem` checking only `t.itemName`: must check all `items[]` entries
+- `setSubmitting(true)` after validation: always set it as the first line of `handleSubmit` to block rapid double-clicks
+- `doSave` without `try/finally`: always wrap save logic so `setSubmitting(false)` runs on any throw
+- `customDueDays = 0`: enforce minimum of 1 via `Math.max(1, ...)` in doSave
+- `ensureContact` missing `archived: false`: auto-created contacts must include all required fields
+- `escapeHtml` applied to JSX text variables: React escapes JSX text automatically; applying `escapeHtml` to JSX variables causes double-encoding. Only use `escapeHtml` in raw HTML template literals (like `printWithPortal` strings).
+- Ledger loop breaking on first item match: must accumulate ALL matching item rows in multi-item transactions
+- CSV export without BOM: always prepend `\uFEFF` for Excel compatibility with Indonesian characters
+- Invoice date from `today()`: always use `transactions[0]?.date` for invoice date
 
 ---
 
@@ -658,9 +691,13 @@ Key patterns to never reintroduce:
 - `orderNum` field exists on all transactions but is never used in UI. Legacy field.
 - `stockQty` top-level field on transactions is legacy — multi-item support uses `items[].sackQty`. Both coexist.
 - `TransactionPage.js` lives in `src/components/` not `src/pages/`, despite being a page-level component. This is because both Penjualan and Pembelian import it as a component.
-- `fmtDate()` in `idGenerators.js` parses dates as local midnight (`T00:00:00` without Z), which is correct for display purposes but inconsistent with UTC-only addDays/diffDays.
+- `fmtDate()` in `idGenerators.js` parses dates as local midnight (`T00:00:00` without Z), which is correct for display purposes but inconsistent with UTC-only addDays/diffDays. A comment in the source explains this intentional exception.
 - `balanceMap` in App.js builds its `txs[]` array per-contact using `[...map[key].txs, t]` which creates new array references in a loop — technically O(n²) but acceptable for current data sizes.
 - `Reports.js` `onInvoice` prop is not used in the current code (the import reference was removed).
 - The sidebar's AR/AP display uses emoji (💚/❤️) for piutang/hutang — not accessible.
 - `SuratJalanModal` receives `settings` prop from App.js but the component only destructures `{ transaction, onClose }` — settings are unused internally.
 - `Settings.js` and `Reports.js` both have an `exportFormat` local state (JSON/CSV selector) independently — they don't share state.
+- `DotMatrixPrintModal` uses a manual `replace()` chain to escape HTML in `handlePrint` rather than importing `escapeHtml` from `printUtils.js` — both are equivalent; no functional difference.
+- `M9` (`contactBalance` in TransactionForm recomputed on every render) is still present — acceptable for current data sizes.
+- `autoDetectCategories` in `categoryUtils.js` is O(n²) worst case — acceptable for <200 items. Performance comment in source.
+- `SuratJalanModal` uses transaction-level `t.stockUnit` for all item rows — per-item unit field doesn't exist on `items[]` (known design limitation).

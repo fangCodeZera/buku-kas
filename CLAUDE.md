@@ -323,6 +323,20 @@ Search the web before implementing anything in this list. Do not rely on memory 
 - **FIXED (2026-03-29):** PERIODE quick-select buttons had no active state. Fix: `activePeriod` drives button class. File: `src/pages/Inventory.js`
 - **FIXED (2026-03-29):** CategoryModal allowed duplicate group names. Fix: `commitName` validates via `normItem()`. File: `src/components/CategoryModal.js`
 - **FIXED (2026-03-29):** Manual code edits on parent groups didn't cascade to children. Fix: `commitCode` finds children by prefix match. File: `src/components/CategoryModal.js`
+- **FIXED (2026-04-05):** `doSave` had no `try/finally` — `submitting` stayed true permanently on throw. Fix: wrapped in `try/finally { setSubmitting(false) }`. File: `src/components/TransactionForm.js`
+- **FIXED (2026-04-05):** `setSubmitting(true)` was called after validation — race on double-click. Fix: moved to first line of `handleSubmit`. File: `src/components/TransactionForm.js`
+- **FIXED (2026-04-05):** `customDueDays = 0` created immediately-overdue transactions. Fix: `Math.max(1, ...)` in `doSave`. File: `src/components/TransactionForm.js`
+- **FIXED (2026-04-05):** `PaymentUpdateModal` had no double-submit guard. Fix: `submitting` state + `try/finally`. File: `src/components/PaymentUpdateModal.js`
+- **FIXED (2026-04-05):** Inventory ledger missed duplicate same-item rows in multi-item transactions. Fix: accumulate ALL matching item rows. File: `src/pages/Inventory.js`
+- **FIXED (2026-04-05):** Reports.js CSV missing BOM — Excel garbled Indonesian characters. Fix: prepend `\uFEFF`. File: `src/pages/Reports.js`
+- **FIXED (2026-04-05):** InvoiceModal showed today's date instead of transaction date. Fix: `fmtDate(transactions[0]?.date)`. File: `src/components/InvoiceModal.js`
+- **FIXED (2026-04-05):** `ensureContact` missing `archived: false`. Fix: added to object literal. File: `src/App.js`
+- **FIXED (2026-04-05):** `categoryUtils.js` used `.push()` on state-adjacent objects. Fix: immutable spread. File: `src/utils/categoryUtils.js`
+- **FIXED (2026-04-05):** `Contacts.js` `handleSave` had no `finally` around `setSubmitting(false)`. Fix: wrapped in `try/finally`. File: `src/pages/Contacts.js`
+- **FIXED (2026-04-05):** Reports.js export filename was `Laporan__sd_.csv` for all-time period. Fix: `dateFrom || "semua"`. File: `src/pages/Reports.js`
+- **FIXED (2026-04-05):** XSS via innerHTML in `printWithPortal` A4 path. Fix: `escapeHtml` export + import validation with `stripTags`. Files: `src/utils/printUtils.js`, `src/pages/Settings.js`
+- **FIXED (2026-04-05):** Import validation insufficient. Fix: financial bounds, nested array checks, `settings` structure, HTML tag stripping. File: `src/pages/Settings.js`
+- **FIXED (2026-04-05):** Vestigial legacy `@media print` block interfered with Ctrl+P. Fix: removed. File: `src/styles.css`
 
 ---
 
@@ -339,3 +353,4 @@ Search the web before implementing anything in this list. Do not rely on memory 
 | 2026-03-28 | Updated Rule 16 (smart text inputs); added 6 new bug fixes | Post-inventory-redesign |
 | 2026-03-29 | Added 3 more bug fixes (PERIODE, duplicate names, code cascade) | CategoryModal + Inventory |
 | 2026-04-02 | Full rewrite from source code. NORM_VERSION=17. Added v15/v16/v17 migrations, archive system (Rules 18–19), ArchivedItems + ArchivedContacts pages, archive/unarchive handlers, stockUtils.js, exportFormat state. Confirmed TransactionPage.js lives in components/. | Comprehensive code audit |
+| 2026-04-05 | NORM_VERSION=18. Added 15 new bug fixes to Section 9 (XSS/import validation, double-submit, invoice date, CSV BOM, ledger accumulation, etc.). DEVELOPER_HANDOFF.md updated with all line counts, new TransactionForm behaviors, DotMatrixPrintModal state, escapeHtml export, textFormatter signatures with options param. | Post-audit fixes session |

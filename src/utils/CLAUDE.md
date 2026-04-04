@@ -69,6 +69,9 @@ returns:  string — e.g. "15 Mar 2026" (Indonesian locale) or "-" if falsy
 throws:   never
 rules:    Always use for displaying dates. Never format dates manually.
           Parses as local midnight (T00:00:00 without Z) — correct for display.
+          Source comment explains this intentional exception to the UTC rule: using
+          local midnight is correct here because we want to show the date as the user
+          entered it. Do NOT add Z — that would shift display dates in UTC+ zones.
 example:  fmtDate("2026-03-15") → "15 Mar 2026"
           fmtDate(null)         → "-"
 ```
