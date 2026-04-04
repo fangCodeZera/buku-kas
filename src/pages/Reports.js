@@ -180,9 +180,11 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         });
       }
     });
+    const BOM = "\uFEFF";
+    const csvContent = BOM + rows.map((r) => r.map(q).join(",")).join("\n");
     const a = document.createElement("a");
-    a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(rows.map((r) => r.map(q).join(",")).join("\n"));
-    a.download = `Laporan_${dateFrom}_sd_${dateTo}.csv`;
+    a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
+    a.download = `Laporan_${dateFrom || "semua"}_sd_${dateTo || "semua"}.csv`;
     a.click();
   };
 

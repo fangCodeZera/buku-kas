@@ -154,6 +154,47 @@ const Settings = ({ settings, transactions = [], onSave, onImport }) => {
             throw new Error(`Tipe transaksi tidak valid: "${tx.type}" (id: ${tx.id})`);
         }
 
+        // ── Financial bounds check ─────────────────────────────────────────
+        for (const tx of parsed.transactions) {
+          if (typeof tx.outstanding === "number" && (tx.outstanding < 0 || tx.outstanding > tx.value))
+            throw new Error(
+              `Nilai outstanding tidak valid pada transaksi id: ${tx.id} (harus antara 0 dan nilai transaksi)`
+            );
+          if (tx.items !== undefined && !Array.isArray(tx.items))
+            throw new Error(`Field 'items' pada transaksi id: ${tx.id} harus berupa array`);
+          if (tx.paymentHistory !== undefined && !Array.isArray(tx.paymentHistory))
+            throw new Error(`Field 'paymentHistory' pada transaksi id: ${tx.id} harus berupa array`);
+        }
+
+        // ── Settings structure ─────────────────────────────────────────────
+        if (parsed.settings !== undefined) {
+          if (typeof parsed.settings !== "object" || Array.isArray(parsed.settings))
+            throw new Error("Field 'settings' harus berupa objek");
+          if (parsed.settings.bankAccounts !== undefined && !Array.isArray(parsed.settings.bankAccounts))
+            throw new Error("Field 'settings.bankAccounts' harus berupa array");
+        }
+
+        // ── Strip HTML tags from string fields ─────────────────────────────
+        const stripTags = (s) => (typeof s === "string" ? s.replace(/<[^>]*>/g, "") : s);
+        for (const tx of parsed.transactions) {
+          if (typeof tx.counterparty === "string") tx.counterparty = stripTags(tx.counterparty);
+          if (typeof tx.itemName === "string") tx.itemName = stripTags(tx.itemName);
+          if (Array.isArray(tx.items)) {
+            tx.items = tx.items.map((it) =>
+              typeof it.itemName === "string" ? { ...it, itemName: stripTags(it.itemName) } : it
+            );
+          }
+        }
+        for (const c of parsed.contacts) {
+          if (typeof c.name === "string") c.name = stripTags(c.name);
+        }
+        if (parsed.settings) {
+          if (typeof parsed.settings.businessName === "string")
+            parsed.settings.businessName = stripTags(parsed.settings.businessName);
+          if (typeof parsed.settings.address === "string")
+            parsed.settings.address = stripTags(parsed.settings.address);
+        }
+
         onImport(parsed);
         setImportMsg("✅ Data berhasil diimpor!");
       } catch (err) {

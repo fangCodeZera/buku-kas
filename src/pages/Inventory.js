@@ -149,6 +149,8 @@ const Inventory = ({
       setLedgerDateFrom(inventoryDate);
       setLedgerDateTo(inventoryDate);
     }
+  // expandedStockItem intentionally excluded — we only want this effect to fire
+  // on date/filter changes, not when the expanded item changes
   }, [inventoryDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-focus qty input when adjustment modal opens
@@ -290,10 +292,8 @@ const Inventory = ({
         ? t.items
         : [{ itemName: t.itemName, sackQty: t.sackQty != null ? t.sackQty : (t.stockQty || 0) }];
 
-      let matched = false;
       for (const it of itemList) {
-        if (normItem(it.itemName) !== expandedStockItem || matched) continue;
-        matched = true;
+        if (normItem(it.itemName) !== expandedStockItem) continue;
         const qty   = it.sackQty != null ? it.sackQty : (it.stockQty != null ? it.stockQty : 0);
         const delta = t.type === "expense" ? qty : -qty;
         entries.push({
@@ -325,12 +325,15 @@ const Inventory = ({
       });
     }
 
-    // Oldest first for running total computation
+    // Oldest first — same comparator as computeStockMap so running totals match stock snapshots
     entries.sort((a, b) => {
-      const da = (a.date || "1970-01-01") + "T" + (a.time || "00:00");
-      const db = (b.date || "1970-01-01") + "T" + (b.time || "00:00");
-      if (da !== db) return da.localeCompare(db);
-      return (a.createdAt || "").localeCompare(b.createdAt || "");
+      const ta = a.createdAt
+        ? new Date(a.createdAt).getTime()
+        : new Date((a.date || "1970-01-01") + "T" + (a.time || "00:00") + ":00Z").getTime();
+      const tb = b.createdAt
+        ? new Date(b.createdAt).getTime()
+        : new Date((b.date || "1970-01-01") + "T" + (b.time || "00:00") + ":00Z").getTime();
+      return ta - tb;
     });
 
     let running = 0;

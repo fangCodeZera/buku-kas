@@ -10,7 +10,7 @@
  *  - Validates: 1 ≤ paid ≤ outstanding
  *  - onConfirm(paidAmount) is called; parent handles the state update
  */
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import RupiahInput from "./RupiahInput";
 import { fmtIDR, fmtDate } from "../utils/idGenerators";
 
@@ -25,15 +25,17 @@ const PaymentUpdateModal = ({ transaction, onConfirm, onCancel }) => {
   const [paidAmount,   setPaidAmount]   = useState(0);
   const [error,        setError]        = useState("");
   const [paymentNote,  setPaymentNote]  = useState("");
+  const [submitting,   setSubmitting]   = useState(false);
 
   const amountFieldRef = useRef(null);
 
-  // Reset amount input whenever a new transaction is opened
+  // Reset all state whenever a new transaction is opened
   useEffect(() => {
     if (transaction) {
       setPaidAmount(transaction.outstanding || 0);
       setError("");
       setPaymentNote("");
+      setSubmitting(false);
     }
   }, [transaction]);
 
@@ -62,6 +64,7 @@ const PaymentUpdateModal = ({ transaction, onConfirm, onCancel }) => {
   const newOutstanding = isFull ? 0 : outstanding - paidAmount;
 
   const handleConfirm = () => {
+    if (submitting) return;
     if (!paidAmount || paidAmount <= 0) {
       setError("Jumlah pembayaran harus lebih dari 0");
       return;
@@ -71,7 +74,12 @@ const PaymentUpdateModal = ({ transaction, onConfirm, onCancel }) => {
       return;
     }
     setError("");
-    onConfirm(paidAmount, paymentNote.trim());
+    setSubmitting(true);
+    try {
+      onConfirm(paidAmount, paymentNote.trim());
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -162,8 +170,9 @@ const PaymentUpdateModal = ({ transaction, onConfirm, onCancel }) => {
             onClick={handleConfirm}
             className="btn btn-paid"
             aria-label="Konfirmasi pembayaran"
+            disabled={submitting}
           >
-            💳 Konfirmasi Bayar
+            {submitting ? "Memproses..." : "💳 Konfirmasi Bayar"}
           </button>
         </div>
 

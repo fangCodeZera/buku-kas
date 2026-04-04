@@ -218,7 +218,7 @@ const formatInvoiceFooter = (transactions, settings, note = "") => {
         acct.accountNumber   ? "- " + acct.accountNumber : "",
         acct.accountName     ? "a.n. " + acct.accountName : "",
       ].filter(Boolean);
-      lines.push("  " + parts.join(" "));
+      lines.push(padRight("  " + parts.join(" "), LINE_WIDTH));
     });
   }
 

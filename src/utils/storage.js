@@ -201,6 +201,9 @@ function migrateData(data) {
   const itemCategories = data.itemCategories || [];
 
   // ── v13: auto-populate itemCatalog from itemCategories + transactions ───────
+  // Note: generateId() uses ms-precision timestamps. In tight loops, theoretical
+  // collision risk exists (~1 in 78 billion per pair). Acceptable for one-time
+  // migration of typically <100 items.
   let itemCatalog = data.itemCatalog || [];
   if (itemCatalog.length === 0) {
     // Collect all item names + units from transactions and stock adjustments
@@ -327,6 +330,10 @@ function migrateData(data) {
   }));
 
   // ── v17: deduplicate itemCatalog by normalized name ──────────────────────
+  // Design note: seenNames[key] and deduped entries share object references.
+  // Mutations to 'existing' (e.g., existing.subtypes = [...]) propagate to both
+  // because they point to the same object. Do NOT spread-copy 'existing' before
+  // mutating — that would break the dedup merge.
   {
     const seenNames = {};
     const deduped = [];

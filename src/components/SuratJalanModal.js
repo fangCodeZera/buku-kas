@@ -11,6 +11,11 @@
  *   - @media print hides #root, shows #print-portal
  *   - window.print() is synchronous — class removed after dialog closes
  *   - No body class on screen, no grey flash, no iframe, no new tab
+ *
+ * NOTE: This component uses CSS classes (via styles.css) for print layout,
+ * unlike InvoiceModal which uses 100% inline styles. Both approaches work
+ * with printWithPortal as long as styles.css is loaded. If styles are ever
+ * lazy-loaded or split, migrate printable content to inline styles.
  */
 import { useState, useRef, useEffect } from "react";
 import { fmtDate } from "../utils/idGenerators";

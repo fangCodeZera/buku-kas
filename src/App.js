@@ -146,6 +146,9 @@ export default function App() {
     }
   }, [data]);
 
+  // Not wrapped in useCallback — uses setData functional updater which is stable,
+  // so no stale closure risk. If update is ever passed as a prop to memoized children,
+  // consider wrapping in useCallback([persist]).
   /** Immutable state updater that also trigger persistence */
   const update = (fn) =>
     setData((d) => {
@@ -204,6 +207,8 @@ export default function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // Note: totalIncome/totalExpense are CASH-BASIS (value - outstanding), not gross values.
+  // The Contacts page labels these as "Total Penjualan/Pembelian" which may imply gross.
   // ── Pre-computed per-contact balance map (O(tx) once, not O(contacts×tx)) ─
   // Shape: { [lowerCaseName]: { totalIncome, totalExpense, ar, ap, netOut, txs } }
   const balanceMap = useMemo(() => {
@@ -240,7 +245,7 @@ export default function App() {
   const ensureContact = (cp, contacts) => {
     const normName = normalizeTitleCase(cp);
     if (contacts.some((c) => c.name.toLowerCase() === normName.toLowerCase())) return contacts;
-    return [...contacts, { id: generateId(), name: normName, email: "", phone: "", address: "" }];
+    return [...contacts, { id: generateId(), name: normName, email: "", phone: "", address: "", archived: false }];
   };
 
   /** Normalize item/counterparty fields before any save */

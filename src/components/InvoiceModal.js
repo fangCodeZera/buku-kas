@@ -183,7 +183,7 @@ const InvoiceModal = ({ transactions, settings, onClose }) => {
           <div style={s.metaBlock}>
             <h3 id="invoice-title" style={s.metaTitle}>INVOICE</h3>
             <div style={s.metaRow}>Invoice No: <span style={s.metaValue}>{invNumber}</span></div>
-            <div style={s.metaRow}>Tanggal: <span style={s.metaValue}>{fmtDate(today())}</span></div>
+            <div style={s.metaRow}>Tanggal: <span style={s.metaValue}>{fmtDate(transactions[0]?.date)}</span></div>
             {outstanding > 0 && (
               <div style={s.metaRow}>Jatuh Tempo: <span style={s.metaValue}>{fmtDate(dueDate)}</span></div>
             )}

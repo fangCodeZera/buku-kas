@@ -183,7 +183,10 @@ const ArchivedContacts = ({
         </div>
       )}
 
-      {/* ── Permanent delete confirm ── */}
+      {/* ── Permanent delete confirm ──
+           Note: this page uses its own inline confirm dialog, NOT DeleteConfirmModal.
+           The "Hapus Permanen" button is only rendered when txCount === 0 (line above),
+           so this dialog can never be triggered for a contact that has transactions. */}
       {deleteConfirm && (
         <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 380 }}>

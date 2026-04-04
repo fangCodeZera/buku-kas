@@ -466,7 +466,7 @@ const TransactionPage = ({
                             {t.items.map((item, idx) => (
                               <div key={idx} className="item-list__row" style={{ justifyContent: "center", minHeight: 28, alignItems: "flex-start" }}>
                                 <span className="stock-delta" style={{ color: type === "income" ? "#ef4444" : "#10b981" }}>
-                                  {type === "income" ? "-" : "+"}{parseFloat(item.sackQty) || 0} karung
+                                  {type === "income" ? "-" : "+"}{parseFloat(item.sackQty) || 0} {t.stockUnit || "karung"}
                                 </span>
                               </div>
                             ))}

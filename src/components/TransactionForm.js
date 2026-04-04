@@ -305,6 +305,8 @@ const TransactionForm = ({
           ? it.itemNameInput.trim() + " " + it.itemTypeInput.trim()
           : it.itemNameInput.trim()
       );
+      // Safe: pricePerKg is always an integer from RupiahInput.
+      // If this ever accepts decimal input, switch to Math.abs(a - b) < 1.
       return otherNorm === fullNorm && Number(it.pricePerKg) === Number(price);
     });
     if (hasDup) {
@@ -533,13 +535,15 @@ const TransactionForm = ({
 
   const handleSubmit = () => {
     if (submitting) return;
+    setSubmitting(true); // H7: set before validation so rapid double-clicks are blocked immediately
     // Validate required txnId for expense before general validation
     if (form.type === "expense" && (!txnIdInput || !txnIdInput.trim())) {
       setTxnIdError("No. Invoice Supplier wajib diisi");
       txnIdInputRef.current?.focus();
+      setSubmitting(false);
       return;
     }
-    if (!validate()) return;
+    if (!validate()) { setSubmitting(false); return; }
 
     // Derive unit from the first item — use fresh catalog lookup to avoid stale matchedCatalog
     const firstItem = form.items[0];
@@ -560,11 +564,11 @@ const TransactionForm = ({
       return true;
     });
     if (deduped.length > 0) {
+      setSubmitting(false); // handleConfirmNewItems will re-set to true
       setNewItemConfirm({ items: deduped, unit });
       return;
     }
 
-    setSubmitting(true);
     doStockCheckAndSave(unit);
   };
 
@@ -654,39 +658,43 @@ const TransactionForm = ({
     const firstItem    = form.items[0] || {};
     const totalSackQty = form.items.reduce((s, it) => s + (parseFloat(it.sackQty) || 0), 0);
     const totalVal     = form.items.reduce((s, it) => s + (it.subtotal || 0), 0);
-    onSave({
-      ...form,
-      items: mergeItems(form.items.map((it) => {
-        const fullName = it.itemTypeInput.trim()
-          ? normalizeTitleCase(it.itemNameInput.trim() + " " + it.itemTypeInput.trim())
-          : normalizeTitleCase(it.itemNameInput.trim());
-        return {
-          itemName:   fullName,
-          sackQty:    parseFloat(it.sackQty)   || 0,
-          weightKg:   parseFloat(it.weightKg)  || 0,
-          pricePerKg: Number(it.pricePerKg)    || 0,
-          subtotal:   it.subtotal              || 0,
-        };
-      })),
-      // Backward compat: top-level fields mirror first item
-      itemName: firstItem.itemTypeInput?.trim()
-        ? normalizeTitleCase(firstItem.itemNameInput.trim() + " " + firstItem.itemTypeInput.trim())
-        : normalizeTitleCase(firstItem.itemNameInput?.trim() || ""),
-      counterparty: normalizeTitleCase(form.counterparty),
-      value:        totalVal,
-      outstanding:  Number(form.outstanding) || 0,
-      stockQty:     totalSackQty,
-      stockUnit:    unit,
-      sackQty:      totalSackQty,
-      pricePerKg:   Number(firstItem.pricePerKg)   || 0,
-      weightKg:     parseFloat(firstItem.weightKg) || 0,
-      customDueDays: Number(customDueDays) || 0,
-      id:           form.id || generateId(),
-      editLog:      form.editLog || [],
-      // For expense: pass the supplier invoice no (App.js uses it directly)
-      // For income: App.js auto-generates txnId and ignores this field
-      ...(form.type === "expense" ? { txnId: txnIdInput.trim() || null } : {}),
-    });
+    try {
+      onSave({
+        ...form,
+        items: mergeItems(form.items.map((it) => {
+          const fullName = it.itemTypeInput.trim()
+            ? normalizeTitleCase(it.itemNameInput.trim() + " " + it.itemTypeInput.trim())
+            : normalizeTitleCase(it.itemNameInput.trim());
+          return {
+            itemName:   fullName,
+            sackQty:    parseFloat(it.sackQty)   || 0,
+            weightKg:   parseFloat(it.weightKg)  || 0,
+            pricePerKg: Number(it.pricePerKg)    || 0,
+            subtotal:   it.subtotal              || 0,
+          };
+        })),
+        // Backward compat: top-level fields mirror first item
+        itemName: firstItem.itemTypeInput?.trim()
+          ? normalizeTitleCase(firstItem.itemNameInput.trim() + " " + firstItem.itemTypeInput.trim())
+          : normalizeTitleCase(firstItem.itemNameInput?.trim() || ""),
+        counterparty: normalizeTitleCase(form.counterparty),
+        value:        totalVal,
+        outstanding:  Number(form.outstanding) || 0,
+        stockQty:     totalSackQty,
+        stockUnit:    unit,
+        sackQty:      totalSackQty,
+        pricePerKg:   Number(firstItem.pricePerKg)   || 0,
+        weightKg:     parseFloat(firstItem.weightKg) || 0,
+        customDueDays: Math.max(1, Number(customDueDays) || 14),
+        id:           form.id || generateId(),
+        editLog:      form.editLog || [],
+        // For expense: pass the supplier invoice no (App.js uses it directly)
+        // For income: App.js auto-generates txnId and ignores this field
+        ...(form.type === "expense" ? { txnId: txnIdInput.trim() || null } : {}),
+      });
+    } finally {
+      setSubmitting(false); // H1: always unlock, even if onSave throws
+    }
   };
 
   const iStyle = (k, forceError) => ({
@@ -833,6 +841,8 @@ const TransactionForm = ({
 
               {filteredContacts.map((c, idx) => {
                 const rowIdx = idx + 1;
+                // TODO: Replace with balanceMap prop from App.js to avoid O(n×contacts)
+                // recomputation on every render. App.js already computes balanceMap via useMemo.
                 const { ar, ap, netOut } = contactBalance(c.name, transactions);
                 const secondary = c.phone || c.email || null;
                 return (
@@ -1047,7 +1057,6 @@ const TransactionForm = ({
                     {curStock != null
                       ? (() => {
                           const aq = curStock.qty - committedQty;
-                          const sq = parseFloat(item.sackQty) || 0;
                           const color = aq > 0 ? "#10b981" : "#ef4444";
                           return (
                             <span style={{ color }}>
@@ -1283,7 +1292,7 @@ const TransactionForm = ({
                 onChange={(e) => setCustomDueDays(e.target.value.replace(/[^0-9]/g, ""))}
                 onBlur={() => {
                   const n = parseInt(customDueDays, 10);
-                  setCustomDueDays(isNaN(n) || n < 0 ? "0" : String(n));
+                  setCustomDueDays(isNaN(n) || n < 1 ? "1" : String(n)); // H2: minimum 1 day
                 }}
                 style={{ ...iStyle("customDueDays"), width: 120 }}
                 aria-label="Tempo Pembayaran dalam hari"

@@ -111,6 +111,10 @@ const _cleanWords = (displayName) =>
  * @returns {Array} merged categories: existing (updated with merges) + new auto-detected
  */
 export const autoDetectCategories = (stockMap, existingCategories = []) => {
+  // Performance: O(n²) worst case for large item catalogs. Fine for <200 items.
+  // If inventory grows beyond 500 items, consider memoizing separately
+  // from date-dependent computations or adding a debounce.
+
   // Build set of already-categorized normalized item names
   const categorized = new Set();
   for (const cat of existingCategories) {
@@ -260,12 +264,13 @@ export const autoDetectCategories = (stockMap, existingCategories = []) => {
       // Merge items into the existing category (immutable — already cloned above)
       const idx = existingGroupIndex[lookupKey];
       const existingItems = new Set(mergedCats[idx].items);
-      for (const item of items) {
-        if (!existingItems.has(item)) {
-          mergedCats[idx].items.push(item);
-        }
+      const newItems = items.filter((item) => !existingItems.has(item));
+      if (newItems.length > 0) {
+        mergedCats[idx] = {
+          ...mergedCats[idx],
+          items: [...mergedCats[idx].items, ...newItems].sort(),
+        };
       }
-      mergedCats[idx].items.sort();
     } else {
       trulyNewGroups[groupPrefix] = items;
     }

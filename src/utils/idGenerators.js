@@ -77,6 +77,9 @@ export const diffDays = (date1Str, date2Str) => {
 /** Return current time as HH:MM */
 export const nowTime = () => new Date().toTimeString().slice(0, 5);
 
+// Uses T00:00:00 WITHOUT Z intentionally — this is for display formatting only,
+// not date arithmetic. Using local midnight is correct here (shows the date as
+// the user entered it). Do NOT add Z — that would shift display dates in UTC+ zones.
 /** Format a YYYY-MM-DD date string to readable Indonesian format */
 export const fmtDate = (d) =>
   d

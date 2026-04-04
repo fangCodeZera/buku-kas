@@ -1412,16 +1412,6 @@ body {
 .report-stok-cell { white-space: nowrap; font-size: 11px; font-weight: 600; }
 .report-stok-item { display: block; line-height: 1.6; }
 
-/* ── Print styles ────────────────────────────────────────────────────────────── */
-@media print {
-  .sidebar, .main-content > *:not(.report-modal),
-  .btn, .report-actions { display: none !important; }
-  .modal-overlay { position: static; background: none; padding: 0; }
-  .report-modal { box-shadow: none; max-height: none; padding: 0; }
-  body { background: #fff; }
-  .report-stok-out { color: #ef4444 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .report-stok-in  { color: #10b981 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-}
 
 /* ── Responsive: mobile sidebar ──────────────────────────────────────────────── */
 @media (max-width: 768px) {

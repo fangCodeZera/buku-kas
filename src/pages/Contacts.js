@@ -129,17 +129,22 @@ const Contacts = ({
           return;
         }
       }
-      onUpdateContact({ ...sel, ...normForm });
-      setToast("Kontak berhasil diperbarui");
-    } else {
-      onAddContact({ ...normForm, id: generateId() });
-      setToast("Kontak berhasil ditambahkan");
     }
-    setNameError("");
-    setForm({ name: "", email: "", phone: "", address: "" });
-    setEditMode(false);
-    setSelected(null);
-    setSubmitting(false);
+    try {
+      if (editMode && sel) {
+        onUpdateContact({ ...sel, ...normForm });
+        setToast("Kontak berhasil diperbarui");
+      } else {
+        onAddContact({ ...normForm, id: generateId() });
+        setToast("Kontak berhasil ditambahkan");
+      }
+      setNameError("");
+      setForm({ name: "", email: "", phone: "", address: "" });
+      setEditMode(false);
+      setSelected(null);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   useEffect(() => {

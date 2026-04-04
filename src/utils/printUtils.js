@@ -11,6 +11,23 @@
  *
  * @param {string} htmlString — full HTML to print (may include <style> tags)
  */
+/**
+ * Escapes HTML special characters for safe insertion into raw HTML strings built
+ * via template literals outside of React's rendering pipeline.
+ * NOTE: Not needed for React JSX text nodes — React escapes those automatically
+ * before .outerHTML serialization. Applying this to JSX {variables} would cause
+ * double-encoding and display literal entities (e.g. &amp;) to users.
+ * @param {*} str
+ * @returns {string}
+ */
+export const escapeHtml = (str) =>
+  String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 export const printWithPortal = (htmlString) => {
   const portal = document.getElementById("print-portal");
   if (!portal) {
