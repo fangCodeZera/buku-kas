@@ -7,9 +7,9 @@ import Icon from "./Icon";
 import { nowTime } from "../utils/idGenerators";
 
 /**
- * @param {{ saved: boolean }} props
+ * @param {{ saved: boolean, saveError?: boolean }} props
  */
-const SaveIndicator = ({ saved }) => {
+const SaveIndicator = ({ saved, saveError }) => {
   const [lastSavedTime, setLastSavedTime] = useState(null);
   const prevSaved = useRef(true); // mirrors the initial saved=true state in App.js
 
@@ -20,6 +20,14 @@ const SaveIndicator = ({ saved }) => {
     }
     prevSaved.current = saved;
   }, [saved]);
+
+  if (saveError) {
+    return (
+      <span className="save-indicator" style={{ color: "#ef4444" }}>
+        Gagal menyimpan ✗
+      </span>
+    );
+  }
 
   return (
     <span className={`save-indicator ${saved ? "saved" : "saving"}`}>

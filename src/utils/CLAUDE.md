@@ -4,7 +4,7 @@
 
 ---
 
-### `src/utils/idGenerators.js` (168 lines)
+### `src/utils/idGenerators.js` (171 lines)
 
 ```
 function: generateId()

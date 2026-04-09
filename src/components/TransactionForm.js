@@ -1323,6 +1323,60 @@ const TransactionForm = ({
         const hasArchived = newItemConfirm.items.some(
           (itm) => itm.status === "archived_item" || itm.status === "archived_subtype"
         );
+
+        // Detect if any new_item's name starts with an existing catalog base item name.
+        // e.g. user typed "Bawang Putih Jawa" but "Bawang Putih" already exists → guide to "+ Tambah Tipe".
+        const subtypeGuidanceMatch = !hasArchived
+          ? newItemConfirm.items
+              .filter((itm) => itm.status === "new_item")
+              .map((itm) => ({
+                itm,
+                base: activeCatalog.find((cat) =>
+                  normItem(itm.baseName).startsWith(normItem(cat.name) + " ")
+                ),
+              }))
+              .find((x) => x.base)
+          : null;
+
+        if (subtypeGuidanceMatch) {
+          const { base } = subtypeGuidanceMatch;
+          return (
+            <div className="modal-overlay" role="dialog" aria-modal="true">
+              <div className="modal-box" style={{ maxWidth: 480 }}>
+                <h3 className="modal-title">⚠ Item Serupa Ditemukan</h3>
+                <div className="modal-body">
+                  <p>
+                    <strong>{normalizeTitleCase(base.name)}</strong> sudah ada di katalog.
+                    Untuk menambah tipe baru, gunakan tombol{" "}
+                    <strong>"+ Tambah Tipe"</strong> pada item{" "}
+                    <strong>{normalizeTitleCase(base.name)}</strong> di halaman Inventaris.
+                  </p>
+                </div>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setNewItemConfirm(null);
+                      setSubmitting(false);
+                      if (typeof onCancel === "function") onCancel();
+                    }}
+                  >
+                    Ke Inventaris
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleConfirmNewItems}
+                  >
+                    Tetap Tambah Sebagai Item Baru
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
         return (
           <div className="modal-overlay" role="dialog" aria-modal="true">
             <div className="modal-box" style={{ maxWidth: 480 }}>

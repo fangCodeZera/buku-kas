@@ -227,4 +227,38 @@
 
 ---
 
+## Second Audit — 2026-04-01 (post-NORM_VERSION 18 changes)
+
+**Scope:** New code since 2026-04-05 — DotMatrixPrintModal, textFormatter.js, printerType in settings, Reports.js typeFilter, Settings.js CSV export, Outstanding.js highlighting.
+
+**Status:** 3 findings resolved ✅ · 4 informational — noted
+
+### RESOLVED
+
+**[A1] Settings.js `handleSave` sets `submitting` after validation — H7 pattern violation** ✅ RESOLVED
+- Same double-click race as H7 (TransactionForm). `setSubmitting(true)` now moved to first line of `handleSave`, with `setSubmitting(false)` on early validation-fail return.
+
+**[A2] Settings.js `defaultDueDateDays` validated `n >= 0` — allows 0 to be saved** ✅ RESOLVED
+- Saving `0` caused new transactions to silently use 14-day terms (via `Number("0") || 14` fallback in TransactionForm `doSave`). Fixed to `n >= 1` with `Math.max(1, ...)` on revert.
+
+**[A3] Reports.js `exportCSV` used `data:` URI instead of Blob** ✅ RESOLVED
+- `data:` URIs have an implicit ~2MB browser limit. Changed to `Blob + URL.createObjectURL + URL.revokeObjectURL`, matching the pattern used by Settings.js.
+
+### INFORMATIONAL
+
+**[A4] DotMatrixPrintModal prints via Blob path — no UI on print failure** — Noted
+- If `#print-portal` is missing (shouldn't happen), a console error is logged but no UI feedback. Acceptable for the fallback path.
+
+**[A5] Outstanding.js `key={sortBy}` on `OutstandingTable` causes full remount on sort change** — Intentional
+- Resets pagination + closes any open delete/payment dialogs when sort changes. Deliberate design for clean UX reset; no change needed.
+
+**[A6] textFormatter.js dot-matrix uses transaction-level `stockUnit` for all surat jalan items** — Known limitation
+- Same as M8 from prior audit. No per-item unit field exists on `items[]`. Documented.
+
+**[A7] Settings.js shared `submitting` state between `handleSave` and `handleExport`** — Noted
+- Both functions check the same `submitting` flag, so clicking Save blocks Export (and vice versa) for 1-2 seconds with no feedback. Acceptable since simultaneous save+export is rare.
+
+---
+
 *Original audit: 2026-04-04. All 35 actionable findings resolved: 2026-04-05.*
+*Second audit: 2026-04-01. All 3 actionable findings resolved: 2026-04-01.*

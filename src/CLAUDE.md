@@ -151,7 +151,7 @@ Inventory:  .inventory-group-header (hover locked to #1e3a5f — do not remove)
 Utility:    .whitespace-nowrap, .hidden, .md\:table-cell
 ```
 
-**Rule:** Always search `styles.css` before adding a new CSS class. The file is 2917 lines and likely has what you need.
+**Rule:** Always search `styles.css` before adding a new CSS class. The file is 2938 lines and likely has what you need.
 
 ---
 

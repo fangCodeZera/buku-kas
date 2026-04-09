@@ -1,0 +1,341 @@
+// supabaseStorage.js
+// Phase 4: Complete Supabase storage layer for BukuKas.
+// Replaces localStorage read/write for all 6 data collections.
+// All camelCase ↔ snake_case mapping is handled here — no other file needs to know DB column names.
+
+import supabase from './supabaseClient';
+import { defaultData } from './storage';
+
+// ── Field mappers: DB row → JS object ─────────────────────────────────────────
+
+const mapTransaction = (row) => ({
+  id:             row.id,
+  type:           row.type,
+  date:           row.date,
+  time:           row.time,
+  createdAt:      row.created_at_local,
+  orderNum:       row.order_num,
+  counterparty:   row.counterparty,
+  itemName:       row.item_name,
+  stockQty:       row.stock_qty,
+  stockUnit:      row.stock_unit,
+  value:          row.value,
+  outstanding:    row.outstanding,
+  status:         row.status,
+  txnId:          row.txn_id,
+  dueDate:        row.due_date,
+  customDueDays:  row.custom_due_days,
+  notes:          row.notes,
+  items:          row.items          || [],
+  paymentHistory: row.payment_history || [],
+  editLog:        row.edit_log        || [],
+  version:        row.version,
+  created_by:     row.created_by,
+  updated_by:     row.updated_by,
+});
+
+const mapContact = (row) => ({
+  id:         row.id,
+  name:       row.name,
+  email:      row.email,
+  phone:      row.phone,
+  address:    row.address,
+  archived:   row.archived,
+  version:    row.version,
+  created_by: row.created_by,
+  updated_by: row.updated_by,
+});
+
+const mapStockAdjustment = (row) => ({
+  id:            row.id,
+  itemName:      row.item_name,
+  date:          row.date,
+  time:          row.time,
+  adjustmentQty: row.adjustment_qty,
+  reason:        row.reason,
+  unit:          row.unit,
+  adjustedBy:    row.adjusted_by_name,
+  version:       row.version,
+  created_by:    row.created_by,
+  updated_by:    row.updated_by,
+});
+
+const mapCatalogItem = (row) => ({
+  id:               row.id,
+  name:             row.name,
+  defaultUnit:      row.default_unit,
+  subtypes:         row.subtypes          || [],
+  archived:         row.archived,
+  archivedSubtypes: row.archived_subtypes || [],
+  version:          row.version,
+  created_by:       row.created_by,
+  updated_by:       row.updated_by,
+});
+
+const mapCategory = (row) => ({
+  id:        row.id,
+  groupName: row.group_name,
+  code:      row.code,
+  items:     row.items || [],
+  version:   row.version,
+  created_by: row.created_by,
+  updated_by: row.updated_by,
+});
+
+const mapSettings = (row) => ({
+  businessName:             row.business_name,
+  address:                  row.address,
+  phone:                    row.phone,
+  lowStockThreshold:        row.low_stock_threshold,
+  bankAccounts:             row.bank_accounts              || [],
+  maxBankAccountsOnInvoice: row.max_bank_accounts_on_invoice,
+  lastExportDate:           row.last_export_date,
+  defaultDueDateDays:       row.default_due_date_days,
+  printerType:              row.printer_type,
+  version:                  row.version,
+});
+
+// ── loadDataFromSupabase ───────────────────────────────────────────────────────
+
+/**
+ * Fetches all 6 data collections from Supabase in parallel.
+ * Returns the same shape as loadData() in storage.js.
+ * @param {string} userId - current user's UUID (unused for queries, RLS handles auth)
+ * @returns {Promise<Object>} full data object matching defaultData shape
+ */
+export async function loadDataFromSupabase(userId) {
+  const [txRes, contactRes, adjRes, catRes, catalogRes, settingsRes] = await Promise.all([
+    supabase.from('transactions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
+    supabase.from('contacts').select('*').order('name', { ascending: true }),
+    supabase.from('stock_adjustments').select('*').order('date', { ascending: false }),
+    supabase.from('item_categories').select('*').order('group_name', { ascending: true }),
+    supabase.from('item_catalog').select('*').order('name', { ascending: true }),
+    supabase.from('app_settings').select('*').eq('id', 'singleton').maybeSingle(),
+  ]);
+
+  if (txRes.error)       throw new Error(`Gagal memuat transaksi: ${txRes.error.message}`);
+  if (contactRes.error)  throw new Error(`Gagal memuat kontak: ${contactRes.error.message}`);
+  if (adjRes.error)      throw new Error(`Gagal memuat penyesuaian stok: ${adjRes.error.message}`);
+  if (catRes.error)      throw new Error(`Gagal memuat kategori: ${catRes.error.message}`);
+  if (catalogRes.error)  throw new Error(`Gagal memuat katalog barang: ${catalogRes.error.message}`);
+  if (settingsRes.error) throw new Error(`Gagal memuat pengaturan: ${settingsRes.error.message}`);
+
+  return {
+    transactions:     (txRes.data      || []).map(mapTransaction),
+    contacts:         (contactRes.data  || []).map(mapContact),
+    stockAdjustments: (adjRes.data      || []).map(mapStockAdjustment),
+    itemCategories:   (catRes.data      || []).map(mapCategory),
+    itemCatalog:      (catalogRes.data  || []).map(mapCatalogItem),
+    settings:         settingsRes.data ? mapSettings(settingsRes.data) : { ...defaultData.settings },
+    _normVersion:     18,
+  };
+}
+
+// ── Individual write functions ─────────────────────────────────────────────────
+
+/**
+ * Upsert a single transaction to Supabase.
+ * @param {Object} tx - full camelCase transaction object
+ * @param {string} userId - current user's UUID
+ */
+export async function saveTransaction(tx, userId) {
+  const { error } = await supabase.from('transactions').upsert({
+    id:               tx.id,
+    type:             tx.type,
+    date:             tx.date,
+    time:             tx.time,
+    created_at_local: tx.createdAt,
+    order_num:        tx.orderNum      || '',
+    counterparty:     tx.counterparty,
+    item_name:        tx.itemName,
+    stock_qty:        tx.stockQty,
+    stock_unit:       tx.stockUnit,
+    value:            tx.value,
+    outstanding:      tx.outstanding,
+    status:           tx.status,
+    txn_id:           tx.txnId         || '',
+    due_date:         tx.dueDate       || null,
+    custom_due_days:  tx.customDueDays ?? 14,
+    notes:            tx.notes         || '',
+    items:            tx.items         || [],
+    payment_history:  tx.paymentHistory || [],
+    edit_log:         tx.editLog        || [],
+    version:          (tx.version || 0) + 1,
+    created_by:       userId,
+    updated_by:       userId,
+  }, { onConflict: 'id' });
+  if (error) throw new Error(`Gagal menyimpan transaksi: ${error.message}`);
+}
+
+/**
+ * Delete a single transaction from Supabase.
+ * @param {string} id - transaction id
+ */
+export async function deleteTransaction(id) {
+  const { error } = await supabase.from('transactions').delete().eq('id', id);
+  if (error) throw new Error(`Gagal menghapus transaksi: ${error.message}`);
+}
+
+/**
+ * Upsert a single contact to Supabase.
+ * @param {Object} contact - full camelCase contact object
+ * @param {string} userId
+ */
+export async function saveContact(contact, userId) {
+  const { error } = await supabase.from('contacts').upsert({
+    id:         contact.id,
+    name:       contact.name,
+    email:      contact.email    || '',
+    phone:      contact.phone    || '',
+    address:    contact.address  || '',
+    archived:   contact.archived ?? false,
+    version:    (contact.version || 0) + 1,
+    created_by: userId,
+    updated_by: userId,
+  }, { onConflict: 'id' });
+  if (error) throw new Error(`Gagal menyimpan kontak: ${error.message}`);
+}
+
+/**
+ * Delete a single contact from Supabase.
+ * @param {string} id - contact id
+ */
+export async function deleteContact(id) {
+  const { error } = await supabase.from('contacts').delete().eq('id', id);
+  if (error) throw new Error(`Gagal menghapus kontak: ${error.message}`);
+}
+
+/**
+ * Upsert a single stock adjustment to Supabase.
+ * @param {Object} adj - full camelCase adjustment object
+ * @param {string} userId
+ */
+export async function saveStockAdjustment(adj, userId) {
+  const { error } = await supabase.from('stock_adjustments').upsert({
+    id:               adj.id,
+    item_name:        adj.itemName,
+    date:             adj.date,
+    time:             adj.time       || '00:00',
+    adjustment_qty:   adj.adjustmentQty,
+    reason:           adj.reason     || '',
+    unit:             adj.unit       || 'karung',
+    adjusted_by_name: adj.adjustedBy || null,
+    version:          (adj.version || 0) + 1,
+    created_by:       userId,
+    updated_by:       userId,
+  }, { onConflict: 'id' });
+  if (error) throw new Error(`Gagal menyimpan penyesuaian stok: ${error.message}`);
+}
+
+/**
+ * Delete a single stock adjustment from Supabase.
+ * @param {string} id - adjustment id
+ */
+export async function deleteStockAdjustment(id) {
+  const { error } = await supabase.from('stock_adjustments').delete().eq('id', id);
+  if (error) throw new Error(`Gagal menghapus penyesuaian stok: ${error.message}`);
+}
+
+// Promise queue — serializes all saveItemCategories calls so concurrent invocations
+// (e.g. two onAddCatalogItem calls from a multi-item transaction) never race on
+// the delete-then-insert sequence, which would cause duplicate key violations.
+let _categoriesSaveQueue = Promise.resolve();
+
+/**
+ * Replace the entire item_categories table with the given array.
+ * Deletes all existing rows then inserts all new rows.
+ * Concurrent calls are automatically serialized via a promise queue.
+ * @param {Array} categories - full camelCase categories array
+ * @param {string} userId
+ */
+export function saveItemCategories(categories, userId) {
+  _categoriesSaveQueue = _categoriesSaveQueue
+    .then(async () => {
+      const { error: deleteError } = await supabase
+        .from('item_categories')
+        .delete()
+        .gte('created_at', '1970-01-01');
+      if (deleteError) {
+        throw new Error('Gagal menghapus kategori lama: ' + deleteError.message);
+      }
+
+      if (!categories || categories.length === 0) return;
+
+      const mapped = categories.map((cat) => ({
+        id:         cat.id,
+        group_name: cat.groupName,
+        code:       cat.code  || '',
+        items:      cat.items || [],
+        version:    (cat.version || 0) + 1,
+        created_by: userId,
+        updated_by: userId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error: insertError } = await supabase.from('item_categories').insert(mapped);
+      if (insertError) {
+        throw new Error('Gagal menyimpan kategori: ' + insertError.message);
+      }
+    })
+    .catch((err) => {
+      // Reset queue to a resolved promise so future calls work normally after an error.
+      // Re-throw so persistToSupabase still catches it and shows SaveErrorModal.
+      _categoriesSaveQueue = Promise.resolve();
+      throw err;
+    });
+  return _categoriesSaveQueue;
+}
+
+/**
+ * Upsert a single catalog item to Supabase.
+ * @param {Object} item - full camelCase catalog item object
+ * @param {string} userId
+ */
+export async function saveItemCatalogItem(item, userId) {
+  const { error } = await supabase.from('item_catalog').upsert({
+    id:               item.id,
+    name:             item.name,
+    default_unit:     item.defaultUnit      || 'karung',
+    subtypes:         item.subtypes         || [],
+    archived:         item.archived         ?? false,
+    archived_subtypes: item.archivedSubtypes || [],
+    version:          (item.version || 0) + 1,
+    created_by:       userId,
+    updated_by:       userId,
+  }, { onConflict: 'id' });
+  if (error) throw new Error(`Gagal menyimpan katalog barang: ${error.message}`);
+}
+
+/**
+ * Delete a single catalog item from Supabase.
+ * @param {string} id - catalog item id
+ */
+export async function deleteItemCatalogItem(id) {
+  const { error } = await supabase.from('item_catalog').delete().eq('id', id);
+  if (error) throw new Error(`Gagal menghapus katalog barang: ${error.message}`);
+}
+
+/**
+ * Upsert app settings (singleton row) to Supabase.
+ * @param {Object} settings - full camelCase settings object
+ * @param {string} userId
+ */
+export async function saveSettings(settings, userId) {
+  const { error } = await supabase.from('app_settings').upsert({
+    id:                          'singleton',
+    business_name:               settings.businessName,
+    address:                     settings.address                  || '',
+    phone:                       settings.phone                    || '',
+    low_stock_threshold:         settings.lowStockThreshold        ?? 10,
+    bank_accounts:               settings.bankAccounts             || [],
+    max_bank_accounts_on_invoice: settings.maxBankAccountsOnInvoice ?? 1,
+    last_export_date:            settings.lastExportDate           || null,
+    default_due_date_days:       settings.defaultDueDateDays       ?? 14,
+    printer_type:                settings.printerType              || 'A4',
+    version:                     (settings.version || 0) + 1,
+    created_by:                  userId,
+    updated_by:                  userId,
+  }, { onConflict: 'id' });
+  if (error) throw new Error(`Gagal menyimpan pengaturan: ${error.message}`);
+}

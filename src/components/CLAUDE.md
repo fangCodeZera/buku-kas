@@ -19,7 +19,7 @@
 ---
 
 ### Component: `TransactionForm`
-**File:** `TransactionForm.js` (1282 lines)
+**File:** `TransactionForm.js` (1430 lines)
 **Purpose:** Full transaction input form — supports multi-item rows, enhanced counterparty selector, auto/manual txnId, stock warning integration, custom due days, and catalog-based item selection via smart text inputs.
 **Props:**
 - `onSave: (tx) => void` — required
@@ -83,7 +83,7 @@
 ---
 
 ### Component: `PaymentUpdateModal`
-**File:** `PaymentUpdateModal.js` (174 lines)
+**File:** `PaymentUpdateModal.js` (183 lines)
 **Purpose:** Modal for recording a payment (full or partial) against a transaction's outstanding balance.
 **Props:**
 - `transaction: Object | null` — null = modal hidden (always-mounted)
@@ -156,8 +156,26 @@
 
 ---
 
+### Component: `DotMatrixPrintModal`
+**File:** `DotMatrixPrintModal.js` (122 lines)
+**Purpose:** Preview and print modal for dot matrix printers (invoice and surat jalan). Generates 80-column ASCII output via `textFormatter.js`.
+**Props:**
+- `transaction: Array | Object` — array when `mode="invoice"`, single object when `mode="suratJalan"`
+- `mode: "invoice" | "suratJalan"`
+- `settings: Object`
+- `onClose: () => void`
+
+**Used by:** `App.js` (global `dotMatrixData` state `{ transaction, mode }`)
+**Special behaviour:**
+- Input fields (`invoiceNote`, `platNomor`, `catatanPengiriman`) shown above preview, conditional on `mode`.
+- Preview in `.dot-matrix-preview` `<pre>` updates live as user types.
+- "Konfirmasi Cetak" manually escapes `&`, `<`, `>` via `.replace()` chain before calling `printWithPortal()`.
+- **Conditionally-mounted**: Escape key no guard needed.
+
+---
+
 ### Component: `ReportModal`
-**File:** `ReportModal.js`
+**File:** `ReportModal.js` (312 lines)
 **Purpose:** Printable transaction report in landscape layout. 11-column table (NO, TANGGAL, NO. INVOICE, KLIEN, BARANG, STOK, JENIS, STATUS, JATUH TEMPO, NILAI (RP), PIUTANG/HUTANG) with cash-basis summary.
 **Props:**
 - `transactions: Array`
@@ -173,7 +191,7 @@
 ---
 
 ### Component: `SuratJalanModal`
-**File:** `SuratJalanModal.js` (284 lines)
+**File:** `SuratJalanModal.js` (289 lines)
 **Purpose:** Printable delivery note (surat jalan) for a single transaction.
 **Props:**
 - `transaction: Object | null` — null = modal hidden
@@ -345,7 +363,7 @@ useEffect(() => {
   → Escape effect **must** guard with `if (!data) return` before registering.
 
 - **Conditionally-mounted** (parent only renders when open):
-  `InvoiceModal`, `SuratJalanModal`, `ReportModal`, `CategoryModal`, `StockReportModal`
+  `InvoiceModal`, `SuratJalanModal`, `DotMatrixPrintModal`, `ReportModal`, `CategoryModal`, `StockReportModal`
   → Escape effect runs **without guard** — component only exists when visible.
 
 ---

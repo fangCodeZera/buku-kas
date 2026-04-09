@@ -1475,6 +1475,7 @@ const Inventory = ({
                                 setAddSubtypeError("");
                               }}
                               aria-label={`Tambah tipe untuk ${groupCatalogItem.name}`}
+                              title={`Tambah subtype untuk ${groupCatalogItem.name}`}
                             >
                               + Tambah Tipe
                             </button>

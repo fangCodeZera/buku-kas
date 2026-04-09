@@ -12,16 +12,18 @@ import React, { useState, useRef } from "react";
 import Icon from "../components/Icon";
 import { generateId, today } from "../utils/idGenerators";
 import { STORAGE_KEY } from "../utils/storage";
+import { USE_SUPABASE } from "../utils/storageConfig";
 
 /**
  * @param {{
  *   settings: Object,
  *   transactions: Array,
+ *   data: Object,
  *   onSave: (settings: Object) => void,
  *   onImport: (data: Object) => void
  * }} props
  */
-const Settings = ({ settings, transactions = [], onSave, onImport }) => {
+const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
   const [form,        setForm]        = useState({ ...settings, printerType: settings.printerType || "A4" });
   const [flash,       setFlash]       = useState(false);
   const [submitting,  setSubmitting]  = useState(false);
@@ -40,14 +42,15 @@ const Settings = ({ settings, transactions = [], onSave, onImport }) => {
 
   const handleSave = () => {
     if (submitting) return;
+    setSubmitting(true); // set before validation so rapid double-clicks are blocked immediately
     const errs = {};
     if (!form.businessName?.trim()) errs.businessName = "Nama bisnis wajib diisi";
     if (Object.keys(errs).length > 0) {
       setBizErrors(errs);
+      setSubmitting(false);
       return;
     }
     setBizErrors({});
-    setSubmitting(true);
     onSave(form);
     setFlash(true);
     setTimeout(() => { setFlash(false); setSubmitting(false); }, 2000);
@@ -62,11 +65,29 @@ const Settings = ({ settings, transactions = [], onSave, onImport }) => {
   };
 
   const exportJSON = () => {
-    const raw = localStorage.getItem(STORAGE_KEY) || "{}";
-    const a = document.createElement("a");
-    a.href = "data:application/json;charset=utf-8," + encodeURIComponent(raw);
-    a.download = `bukukas_backup_${today()}.json`;
-    a.click();
+    try {
+      let jsonStr;
+      if (USE_SUPABASE) {
+        jsonStr = JSON.stringify(
+          { ...data, _exportedAt: new Date().toISOString(), _normVersion: 18 },
+          null,
+          2
+        );
+      } else {
+        jsonStr = localStorage.getItem(STORAGE_KEY) || "{}";
+      }
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `bukukas_backup_${today()}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export failed:", err);
+    }
   };
 
   const exportCSV = () => {
@@ -292,12 +313,12 @@ const Settings = ({ settings, transactions = [], onSave, onImport }) => {
               onChange={(e) => setDueDaysStr(e.target.value.replace(/[^0-9]/g, ""))}
               onBlur={() => {
                 const n = parseInt(dueDaysStr, 10);
-                if (!isNaN(n) && n >= 0) {
+                if (!isNaN(n) && n >= 1) {
                   setDueDaysStr(String(n));
                   set("defaultDueDateDays", n);
                 } else {
-                  // Revert to the last valid value stored in form
-                  const prev = form.defaultDueDateDays ?? 14;
+                  // Revert to the last valid value stored in form (minimum 1)
+                  const prev = Math.max(1, form.defaultDueDateDays ?? 14);
                   setDueDaysStr(String(prev));
                 }
               }}
@@ -513,24 +534,37 @@ const Settings = ({ settings, transactions = [], onSave, onImport }) => {
           >
             <Icon name="download" size={14} color="#007bff" /> Ekspor Backup
           </button>
-          <button
-            onClick={() => fileRef.current && fileRef.current.click()}
-            className="btn btn-outline"
-            style={{ borderColor: "#10b981", color: "#10b981" }}
-            aria-label="Impor data dari file JSON"
-          >
-            <Icon name="upload" size={14} color="#10b981" /> Impor Backup
-          </button>
+          {USE_SUPABASE ? (
+            <button
+              className="btn btn-outline"
+              disabled
+              style={{ borderColor: "#9ca3af", color: "#9ca3af", cursor: "not-allowed" }}
+              aria-label="Impor dinonaktifkan sementara"
+            >
+              <Icon name="upload" size={14} color="#9ca3af" /> Impor Backup
+            </button>
+          ) : (
+            <button
+              onClick={() => fileRef.current && fileRef.current.click()}
+              className="btn btn-outline"
+              style={{ borderColor: "#10b981", color: "#10b981" }}
+              aria-label="Impor data dari file JSON"
+            >
+              <Icon name="upload" size={14} color="#10b981" /> Impor Backup
+            </button>
+          )}
 
-          {/* Hidden file input */}
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".json,application/json"
-            onChange={handleImportFile}
-            style={{ display: "none" }}
-            aria-hidden="true"
-          />
+          {/* Hidden file input — only used in localStorage mode */}
+          {!USE_SUPABASE && (
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={handleImportFile}
+              style={{ display: "none" }}
+              aria-hidden="true"
+            />
+          )}
         </div>
         <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 4px" }}>
           {exportFormat === "json"
@@ -538,6 +572,11 @@ const Settings = ({ settings, transactions = [], onSave, onImport }) => {
             : "Format tabel — dapat dibuka di Excel / Google Sheets"}
         </p>
 
+        {USE_SUPABASE && (
+          <p style={{ fontSize: 12, color: "#9ca3af", margin: "6px 0 0" }}>
+            Fitur impor akan diaktifkan kembali setelah migrasi selesai.
+          </p>
+        )}
         {importMsg && (
           <div
             className={`import-msg ${importMsg.startsWith("✅") ? "import-msg--success" : "import-msg--error"}`}

@@ -135,6 +135,14 @@ const Contacts = ({
         onUpdateContact({ ...sel, ...normForm });
         setToast("Kontak berhasil diperbarui");
       } else {
+        const duplicate = contacts.find(
+          (c) => c.name.toLowerCase() === normForm.name.toLowerCase()
+        );
+        if (duplicate) {
+          setNameError("Kontak dengan nama ini sudah ada.");
+          setSubmitting(false);
+          return;
+        }
         onAddContact({ ...normForm, id: generateId() });
         setToast("Kontak berhasil ditambahkan");
       }

@@ -182,10 +182,13 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     });
     const BOM = "\uFEFF";
     const csvContent = BOM + rows.map((r) => r.map(q).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
+    a.href = url;
     a.download = `Laporan_${dateFrom || "semua"}_sd_${dateTo || "semua"}.csv`;
     a.click();
+    URL.revokeObjectURL(url);
   };
 
   const exportJSON = () => {

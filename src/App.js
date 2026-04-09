@@ -34,6 +34,27 @@ import ReportModal        from "./components/ReportModal";
 import StockReportModal   from "./components/StockReportModal";
 import DotMatrixPrintModal from "./components/DotMatrixPrintModal";
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
+import { useAuth } from "./utils/AuthContext";
+import Login from "./pages/Login";
+
+// ── Phase 4: Supabase storage layer ───────────────────────────────────────────
+import { USE_SUPABASE } from "./utils/storageConfig";
+import {
+  loadDataFromSupabase,
+  saveTransaction as sbSaveTransaction,
+  deleteTransaction as sbDeleteTransaction,
+  saveContact as sbSaveContact,
+  deleteContact as sbDeleteContact,
+  saveStockAdjustment as sbSaveStockAdjustment,
+  deleteStockAdjustment as sbDeleteStockAdjustment,
+  saveItemCategories as sbSaveItemCategories,
+  saveItemCatalogItem as sbSaveItemCatalogItem,
+  deleteItemCatalogItem as sbDeleteItemCatalogItem,
+  saveSettings as sbSaveSettings,
+} from "./utils/supabaseStorage";
+import SaveErrorModal from "./components/SaveErrorModal";
+
 // ── Utils ─────────────────────────────────────────────────────────────────────
 import { loadData, saveData, STORAGE_KEY } from "./utils/storage";
 import { computeStockMap }         from "./utils/stockUtils";
@@ -102,8 +123,24 @@ function EditModal({ transaction, contacts, transactions = [], stockMap, itemCat
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
+  // ── Auth (must be first hook) ─────────────────────────────────────────────
+  const { user, profile, loading: authLoading, signOut } = useAuth();
+
   // ── Global state ────────────────────────────────────────────────────────────
-  const [data,        setData]        = useState(loadData);
+  const [data, setData] = useState(() =>
+    USE_SUPABASE ? {
+      transactions: [], contacts: [], stockAdjustments: [],
+      itemCategories: [], itemCatalog: [],
+      settings: {
+        businessName: "Usaha Keluarga Saya", address: "", phone: "",
+        lowStockThreshold: 10, bankAccounts: [], maxBankAccountsOnInvoice: 1,
+        lastExportDate: null, defaultDueDateDays: 14, printerType: "A4",
+      },
+      _normVersion: 18,
+    } : loadData()
+  );
+  const [appLoading,      setAppLoading]      = useState(USE_SUPABASE);
+  const [saveErrorModal,  setSaveErrorModal]  = useState(null); // { message, retryFn } | null
   const [page,        setPage]        = useState("penjualan");
   const [saved,       setSaved]       = useState(true);
   const [saveError,   setSaveError]   = useState(false);
@@ -118,6 +155,10 @@ export default function App() {
   const [showStockReport, setShowStockReport] = useState(false);
   const [dotMatrixData, setDotMatrixData] = useState(null); // { transaction, mode } | null
   const saveTimer = useRef();
+  // dataRef always mirrors the latest committed data. update() reads from it instead
+  // of using setData's functional updater, which prevents React StrictMode from
+  // double-invoking persistToSupabase and causing concurrent saveItemCategories calls.
+  const dataRef = useRef(data);
 
   // ── Persistence ─────────────────────────────────────────────────────────────
   /** Debounced save: marks "saving" immediately, writes after 500 ms idle */
@@ -146,16 +187,43 @@ export default function App() {
     }
   }, [data]);
 
-  // Not wrapped in useCallback — uses setData functional updater which is stable,
-  // so no stale closure risk. If update is ever passed as a prop to memoized children,
-  // consider wrapping in useCallback([persist]).
-  /** Immutable state updater that also trigger persistence */
-  const update = (fn) =>
-    setData((d) => {
-      const nd = fn(d);
+  // ── Phase 4: async Supabase persistence ─────────────────────────────────
+  const persistToSupabase = useCallback(async (operation, retryFn) => {
+    setSaved(false);
+    setSaveError(false);
+    try {
+      await operation();
+      setSaved(true);
+      setSaveError(false);
+    } catch (err) {
+      setSaveError(true);
+      setSaved(false);
+      setSaveErrorModal({ message: err.message, retryFn });
+    }
+  }, []);
+
+  // Keep dataRef in sync with every committed state update.
+  // Must be a useEffect (not inline) so it runs after React commits the new state.
+  useEffect(() => { dataRef.current = data; }, [data]);
+
+  // update() reads from dataRef.current (latest committed state) and calls
+  // persistToSupabase OUTSIDE setData. This prevents React StrictMode from
+  // double-invoking persistToSupabase (which previously caused two concurrent
+  // saveItemCategories calls → race condition → duplicate key violation).
+  /** Immutable state updater — routes to Supabase or localStorage based on USE_SUPABASE flag */
+  const update = (fn, supabaseOperation) => {
+    const nd = fn(dataRef.current);
+    dataRef.current = nd; // sync immediately — don't wait for useEffect, prevents stale reads on rapid successive calls
+    setData(nd);
+    if (USE_SUPABASE && supabaseOperation) {
+      persistToSupabase(
+        () => supabaseOperation(nd),
+        () => update(fn, supabaseOperation)
+      );
+    } else if (!USE_SUPABASE) {
       persist(nd);
-      return nd;
-    });
+    }
+  };
 
   // ── Derived data ─────────────────────────────────────────────────────────────
   const stockMap  = useMemo(() => computeStockMap(data.transactions, data.stockAdjustments || []), [data.transactions, data.stockAdjustments]);
@@ -206,6 +274,29 @@ export default function App() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // ── Phase 4: load data from Supabase on mount ────────────────────────────
+  // loadedRef guards against React StrictMode double-invoking this effect in
+  // development, which would cause two concurrent loads and potentially overwrite
+  // in-flight state updates with stale data from the first load completing late.
+  const loadedRef = useRef(false);
+  useEffect(() => {
+    if (!USE_SUPABASE) return;
+    if (!user) return;
+    if (loadedRef.current) return; // prevent double-load (React StrictMode)
+    loadedRef.current = true;
+    loadDataFromSupabase(user.id)
+      .then((loaded) => {
+        setData(loaded);
+        setAppLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load data from Supabase:", err);
+        setAppLoading(false);
+        setSaveErrorModal({ message: err.message, retryFn: () => window.location.reload() });
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   // Note: totalIncome/totalExpense are CASH-BASIS (value - outstanding), not gross values.
   // The Contacts page labels these as "Total Penjualan/Pembelian" which may imply gross.
@@ -277,21 +368,34 @@ export default function App() {
         : "Belum ada pembayaran saat transaksi dibuat",
       method: null,
     };
-    return update((d) => {
-      const txnId = nt.type === "income"
-        ? generateTxnId(d.transactions, nt.date)
-        : (nt.txnId || null); // expense: use supplier-entered invoice no, or null
-      return {
-        ...d,
-        transactions: [...d.transactions, { ...nt, txnId, paymentHistory: [initialPayment] }],
-        contacts: ensureContact(nt.counterparty, d.contacts),
-      };
-    });
+    update(
+      (d) => {
+        const txnId = nt.type === "income"
+          ? generateTxnId(d.transactions, nt.date)
+          : (nt.txnId || null);
+        const newTx = { ...nt, txnId, paymentHistory: [initialPayment] };
+        return {
+          ...d,
+          transactions: [...d.transactions, newTx],
+          contacts: ensureContact(nt.counterparty, d.contacts),
+        };
+      },
+      (nd) => {
+        const newTx = nd.transactions.find((x) => x.id === nt.id);
+        const newContact = nd.contacts.find(
+          (c) => c.name.toLowerCase() === normalizeTitleCase(nt.counterparty).toLowerCase()
+        );
+        return Promise.all([
+          newTx ? sbSaveTransaction(newTx, user.id) : Promise.resolve(),
+          newContact ? sbSaveContact(newContact, user.id) : Promise.resolve(),
+        ]);
+      }
+    );
   };
 
   const editTransaction = (t) => {
     const nt = normTx(t);
-    return update((d) => ({
+    update((d) => ({
       ...d,
       transactions: d.transactions.map((x) => {
         if (x.id !== nt.id) return x;
@@ -360,11 +464,19 @@ export default function App() {
           }}].slice(-20),
         };
       }),
-    }));
+    }),
+    (nd) => {
+      const updated = nd.transactions.find((x) => x.id === nt.id);
+      return updated ? sbSaveTransaction(updated, user.id) : Promise.resolve();
+    }
+    );
   };
 
   const deleteTransaction = (id) =>
-    update((d) => ({ ...d, transactions: d.transactions.filter((t) => t.id !== id) }));
+    update(
+      (d) => ({ ...d, transactions: d.transactions.filter((t) => t.id !== id) }),
+      () => sbDeleteTransaction(id)
+    );
 
   // ── Apply a payment (full or partial) against a transaction's outstanding ──
   /**
@@ -372,124 +484,164 @@ export default function App() {
    * @param {number} paidAmount  - amount being paid now (1 ≤ paidAmount ≤ outstanding)
    */
   const applyPayment = (id, paidAmount, paymentNote = "") =>
-    update((d) => ({
-      ...d,
-      transactions: d.transactions.map((t) => {
-        if (t.id !== id) return t;
-        const outstandingBefore = Number(t.outstanding) || 0;
-        const newOutstanding    = Math.max(0, outstandingBefore - paidAmount);
-        const isFullyPaid       = newOutstanding === 0;
-        const newPaymentEntry   = {
-          id:                generateId(),
-          paidAt:            new Date().toISOString(),
-          date:              today(),
-          time:              nowTime(),
-          amount:            paidAmount,
-          outstandingBefore,
-          outstandingAfter:  newOutstanding,
-          note:              paymentNote || (isFullyPaid ? "Pelunasan" : "Pembayaran sebagian"),
-          method:            null,
-        };
-        return {
-          ...t,
-          outstanding:    newOutstanding,
-          status:         deriveStatus(t.type, !isFullyPaid),
-          // Full pay → clear due date; partial pay → preserve existing due date
-          dueDate:        isFullyPaid ? null : (t.dueDate ?? null),
-          paymentHistory: [...(t.paymentHistory || []), newPaymentEntry],
-          // BUG-008 Fix: Store slim snapshot to prevent localStorage bloat
-          editLog:        [...(t.editLog || []), { at: new Date().toISOString(), prev: {
-            date:         t.date,
-            time:         t.time,
-            counterparty: t.counterparty,
-            itemName:     t.itemName,
-            stockQty:     t.stockQty,
-            stockUnit:    t.stockUnit,
-            value:        t.value,
-            outstanding:  t.outstanding,
-            status:       t.status,
-            dueDate:      t.dueDate,
-            itemNames:    Array.isArray(t.items) ? t.items.map((it) => it.itemName) : [t.itemName],
-          }}].slice(-20),
-        };
+    update(
+      (d) => ({
+        ...d,
+        transactions: d.transactions.map((t) => {
+          if (t.id !== id) return t;
+          const outstandingBefore = Number(t.outstanding) || 0;
+          const newOutstanding    = Math.max(0, outstandingBefore - paidAmount);
+          const isFullyPaid       = newOutstanding === 0;
+          const newPaymentEntry   = {
+            id:                generateId(),
+            paidAt:            new Date().toISOString(),
+            date:              today(),
+            time:              nowTime(),
+            amount:            paidAmount,
+            outstandingBefore,
+            outstandingAfter:  newOutstanding,
+            note:              paymentNote || (isFullyPaid ? "Pelunasan" : "Pembayaran sebagian"),
+            method:            null,
+          };
+          return {
+            ...t,
+            outstanding:    newOutstanding,
+            status:         deriveStatus(t.type, !isFullyPaid),
+            dueDate:        isFullyPaid ? null : (t.dueDate ?? null),
+            paymentHistory: [...(t.paymentHistory || []), newPaymentEntry],
+            editLog:        [...(t.editLog || []), { at: new Date().toISOString(), prev: {
+              date:         t.date,
+              time:         t.time,
+              counterparty: t.counterparty,
+              itemName:     t.itemName,
+              stockQty:     t.stockQty,
+              stockUnit:    t.stockUnit,
+              value:        t.value,
+              outstanding:  t.outstanding,
+              status:       t.status,
+              dueDate:      t.dueDate,
+              itemNames:    Array.isArray(t.items) ? t.items.map((it) => it.itemName) : [t.itemName],
+            }}].slice(-20),
+          };
+        }),
       }),
-    }));
+      (nd) => {
+        const updated = nd.transactions.find((x) => x.id === id);
+        return updated ? sbSaveTransaction(updated, user.id) : Promise.resolve();
+      }
+    );
 
   // ── Instantly create a named contact (called from TransactionForm dropdown) ─
   const createContact = (name) => {
     const trimmed = normalizeTitleCase(name);
     if (!trimmed) return;
-    update((d) => {
-      if (d.contacts.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) return d;
-      return { ...d, contacts: [...d.contacts, { id: generateId(), name: trimmed, email: "", phone: "", address: "", archived: false }] };
-    });
+    const newContact = { id: generateId(), name: trimmed, email: "", phone: "", address: "", archived: false };
+    update(
+      (d) => {
+        if (d.contacts.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) return d;
+        return { ...d, contacts: [...d.contacts, newContact] };
+      },
+      (nd) => {
+        // Only save if the contact was actually added (guard may have returned d unchanged)
+        const wasAdded = nd.contacts.some((c) => c.id === newContact.id);
+        return wasAdded ? sbSaveContact(newContact, user.id) : Promise.resolve();
+      }
+    );
   };
 
   // ── Archive / unarchive a contact ─────────────────────────────────────────
   const archiveContact = (contactId) =>
-    update((d) => ({
-      ...d,
-      contacts: d.contacts.map((c) =>
-        c.id === contactId ? { ...c, archived: true } : c
-      ),
-    }));
+    update(
+      (d) => ({
+        ...d,
+        contacts: d.contacts.map((c) => c.id === contactId ? { ...c, archived: true } : c),
+      }),
+      (nd) => {
+        const c = nd.contacts.find((x) => x.id === contactId);
+        return c ? sbSaveContact(c, user.id) : Promise.resolve();
+      }
+    );
 
   const unarchiveContact = (contactId) =>
-    update((d) => ({
-      ...d,
-      contacts: d.contacts.map((c) =>
-        c.id === contactId ? { ...c, archived: false } : c
-      ),
-    }));
+    update(
+      (d) => ({
+        ...d,
+        contacts: d.contacts.map((c) => c.id === contactId ? { ...c, archived: false } : c),
+      }),
+      (nd) => {
+        const c = nd.contacts.find((x) => x.id === contactId);
+        return c ? sbSaveContact(c, user.id) : Promise.resolve();
+      }
+    );
 
   // ── Permanently delete a contact (0-transaction contacts only) ────────────
   const deleteContact = (contactId) =>
-    update((d) => {
-      const contact = d.contacts.find((c) => c.id === contactId);
-      if (!contact) return d;
-      const hasTx = d.transactions.some(
-        (t) => t.counterparty.toLowerCase().trim() === contact.name.toLowerCase().trim()
-      );
-      if (hasTx) return d; // safety guard: never delete a contact that has transactions
-      return { ...d, contacts: d.contacts.filter((c) => c.id !== contactId) };
-    });
+    update(
+      (d) => {
+        const contact = d.contacts.find((c) => c.id === contactId);
+        if (!contact) return d;
+        const hasTx = d.transactions.some(
+          (t) => t.counterparty.toLowerCase().trim() === contact.name.toLowerCase().trim()
+        );
+        if (hasTx) return d;
+        return { ...d, contacts: d.contacts.filter((c) => c.id !== contactId) };
+      },
+      () => sbDeleteContact(contactId)
+    );
 
   // ── Update a contact and cascade name changes to transactions ───────────────
   const updateContact = (contact) => {
-    update((d) => {
-      const oldContact = d.contacts.find((c) => c.id === contact.id);
-      if (!oldContact) return d;
-
-      const newName = normalizeTitleCase(contact.name);
-      const isNameChange = oldContact.name.toLowerCase() !== newName.toLowerCase();
-
-      // Block rename if another contact already has the same name (case-insensitive, trimmed)
-      if (isNameChange && d.contacts.some((c) =>
-        c.id !== contact.id && c.name.toLowerCase().trim() === newName.toLowerCase().trim()
-      )) {
-        return d; // leave state unchanged — Contacts.js should validate before calling
-      }
-
-      return {
-        ...d,
-        contacts: d.contacts.map((c) => (c.id === contact.id ? { ...contact, name: newName } : c)),
-        transactions: isNameChange
-          ? d.transactions.map((t) =>
-              t.counterparty.toLowerCase() === oldContact.name.toLowerCase()
-                ? { ...t, counterparty: newName }
-                : t
+    // Compute newName and isNameChange before update() so both the state fn
+    // and the supabaseOperation can share them via closure without re-computing.
+    const newName = normalizeTitleCase(contact.name);
+    const preUpdateContact = dataRef.current.contacts.find((c) => c.id === contact.id);
+    const isNameChange = preUpdateContact
+      ? preUpdateContact.name.toLowerCase() !== newName.toLowerCase()
+      : false;
+    update(
+      (d) => {
+        const oldContact = d.contacts.find((c) => c.id === contact.id);
+        if (!oldContact) return d;
+        if (isNameChange && d.contacts.some((c) =>
+          c.id !== contact.id && c.name.toLowerCase().trim() === newName.toLowerCase().trim()
+        )) {
+          return d;
+        }
+        return {
+          ...d,
+          contacts: d.contacts.map((c) => (c.id === contact.id ? { ...contact, name: newName } : c)),
+          transactions: isNameChange
+            ? d.transactions.map((t) =>
+                t.counterparty.toLowerCase() === oldContact.name.toLowerCase()
+                  ? { ...t, counterparty: newName }
+                  : t
+              )
+            : d.transactions,
+        };
+      },
+      (nd) => {
+        const updated = nd.contacts.find((c) => c.id === contact.id);
+        // nd.transactions already has the updated counterparty values — filter by newName.
+        const cascadedTxs = isNameChange
+          ? nd.transactions.filter(
+              (t) => t.counterparty.toLowerCase() === newName.toLowerCase()
             )
-          : d.transactions,
-      };
-    });
+          : [];
+        return Promise.all([
+          updated ? sbSaveContact(updated, user.id) : Promise.resolve(),
+          ...cascadedTxs.map((tx) => sbSaveTransaction(tx, user.id)),
+        ]);
+      }
+    );
   };
 
   // ── Import handler for Settings backup restore ────────────────────────────
   const handleImport = (importedData) => {
-    // migrateData is not exported from storage.js, so we write to localStorage
-    // first and then re-read via loadData(), which runs migrations internally.
-    // This ensures old backups (pre-v9 paymentHistory, pre-v12 itemCatalog, etc.)
-    // are fully normalized before hitting React state — not just on the next reload.
+    if (USE_SUPABASE) {
+      alert("Fitur impor dinonaktifkan sementara. Silakan masukkan data secara manual.");
+      return;
+    }
+    // localStorage mode only: write then re-read to run migrations
     saveData(importedData);
     const migrated = loadData();
     update(() => migrated);
@@ -497,18 +649,24 @@ export default function App() {
 
   // ── Add a manual stock adjustment (Inventory page) ────────────────────────
   const addStockAdjustment = (adj) =>
-    update((d) => ({ ...d, stockAdjustments: [...(d.stockAdjustments || []), adj] }));
+    update(
+      (d) => ({ ...d, stockAdjustments: [...(d.stockAdjustments || []), adj] }),
+      () => sbSaveStockAdjustment(adj, user.id)
+    );
 
   // ── Delete a single stock adjustment by id ───────────────────────────────
   const deleteStockAdjustment = (adjustmentId) =>
-    update((d) => ({
-      ...d,
-      stockAdjustments: (d.stockAdjustments || []).filter((a) => a.id !== adjustmentId),
-    }));
+    update(
+      (d) => ({ ...d, stockAdjustments: (d.stockAdjustments || []).filter((a) => a.id !== adjustmentId) }),
+      () => sbDeleteStockAdjustment(adjustmentId)
+    );
 
   // ── Replace entire itemCategories array (called from Inventory category UI) ─
   const updateItemCategories = (categories) =>
-    update((d) => ({ ...d, itemCategories: categories }));
+    update(
+      (d) => ({ ...d, itemCategories: categories }),
+      () => sbSaveItemCategories(categories, user.id)
+    );
 
   // ── Item Catalog CRUD ────────────────────────────────────────────────────────
   const addCatalogItem = (item) =>
@@ -560,88 +718,131 @@ export default function App() {
       }
 
       return { ...d, itemCatalog: newCatalog, itemCategories: newCategories };
-    });
+    },
+    (nd) => {
+      const savedItem = nd.itemCatalog.find((c) => normItem(c.name) === normItem(item.name));
+      return Promise.all([
+        savedItem ? sbSaveItemCatalogItem(savedItem, user.id) : Promise.resolve(),
+        sbSaveItemCategories(nd.itemCategories, user.id),
+      ]);
+    }
+    );
 
   const updateCatalogItem = (updatedItem) =>
-    update((d) => {
-      const newCatalog = (d.itemCatalog || []).map((c) => c.id === updatedItem.id ? updatedItem : c);
+    update(
+      (d) => {
+        const newCatalog = (d.itemCatalog || []).map((c) => c.id === updatedItem.id ? updatedItem : c);
+        const newCategories = (d.itemCategories || []).map((cat) => {
+          if (normItem(cat.groupName) !== normItem(updatedItem.name)) return cat;
+          const baseKey = normItem(updatedItem.name);
+          const subKeys = (updatedItem.subtypes || []).map((sub) => normItem(`${updatedItem.name} ${sub}`));
+          return { ...cat, items: [baseKey, ...subKeys] };
+        });
+        return { ...d, itemCatalog: newCatalog, itemCategories: newCategories };
+      },
+      (nd) => Promise.all([
+        sbSaveItemCatalogItem(updatedItem, user.id),
+        sbSaveItemCategories(nd.itemCategories, user.id),
+      ])
+    );
 
-      // Sync the matching itemCategories entry's items[] when subtypes change
-      const newCategories = (d.itemCategories || []).map((cat) => {
-        if (normItem(cat.groupName) !== normItem(updatedItem.name)) return cat;
-        const baseKey = normItem(updatedItem.name);
-        const subKeys = (updatedItem.subtypes || []).map((sub) => normItem(`${updatedItem.name} ${sub}`));
-        return { ...cat, items: [baseKey, ...subKeys] };
-      });
-
-      return { ...d, itemCatalog: newCatalog, itemCategories: newCategories };
-    });
-
-  const deleteCatalogItem = (itemId) =>
-    update((d) => {
-      const cat = (d.itemCatalog || []).find((c) => c.id === itemId);
-      if (!cat) return d;
-      // Safety guard: only permanently delete if no transactions reference this item
-      const allNames = [cat.name, ...(cat.subtypes || []).map((s) => `${cat.name} ${s}`)];
-      const hasTx = d.transactions.some((t) => {
-        const items = Array.isArray(t.items) && t.items.length > 0
-          ? t.items : [{ itemName: t.itemName }];
-        return items.some((it) => allNames.some((n) => normItem(n) === normItem(it.itemName)));
-      });
-      if (hasTx) return d; // block — UI should prevent this path for items with transactions
-      return {
-        ...d,
-        itemCatalog:      (d.itemCatalog || []).filter((c) => c.id !== itemId),
-        itemCategories:   (d.itemCategories || []).filter((c) => normItem(c.groupName) !== normItem(cat.name)),
-        stockAdjustments: (d.stockAdjustments || []).filter(
-          (a) => !allNames.some((n) => normItem(n) === normItem(a.itemName))
-        ),
-      };
-    });
+  const deleteCatalogItem = (itemId) => {
+    let adjIdsToDelete = [];
+    update(
+      (d) => {
+        const cat = (d.itemCatalog || []).find((c) => c.id === itemId);
+        if (!cat) return d;
+        const allNames = [cat.name, ...(cat.subtypes || []).map((s) => `${cat.name} ${s}`)];
+        const hasTx = d.transactions.some((t) => {
+          const items = Array.isArray(t.items) && t.items.length > 0
+            ? t.items : [{ itemName: t.itemName }];
+          return items.some((it) => allNames.some((n) => normItem(n) === normItem(it.itemName)));
+        });
+        if (hasTx) return d;
+        // Capture adjustment IDs before filtering them out
+        adjIdsToDelete = (d.stockAdjustments || [])
+          .filter((a) => allNames.some((n) => normItem(n) === normItem(a.itemName)))
+          .map((a) => a.id);
+        return {
+          ...d,
+          itemCatalog:      (d.itemCatalog || []).filter((c) => c.id !== itemId),
+          itemCategories:   (d.itemCategories || []).filter((c) => normItem(c.groupName) !== normItem(cat.name)),
+          stockAdjustments: (d.stockAdjustments || []).filter(
+            (a) => !allNames.some((n) => normItem(n) === normItem(a.itemName))
+          ),
+        };
+      },
+      (nd) => Promise.all([
+        sbDeleteItemCatalogItem(itemId),
+        sbSaveItemCategories(nd.itemCategories, user.id),
+        ...adjIdsToDelete.map((id) => sbDeleteStockAdjustment(id)),
+      ])
+    );
+  };
 
   // ── Archive / unarchive catalog items ─────────────────────────────────────
   const archiveCatalogItem = (itemId) =>
-    update((d) => ({
-      ...d,
-      itemCatalog: (d.itemCatalog || []).map((c) =>
-        c.id === itemId ? { ...c, archived: true } : c
-      ),
-    }));
+    update(
+      (d) => ({
+        ...d,
+        itemCatalog: (d.itemCatalog || []).map((c) => c.id === itemId ? { ...c, archived: true } : c),
+      }),
+      (nd) => {
+        const c = nd.itemCatalog.find((x) => x.id === itemId);
+        return c ? sbSaveItemCatalogItem(c, user.id) : Promise.resolve();
+      }
+    );
 
   const unarchiveCatalogItem = (itemId) =>
-    update((d) => ({
-      ...d,
-      itemCatalog: (d.itemCatalog || []).map((c) =>
-        // Only unarchive the base item — archivedSubtypes stays unchanged;
-        // each subtype is archived/unarchived independently via archiveSubtype/unarchiveSubtype.
-        c.id === itemId ? { ...c, archived: false } : c
-      ),
-    }));
+    update(
+      (d) => ({
+        ...d,
+        itemCatalog: (d.itemCatalog || []).map((c) =>
+          c.id === itemId ? { ...c, archived: false } : c
+        ),
+      }),
+      (nd) => {
+        const c = nd.itemCatalog.find((x) => x.id === itemId);
+        return c ? sbSaveItemCatalogItem(c, user.id) : Promise.resolve();
+      }
+    );
 
   const archiveSubtype = (itemId, subtypeName) =>
-    update((d) => ({
-      ...d,
-      itemCatalog: (d.itemCatalog || []).map((c) => {
-        if (c.id !== itemId) return c;
-        const existing = c.archivedSubtypes || [];
-        if (existing.some((s) => normItem(s) === normItem(subtypeName))) return c;
-        return { ...c, archivedSubtypes: [...existing, subtypeName] };
+    update(
+      (d) => ({
+        ...d,
+        itemCatalog: (d.itemCatalog || []).map((c) => {
+          if (c.id !== itemId) return c;
+          const existing = c.archivedSubtypes || [];
+          if (existing.some((s) => normItem(s) === normItem(subtypeName))) return c;
+          return { ...c, archivedSubtypes: [...existing, subtypeName] };
+        }),
       }),
-    }));
+      (nd) => {
+        const c = nd.itemCatalog.find((x) => x.id === itemId);
+        return c ? sbSaveItemCatalogItem(c, user.id) : Promise.resolve();
+      }
+    );
 
   const unarchiveSubtype = (itemId, subtypeName) =>
-    update((d) => ({
-      ...d,
-      itemCatalog: (d.itemCatalog || []).map((c) => {
-        if (c.id !== itemId) return c;
-        return {
-          ...c,
-          archivedSubtypes: (c.archivedSubtypes || []).filter(
-            (s) => normItem(s) !== normItem(subtypeName)
-          ),
-        };
+    update(
+      (d) => ({
+        ...d,
+        itemCatalog: (d.itemCatalog || []).map((c) => {
+          if (c.id !== itemId) return c;
+          return {
+            ...c,
+            archivedSubtypes: (c.archivedSubtypes || []).filter(
+              (s) => normItem(s) !== normItem(subtypeName)
+            ),
+          };
+        }),
       }),
-    }));
+      (nd) => {
+        const c = nd.itemCatalog.find((x) => x.id === itemId);
+        return c ? sbSaveItemCatalogItem(c, user.id) : Promise.resolve();
+      }
+    );
 
   // ── Rename an inventory item across all transactions and adjustments ───────
   const renameInventoryItem = (oldName, newName) =>
@@ -664,24 +865,56 @@ export default function App() {
       stockAdjustments: (d.stockAdjustments || []).map((a) =>
         normItem(a.itemName) === normItem(oldName) ? { ...a, itemName: newName } : a
       ),
-    }));
+    }),
+    (nd) => Promise.all([
+      ...nd.transactions
+        .filter((t) => {
+          const items = Array.isArray(t.items) && t.items.length > 0 ? t.items : [{ itemName: t.itemName }];
+          return items.some((it) => normItem(it.itemName) === normItem(newName));
+        })
+        .map((tx) => sbSaveTransaction(tx, user.id)),
+      ...nd.stockAdjustments
+        .filter((a) => normItem(a.itemName) === normItem(newName))
+        .map((adj) => sbSaveStockAdjustment(adj, user.id)),
+    ])
+    );
 
   // ── Delete all transactions and adjustments for an inventory item ──────────
-  const deleteInventoryItem = (itemName) =>
-    update((d) => ({
-      ...d,
-      // Check all items[] entries, not just the top-level t.itemName (which is only the first item).
-      // This ensures multi-item transactions are caught when the deleted item is a secondary item.
-      transactions: d.transactions.filter((t) => {
-        const itemList = Array.isArray(t.items) && t.items.length > 0
-          ? t.items
-          : [{ itemName: t.itemName }];
-        return !itemList.some((it) => normItem(it.itemName) === normItem(itemName));
-      }),
-      stockAdjustments: (d.stockAdjustments || []).filter(
-        (a) => normItem(a.itemName) !== normItem(itemName)
-      ),
-    }));
+  const deleteInventoryItem = (itemName) => {
+    // Capture IDs in closure variables so they are available to the supabaseOperation
+    // without polluting the returned data state with extra keys.
+    let txIdsToDelete = [];
+    let adjIdsToDelete = [];
+    update(
+      (d) => {
+        txIdsToDelete = d.transactions
+          .filter((t) => {
+            const itemList = Array.isArray(t.items) && t.items.length > 0
+              ? t.items : [{ itemName: t.itemName }];
+            return itemList.some((it) => normItem(it.itemName) === normItem(itemName));
+          })
+          .map((t) => t.id);
+        adjIdsToDelete = (d.stockAdjustments || [])
+          .filter((a) => normItem(a.itemName) === normItem(itemName))
+          .map((a) => a.id);
+        return {
+          ...d,
+          transactions: d.transactions.filter((t) => {
+            const itemList = Array.isArray(t.items) && t.items.length > 0
+              ? t.items : [{ itemName: t.itemName }];
+            return !itemList.some((it) => normItem(it.itemName) === normItem(itemName));
+          }),
+          stockAdjustments: (d.stockAdjustments || []).filter(
+            (a) => normItem(a.itemName) !== normItem(itemName)
+          ),
+        };
+      },
+      () => Promise.all([
+        ...txIdsToDelete.map((id) => sbDeleteTransaction(id)),
+        ...adjIdsToDelete.map((id) => sbDeleteStockAdjustment(id)),
+      ])
+    );
+  };
 
   // ── Navigation ────────────────────────────────────────────────────────────
   const navItems = [
@@ -730,21 +963,78 @@ export default function App() {
   const daysSinceExport = lastExport
     ? (new Date().getTime() - new Date(lastExport).getTime()) / (1000 * 3600 * 24)
     : Infinity;
-  const showBackupWarning = daysSinceExport > 7;
+  const showBackupWarning = !USE_SUPABASE && daysSinceExport > 7;
 
   /** Quick export from backup banner — same format as Settings.js exportAll */
-  const quickExport = () => {
+  const quickExport = useCallback(() => {
+    if (USE_SUPABASE) {
+      try {
+        const exportPayload = {
+          ...data,
+          _exportedAt: new Date().toISOString(),
+          _normVersion: 18,
+        };
+        const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `BukuKas_Backup_${today()}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        const now = new Date().toISOString();
+        update(
+          (d) => ({ ...d, settings: { ...d.settings, lastExportDate: now } }),
+          (nd) => sbSaveSettings(nd.settings, user.id)
+        );
+      } catch (err) {
+        console.error("Export failed:", err);
+      }
+      return;
+    }
     try {
       const raw = localStorage.getItem(STORAGE_KEY) || "{}";
-      const dateStr = today().replace(/-/g, "-");
-      const a = document.createElement("a");
-      a.href = "data:application/json;charset=utf-8," + encodeURIComponent(raw);
-      a.download = `bukukas-backup-${dateStr}.json`;
-      a.click();
+      const blob = new Blob([raw], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `BukuKas_Backup_${today()}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       const now = new Date().toISOString();
-      update((d) => ({ ...d, settings: { ...d.settings, lastExportDate: now } }));
-    } catch { /* ignore download errors */ }
-  };
+      update(
+        (d) => ({ ...d, settings: { ...d.settings, lastExportDate: now } }),
+        (nd) => sbSaveSettings(nd.settings, user.id)
+      );
+    } catch (err) {
+      console.error("Export failed:", err);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, user]);
+
+  // ── Auth gate (after all hooks) ───────────────────────────────────────────
+  if (authLoading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", flexDirection: "column", gap: 12, background: "#f0f6ff" }}>
+        <div style={{ fontSize: 32 }}>📒</div>
+        <div style={{ color: "#1e3a5f", fontWeight: 600 }}>Memuat...</div>
+      </div>
+    );
+  }
+  if (!user) return <Login />;
+
+  // ── App data loading gate ─────────────────────────────────────────────────
+  if (appLoading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", flexDirection: "column", gap: 16 }}>
+        <div className="spinner" />
+        <p style={{ color: "#1e3a5f", fontWeight: 600, margin: 0 }}>Memuat data...</p>
+      </div>
+    );
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -818,7 +1108,7 @@ export default function App() {
           ))}
         </nav>
 
-        {/* Collapse toggle */}
+        {/* Collapse toggle + user info + logout */}
         <div className="sidebar__foot">
           <div
             onClick={() => setSidebarOpen((o) => !o)}
@@ -831,13 +1121,30 @@ export default function App() {
             <Icon name="menu" size={18} color="#93c5fd" />
             {sidebarOpen && <span>Ciutkan</span>}
           </div>
+          {sidebarOpen && profile && (
+            <div className="sidebar__user">
+              <div className="sidebar__user-name">{profile.full_name || profile.email}</div>
+              <div className="sidebar__user-role">
+                {profile.role === "owner" ? "Pemilik" : "Karyawan"}
+              </div>
+            </div>
+          )}
+          <button
+            className="btn-logout"
+            onClick={signOut}
+            title="Keluar"
+            aria-label="Keluar dari akun"
+          >
+            <Icon name="warning" size={14} color="#fca5a5" />
+            {sidebarOpen && <span>Keluar</span>}
+          </button>
         </div>
       </aside>
 
       {/* ── Main content ── */}
       <main className="main-content" aria-label="Konten utama">
-        {/* ── Save Error Banner ── */}
-        {saveError && (
+        {/* ── Save Error Banner (localStorage mode only) ── */}
+        {saveError && !USE_SUPABASE && (
           <div role="alert" style={{
             background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8,
             padding: "12px 16px", margin: "0 0 16px", display: "flex",
@@ -971,7 +1278,19 @@ export default function App() {
             contacts={data.contacts}
             transactions={data.transactions}
             balanceMap={balanceMap}
-            onAddContact={(c) => update((d) => ({ ...d, contacts: [...d.contacts, { ...c, archived: false }] }))}
+            onAddContact={(c) => {
+              const newC = { ...c, archived: false };
+              update(
+                (d) => {
+                  if (d.contacts.some((x) => x.name.toLowerCase() === newC.name.toLowerCase())) return d;
+                  return { ...d, contacts: [...d.contacts, newC] };
+                },
+                (nd) => {
+                  const wasAdded = nd.contacts.some((x) => x.id === newC.id);
+                  return wasAdded ? sbSaveContact(newC, user.id) : Promise.resolve();
+                }
+              );
+            }}
             onUpdateContact={updateContact}
             onDeleteContact={deleteContact}
             onArchiveContact={archiveContact}
@@ -1017,7 +1336,11 @@ export default function App() {
           <Settings
             settings={data.settings}
             transactions={data.transactions}
-            onSave={(s) => update((d) => ({ ...d, settings: s }))}
+            data={data}
+            onSave={(s) => update(
+              (d) => ({ ...d, settings: s }),
+              () => sbSaveSettings(s, user.id)
+            )}
             onImport={handleImport}
           />
         )}
@@ -1080,6 +1403,16 @@ export default function App() {
           mode={dotMatrixData.mode}
           settings={data.settings}
           onClose={() => setDotMatrixData(null)}
+        />
+      )}
+      {saveErrorModal && (
+        <SaveErrorModal
+          message={saveErrorModal.message}
+          onRetry={() => {
+            setSaveErrorModal(null);
+            saveErrorModal.retryFn?.();
+          }}
+          onDismiss={() => setSaveErrorModal(null)}
         />
       )}
     </div>

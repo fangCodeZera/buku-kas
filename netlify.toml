@@ -1,0 +1,23 @@
+# Purpose: Netlify deployment configuration for BukuKas.
+# Handles build settings, SPA routing, and HTTP security headers as a backup to public/_headers.
+
+[build]
+  command = "npm run build"
+  publish = "build"
+
+# SPA redirect: all routes → index.html (required for React single-page app)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Security headers (backup — Netlify applies public/_headers first if present)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
+    Content-Security-Policy = "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"

@@ -1,6 +1,27 @@
+# Dependencies
 node_modules/
+
+# Production build
 build/
-.DS_Store
+
+# Environment variables - never commit these
 .env
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Supabase MCP config - contains service role key
+.claude/claude_mcp_config.json
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Logs
 *.log
+npm-debug.log*
+
+# Editor
+.vscode/settings.json

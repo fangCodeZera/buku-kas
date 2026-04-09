@@ -150,7 +150,7 @@
 
 **Key local state:** `sortBy` (at Outstanding level); `deleteTx`, `paidTx`, `toast`, `page`, `expandedTxId` (inside `OutstandingTable` sub-component)
 
-**Highlight behavior:** `OutstandingTable` receives `flashIds`. Rows with matching IDs get `.flash-row` CSS class (permanent highlight, not timed). First matching row scrolled into view via `firstHighlightRef` on mount.
+**Highlight behavior:** Each row computes a permanent class from `dueDate`: `.outstanding-row--overdue` (past due) or `.outstanding-row--near-due` (≤3 days). `OutstandingTable` additionally receives `flashIds` (Set). Flash rows get `.outstanding-row--flash` (blue). Flash is cleared on first user interaction (click/keydown/scroll) after a 500ms debounce. First flash row scrolled into view via `document.querySelector("tr.outstanding-row--flash")` in a 50ms setTimeout.
 
 **Sort options:** `nearestDue`, `furthestDue`, `smallestOut`, `largestOut`. Null/undefined dueDates always sort to end.
 

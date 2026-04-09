@@ -24,31 +24,31 @@ npm run build    # production build
 
 ```
 src/
-  App.js                         ~1100  Root component — all state, all handlers, nav
-  styles.css                     ~2950  All styling (BEM-inspired, no CSS modules)
+  App.js                          1086  Root component — all state, all handlers, nav
+  styles.css                      2938  All styling (BEM-inspired, no CSS modules)
   index.js                              React root render
 
   utils/
-    storage.js                    ~400  loadData, saveData, defaultData, NORM_VERSION, migrateData
-    idGenerators.js                168  generateId, fmtIDR, today, addDays, diffDays, nowTime,
+    storage.js                     406  loadData, saveData, defaultData, NORM_VERSION, migrateData
+    idGenerators.js                171  generateId, fmtIDR, today, addDays, diffDays, nowTime,
                                         fmtDate, normItem, normalizeTitleCase, generateTxnId,
                                         toCommaDisplay, numToDisplay, displayToNum
     statusUtils.js                  54  STATUS constants, deriveStatus, isUnpaid, LEGACY_STATUS_MAP
-    categoryUtils.js               310  generateCode, generateCodes, autoDetectCategories, getCategoryForItem
+    categoryUtils.js               315  generateCode, generateCodes, autoDetectCategories, getCategoryForItem
     paymentUtils.js                 20  computePaymentProgress
     balanceUtils.js                 72  computeARandAP, computeCashIncome, computeCashExpense, computeNetCash
     printUtils.js                   47  printWithPortal, escapeHtml
     stockUtils.js                  114  computeStockMap, computeStockMapForDate
-    textFormatter.js              ~387  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText)
+    textFormatter.js               387  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText)
 
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
     Inventory.js                  1665  Stock inventory with catalog table + ledger
     Contacts.js                    639  Contact list + detail panel + transaction history
-    Reports.js                     501  Date-range financial report + CSV/JSON export
+    Reports.js                     504  Date-range financial report + CSV/JSON export
     Outstanding.js                 557  AR/AP outstanding transactions view
-    Settings.js                   ~553  Business settings + JSON/CSV backup/restore + printer type toggle
+    Settings.js                    554  Business settings + JSON/CSV backup/restore + printer type toggle
     ArchivedItems.js               286  Archived catalog items — restore or delete
     ArchivedContacts.js            222  Archived contacts — restore or delete
 
@@ -61,6 +61,7 @@ src/
     InvoiceModal.js                337  Printable A4 invoice
     SuratJalanModal.js             289  Printable A4 delivery note
     DotMatrixPrintModal.js         122  Dot matrix preview + print modal (invoice & surat jalan)
+    ReportModal.js                 312  Printable A4 report modal (opened from Reports page)
     StockWarningModal.js            77  Negative-stock warning
     CategoryModal.js               488  Category management with drag-and-drop
     StockReportModal.js            330  Printable stock report
@@ -450,7 +451,7 @@ Note: `onInvoice` prop is not used in the current code (was removed). `onReport`
 
 **Layout:** Two `OutstandingTable` sections (Piutang / Hutang). Each section paginated 50/page.
 
-**Highlight behavior:** `OutstandingTable` receives `flashIds` (internal — passed from parent's `highlightTxIds`). Rows with matching IDs get `.flash-row` CSS class. First matching row scrolled into view via ref on mount.
+**Highlight behavior:** `OutstandingTable` receives `flashIds` (Set — derived from parent's `highlightTxIds` array). Each row also computes a permanent class from `dueDate`: `.outstanding-row--overdue` (past due) or `.outstanding-row--near-due` (≤3 days). Flash rows additionally get `.outstanding-row--flash` (blue). Flash is cleared on first user interaction (click/keydown/scroll) after a 500ms debounce. First flash row is scrolled into view (50ms setTimeout after render).
 
 **Sort options:** Jatuh Tempo Terdekat / Terjauh / Outstanding Terkecil / Terbesar. Null dueDates sort to end.
 
@@ -619,7 +620,7 @@ Used when `settings.printerType === "Dot Matrix"`. Optimized for Epson LX-300+II
 
 ## 10. CSS Structure
 
-File: `src/styles.css` — ~2950 lines. BEM-inspired kebab-case. No CSS modules.
+File: `src/styles.css` — 2938 lines. BEM-inspired kebab-case. No CSS modules.
 
 **Color palette:**
 | Role | Value |

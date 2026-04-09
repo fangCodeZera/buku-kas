@@ -93,7 +93,84 @@ body {
 .sidebar__ar-ap-val   { color: #fff; font-size: 11px; font-weight: 800; }
 
 .sidebar__nav  { padding: 10px 8px; flex: 1; }
-.sidebar__foot { padding: 10px 8px; border-top: 1px solid rgba(255,255,255,.09); }
+.sidebar__foot { padding: 10px 8px; border-top: 1px solid rgba(255,255,255,.09); display: flex; flex-direction: column; gap: 6px; }
+
+/* Phase 3: logged-in user info in sidebar footer */
+.sidebar__user        { padding: 6px 4px 2px; }
+.sidebar__user-name   { color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar__user-role   { color: #93c5fd; font-size: 11px; margin-top: 1px; }
+
+/* Phase 3: logout button */
+.btn-logout {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(239,68,68,.12);
+  color: #fca5a5;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.btn-logout:hover { background: rgba(239,68,68,.25); }
+
+/* Phase 3: login page */
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #f0f6ff;
+  padding: 24px;
+}
+.login-card {
+  background: #fff;
+  border: 1px solid #c7ddf7;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(30,58,95,.10);
+  padding: 40px 36px 36px;
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+.login-logo      { font-size: 40px; margin-bottom: 8px; }
+.login-title     { font-size: 26px; font-weight: 800; color: #1e3a5f; margin: 0 0 4px; }
+.login-subtitle  { font-size: 13px; color: #6b7280; margin: 0 0 28px; }
+.login-field     { text-align: left; margin-bottom: 16px; }
+.login-label     { display: block; font-size: 13px; font-weight: 600; color: #1e3a5f; margin-bottom: 5px; }
+.login-field .form-input { width: 100%; box-sizing: border-box; }
+.login-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  color: #991b1b;
+  font-size: 13px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+.login-btn { width: 100%; margin-top: 4px; padding: 11px; font-size: 15px; }
+
+/* Phase 4: loading spinner */
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #c7ddf7;
+  border-top-color: #007bff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Phase 4: blocking modal overlay */
+.modal-overlay--blocking { pointer-events: auto; }
 
 .nav-item {
   display: flex;
