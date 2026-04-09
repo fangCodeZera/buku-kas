@@ -5,10 +5,11 @@
 
 import supabase from './supabaseClient';
 import { defaultData } from './storage';
+import { checkVersion, ConflictError } from './conflictDetector';
 
 // ── Field mappers: DB row → JS object ─────────────────────────────────────────
 
-const mapTransaction = (row) => ({
+export const mapTransaction = (row) => ({
   id:             row.id,
   type:           row.type,
   date:           row.date,
@@ -34,7 +35,7 @@ const mapTransaction = (row) => ({
   updated_by:     row.updated_by,
 });
 
-const mapContact = (row) => ({
+export const mapContact = (row) => ({
   id:         row.id,
   name:       row.name,
   email:      row.email,
@@ -46,7 +47,7 @@ const mapContact = (row) => ({
   updated_by: row.updated_by,
 });
 
-const mapStockAdjustment = (row) => ({
+export const mapStockAdjustment = (row) => ({
   id:            row.id,
   itemName:      row.item_name,
   date:          row.date,
@@ -60,7 +61,7 @@ const mapStockAdjustment = (row) => ({
   updated_by:    row.updated_by,
 });
 
-const mapCatalogItem = (row) => ({
+export const mapCatalogItem = (row) => ({
   id:               row.id,
   name:             row.name,
   defaultUnit:      row.default_unit,
@@ -137,8 +138,13 @@ export async function loadDataFromSupabase(userId) {
  * Upsert a single transaction to Supabase.
  * @param {Object} tx - full camelCase transaction object
  * @param {string} userId - current user's UUID
+ * @param {boolean} isEdit - if true, checks version before saving (throws ConflictError on mismatch)
  */
-export async function saveTransaction(tx, userId) {
+export async function saveTransaction(tx, userId, isEdit = false) {
+  if (isEdit) {
+    const result = await checkVersion('transactions', tx.id, tx.version);
+    if (result.conflict) throw new ConflictError(result.updatedBy);
+  }
   const { error } = await supabase.from('transactions').upsert({
     id:               tx.id,
     type:             tx.type,
@@ -180,8 +186,13 @@ export async function deleteTransaction(id) {
  * Upsert a single contact to Supabase.
  * @param {Object} contact - full camelCase contact object
  * @param {string} userId
+ * @param {boolean} isEdit - if true, checks version before saving (throws ConflictError on mismatch)
  */
-export async function saveContact(contact, userId) {
+export async function saveContact(contact, userId, isEdit = false) {
+  if (isEdit) {
+    const result = await checkVersion('contacts', contact.id, contact.version);
+    if (result.conflict) throw new ConflictError(result.updatedBy);
+  }
   const { error } = await supabase.from('contacts').upsert({
     id:         contact.id,
     name:       contact.name,

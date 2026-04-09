@@ -94,13 +94,15 @@ export function subscribeToPresence(userId, userInfo, onPresenceChange) {
   channel
     .on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
+      const seen = new Set();
       const onlineUsers = Object.values(state)
         .flat()
-        .map((u) => ({
-          id:   u.id,
-          name: u.name,
-          role: u.role,
-        }));
+        .map((u) => ({ id: u.id, name: u.name, role: u.role }))
+        .filter((u) => {
+          if (seen.has(u.id)) return false;
+          seen.add(u.id);
+          return true;
+        });
       onPresenceChange(onlineUsers);
     })
     .subscribe(async (status) => {

@@ -52,8 +52,14 @@ import {
   saveItemCatalogItem as sbSaveItemCatalogItem,
   deleteItemCatalogItem as sbDeleteItemCatalogItem,
   saveSettings as sbSaveSettings,
+  mapTransaction,
+  mapContact,
+  mapStockAdjustment,
+  mapCatalogItem,
 } from "./utils/supabaseStorage";
 import SaveErrorModal from "./components/SaveErrorModal";
+import ConflictModal from "./components/ConflictModal";
+import { subscribeToChanges, subscribeToPresence } from "./utils/realtimeManager";
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
 import { loadData, saveData, STORAGE_KEY } from "./utils/storage";
@@ -154,6 +160,10 @@ export default function App() {
   const [suratJalanTx, setSuratJalanTx] = useState(null);
   const [showStockReport, setShowStockReport] = useState(false);
   const [dotMatrixData, setDotMatrixData] = useState(null); // { transaction, mode } | null
+  // Phase 5: Realtime + conflict detection
+  const [showConflictModal,  setShowConflictModal]  = useState(false);
+  const [conflictUpdatedBy,  setConflictUpdatedBy]  = useState('');
+  const [onlineUsers,        setOnlineUsers]        = useState([]); // [{ id, name, role }]
   const saveTimer = useRef();
   // dataRef always mirrors the latest committed data. update() reads from it instead
   // of using setData's functional updater, which prevents React StrictMode from
@@ -196,6 +206,13 @@ export default function App() {
       setSaved(true);
       setSaveError(false);
     } catch (err) {
+      if (err.isConflict) {
+        // Another user saved first — show conflict modal, don't block UI
+        setConflictUpdatedBy(err.updatedBy);
+        setShowConflictModal(true);
+        setSaved(true); // CRITICAL: prevent stuck 'Menyimpan...' state
+        return;
+      }
       setSaveError(true);
       setSaved(false);
       setSaveErrorModal({ message: err.message, retryFn });
@@ -297,6 +314,82 @@ export default function App() {
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // ── Phase 5: Realtime — apply incoming DB changes directly to state ─────────
+  // CRITICAL: uses setData directly, NEVER update(). Calling update() would trigger
+  // persistToSupabase and write the incoming data back to Supabase — causing write
+  // loops and corrupting updated_by audit fields.
+  const handleRealtimeUpdate = useCallback((table, eventType, record) => {
+    setData((d) => {
+      if (eventType === 'DELETE') {
+        if (table === 'transactions')
+          return { ...d, transactions: d.transactions.filter((x) => x.id !== record.id) };
+        if (table === 'contacts')
+          return { ...d, contacts: d.contacts.filter((x) => x.id !== record.id) };
+        if (table === 'stock_adjustments')
+          return { ...d, stockAdjustments: (d.stockAdjustments || []).filter((x) => x.id !== record.id) };
+        if (table === 'item_catalog')
+          return { ...d, itemCatalog: (d.itemCatalog || []).filter((x) => x.id !== record.id) };
+        return d;
+      }
+      // INSERT or UPDATE
+      const mapped =
+        table === 'transactions'    ? mapTransaction(record) :
+        table === 'contacts'        ? mapContact(record) :
+        table === 'stock_adjustments' ? mapStockAdjustment(record) :
+        table === 'item_catalog'    ? mapCatalogItem(record) :
+        null;
+      if (!mapped) return d;
+      if (table === 'transactions') {
+        const exists = d.transactions.some((x) => x.id === mapped.id);
+        return { ...d, transactions: exists
+          ? d.transactions.map((x) => x.id === mapped.id ? mapped : x)
+          : [...d.transactions, mapped] };
+      }
+      if (table === 'contacts') {
+        const exists = d.contacts.some((x) => x.id === mapped.id);
+        return { ...d, contacts: exists
+          ? d.contacts.map((x) => x.id === mapped.id ? mapped : x)
+          : [...d.contacts, mapped] };
+      }
+      if (table === 'stock_adjustments') {
+        const arr = d.stockAdjustments || [];
+        const exists = arr.some((x) => x.id === mapped.id);
+        return { ...d, stockAdjustments: exists
+          ? arr.map((x) => x.id === mapped.id ? mapped : x)
+          : [...arr, mapped] };
+      }
+      if (table === 'item_catalog') {
+        const arr = d.itemCatalog || [];
+        const exists = arr.some((x) => x.id === mapped.id);
+        return { ...d, itemCatalog: exists
+          ? arr.map((x) => x.id === mapped.id ? mapped : x)
+          : [...arr, mapped] };
+      }
+      return d;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!USE_SUPABASE || !user) return;
+    const cleanup = subscribeToChanges(handleRealtimeUpdate);
+    return cleanup;
+  }, [user, handleRealtimeUpdate]);
+
+  // ── Phase 5: Presence — track online users ───────────────────────────────
+  const handlePresenceChange = useCallback((presences) => {
+    setOnlineUsers(presences);
+  }, []);
+
+  useEffect(() => {
+    if (!USE_SUPABASE || !user || !profile) return;
+    const cleanup = subscribeToPresence(
+      user.id,
+      { id: user.id, name: profile.full_name || profile.email, role: profile.role },
+      handlePresenceChange
+    );
+    return cleanup;
+  }, [user, profile, handlePresenceChange]);
 
   // Note: totalIncome/totalExpense are CASH-BASIS (value - outstanding), not gross values.
   // The Contacts page labels these as "Total Penjualan/Pembelian" which may imply gross.
@@ -467,7 +560,7 @@ export default function App() {
     }),
     (nd) => {
       const updated = nd.transactions.find((x) => x.id === nt.id);
-      return updated ? sbSaveTransaction(updated, user.id) : Promise.resolve();
+      return updated ? sbSaveTransaction(updated, user.id, true) : Promise.resolve();
     }
     );
   };
@@ -628,7 +721,7 @@ export default function App() {
             )
           : [];
         return Promise.all([
-          updated ? sbSaveContact(updated, user.id) : Promise.resolve(),
+          updated ? sbSaveContact(updated, user.id, true) : Promise.resolve(),
           ...cascadedTxs.map((tx) => sbSaveTransaction(tx, user.id)),
         ]);
       }
@@ -1108,6 +1201,19 @@ export default function App() {
           ))}
         </nav>
 
+        {/* Online users (presence) */}
+        {sidebarOpen && USE_SUPABASE && onlineUsers.length > 0 && (
+          <div className="presence-section">
+            <div className="presence-label">Online sekarang</div>
+            {onlineUsers.map((u) => (
+              <div key={u.id} className="presence-user">
+                <span className="presence-dot" />
+                <span>{u.name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Collapse toggle + user info + logout */}
         <div className="sidebar__foot">
           <div
@@ -1413,6 +1519,12 @@ export default function App() {
             saveErrorModal.retryFn?.();
           }}
           onDismiss={() => setSaveErrorModal(null)}
+        />
+      )}
+      {showConflictModal && (
+        <ConflictModal
+          updatedBy={conflictUpdatedBy}
+          onClose={() => { setShowConflictModal(false); setConflictUpdatedBy(''); }}
         />
       )}
     </div>
