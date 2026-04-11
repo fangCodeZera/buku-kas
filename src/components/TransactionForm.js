@@ -442,6 +442,22 @@ const TransactionForm = ({
     // Not in active catalog — check if it's an archived base item
     const archivedCat = itemCatalog.find((c) => c.archived && normItem(c.name) === normItem(baseName));
     if (archivedCat) return { status: "archived_item", baseName, typeName, catalogItem: archivedCat };
+    // Check if baseName is "ExistingBase Subtype" typed as one string (e.g. "Bawang Merah Red"
+    // when catalog has base "Bawang Merah" with subtype "Red"). Decompose before flagging as new.
+    const inputNorm = normItem(baseName);
+    for (const c of activeCatalog) {
+      const catNorm = normItem(c.name);
+      if (inputNorm.startsWith(catNorm + " ")) {
+        const possibleSub = baseName.trim().substring(c.name.length + 1).trim();
+        if (!possibleSub) continue;
+        const normSub = normItem(possibleSub);
+        // Subtype already exists on this catalog item → matched, no new entry needed
+        if ((c.subtypes || []).some((s) => normItem(s) === normSub))
+          return { status: "matched" };
+        // Subtype is new but base exists → add subtype to existing base, not a new base item
+        return { status: "new_subtype", baseName: c.name, typeName: possibleSub, catalogItem: c };
+      }
+    }
     // Completely new item
     return { status: "new_item", baseName, typeName };
   };

@@ -23,6 +23,7 @@ import Settings  from "./pages/Settings";
 import Outstanding from "./pages/Outstanding";
 import ArchivedItems    from "./pages/ArchivedItems";
 import ArchivedContacts from "./pages/ArchivedContacts";
+import ActivityLog      from "./pages/ActivityLog";
 
 // ── Components ────────────────────────────────────────────────────────────────
 import TransactionForm    from "./components/TransactionForm";
@@ -52,6 +53,8 @@ import {
   saveItemCatalogItem as sbSaveItemCatalogItem,
   deleteItemCatalogItem as sbDeleteItemCatalogItem,
   saveSettings as sbSaveSettings,
+  saveActivityLog as sbSaveActivityLog,
+  loadActivityLog as sbLoadActivityLog,
   mapTransaction,
   mapContact,
   mapStockAdjustment,
@@ -241,6 +244,21 @@ export default function App() {
       persist(nd);
     }
   };
+
+  // ── Phase 6: non-blocking audit log helper ───────────────────────────────────
+  // Failures silently warn — must never surface to SaveErrorModal.
+  const logActivity = useCallback((action, entityType, entityId, changes = {}) => {
+    if (!user) return Promise.resolve();
+    return sbSaveActivityLog({
+      user_name:   profile?.full_name || user.email || '',
+      action,
+      entity_type: entityType,
+      entity_id:   String(entityId || ''),
+      changes,
+    }, user.id).catch((err) => {
+      console.warn('[activity_log] write failed (non-blocking):', err.message);
+    });
+  }, [user, profile]);
 
   // ── Derived data ─────────────────────────────────────────────────────────────
   const stockMap  = useMemo(() => computeStockMap(data.transactions, data.stockAdjustments || []), [data.transactions, data.stockAdjustments]);
@@ -481,6 +499,10 @@ export default function App() {
         return Promise.all([
           newTx ? sbSaveTransaction(newTx, user.id) : Promise.resolve(),
           newContact ? sbSaveContact(newContact, user.id) : Promise.resolve(),
+          logActivity('create', 'transaction', nt.id, {
+            type: nt.type, counterparty: nt.counterparty, value: nt.value,
+            items: nt.items?.map((i) => i.itemName),
+          }),
         ]);
       }
     );
@@ -560,7 +582,12 @@ export default function App() {
     }),
     (nd) => {
       const updated = nd.transactions.find((x) => x.id === nt.id);
-      return updated ? sbSaveTransaction(updated, user.id, true) : Promise.resolve();
+      return Promise.all([
+        updated ? sbSaveTransaction(updated, user.id, true) : Promise.resolve(),
+        logActivity('edit', 'transaction', nt.id, {
+          counterparty: nt.counterparty, value: nt.value,
+        }),
+      ]);
     }
     );
   };
@@ -568,7 +595,7 @@ export default function App() {
   const deleteTransaction = (id) =>
     update(
       (d) => ({ ...d, transactions: d.transactions.filter((t) => t.id !== id) }),
-      () => sbDeleteTransaction(id)
+      () => Promise.all([sbDeleteTransaction(id), logActivity('delete', 'transaction', id)])
     );
 
   // ── Apply a payment (full or partial) against a transaction's outstanding ──
@@ -620,7 +647,10 @@ export default function App() {
       }),
       (nd) => {
         const updated = nd.transactions.find((x) => x.id === id);
-        return updated ? sbSaveTransaction(updated, user.id) : Promise.resolve();
+        return Promise.all([
+          updated ? sbSaveTransaction(updated, user.id) : Promise.resolve(),
+          logActivity('payment', 'transaction', id, { amount: paidAmount, note: paymentNote }),
+        ]);
       }
     );
 
@@ -637,7 +667,10 @@ export default function App() {
       (nd) => {
         // Only save if the contact was actually added (guard may have returned d unchanged)
         const wasAdded = nd.contacts.some((c) => c.id === newContact.id);
-        return wasAdded ? sbSaveContact(newContact, user.id) : Promise.resolve();
+        return Promise.all([
+          wasAdded ? sbSaveContact(newContact, user.id) : Promise.resolve(),
+          wasAdded ? logActivity('create', 'contact', newContact.id, { name: trimmed }) : Promise.resolve(),
+        ]);
       }
     );
   };
@@ -651,7 +684,10 @@ export default function App() {
       }),
       (nd) => {
         const c = nd.contacts.find((x) => x.id === contactId);
-        return c ? sbSaveContact(c, user.id) : Promise.resolve();
+        return Promise.all([
+          c ? sbSaveContact(c, user.id) : Promise.resolve(),
+          logActivity('edit', 'contact', contactId, { archived: true }),
+        ]);
       }
     );
 
@@ -663,7 +699,10 @@ export default function App() {
       }),
       (nd) => {
         const c = nd.contacts.find((x) => x.id === contactId);
-        return c ? sbSaveContact(c, user.id) : Promise.resolve();
+        return Promise.all([
+          c ? sbSaveContact(c, user.id) : Promise.resolve(),
+          logActivity('edit', 'contact', contactId, { archived: false }),
+        ]);
       }
     );
 
@@ -679,7 +718,10 @@ export default function App() {
         if (hasTx) return d;
         return { ...d, contacts: d.contacts.filter((c) => c.id !== contactId) };
       },
-      () => sbDeleteContact(contactId)
+      () => Promise.all([
+        sbDeleteContact(contactId),
+        logActivity('delete', 'contact', contactId),
+      ])
     );
 
   // ── Update a contact and cascade name changes to transactions ───────────────
@@ -723,6 +765,7 @@ export default function App() {
         return Promise.all([
           updated ? sbSaveContact(updated, user.id, true) : Promise.resolve(),
           ...cascadedTxs.map((tx) => sbSaveTransaction(tx, user.id)),
+          logActivity('edit', 'contact', contact.id, { name: newName }),
         ]);
       }
     );
@@ -744,14 +787,20 @@ export default function App() {
   const addStockAdjustment = (adj) =>
     update(
       (d) => ({ ...d, stockAdjustments: [...(d.stockAdjustments || []), adj] }),
-      () => sbSaveStockAdjustment(adj, user.id)
+      () => Promise.all([
+        sbSaveStockAdjustment(adj, user.id),
+        logActivity('stock_adjustment', 'stock_adjustment', adj.id, { itemName: adj.itemName, qty: adj.adjustmentQty }),
+      ])
     );
 
   // ── Delete a single stock adjustment by id ───────────────────────────────
   const deleteStockAdjustment = (adjustmentId) =>
     update(
       (d) => ({ ...d, stockAdjustments: (d.stockAdjustments || []).filter((a) => a.id !== adjustmentId) }),
-      () => sbDeleteStockAdjustment(adjustmentId)
+      () => Promise.all([
+        sbDeleteStockAdjustment(adjustmentId),
+        logActivity('delete', 'stock_adjustment', adjustmentId),
+      ])
     );
 
   // ── Replace entire itemCategories array (called from Inventory category UI) ─
@@ -817,6 +866,7 @@ export default function App() {
       return Promise.all([
         savedItem ? sbSaveItemCatalogItem(savedItem, user.id) : Promise.resolve(),
         sbSaveItemCategories(nd.itemCategories, user.id),
+        savedItem ? logActivity('create', 'catalog_item', savedItem.id, { name: savedItem.name }) : Promise.resolve(),
       ]);
     }
     );
@@ -836,6 +886,7 @@ export default function App() {
       (nd) => Promise.all([
         sbSaveItemCatalogItem(updatedItem, user.id),
         sbSaveItemCategories(nd.itemCategories, user.id),
+        logActivity('edit', 'catalog_item', updatedItem.id, { name: updatedItem.name }),
       ])
     );
 
@@ -869,6 +920,7 @@ export default function App() {
         sbDeleteItemCatalogItem(itemId),
         sbSaveItemCategories(nd.itemCategories, user.id),
         ...adjIdsToDelete.map((id) => sbDeleteStockAdjustment(id)),
+        logActivity('delete', 'catalog_item', itemId),
       ])
     );
   };
@@ -882,7 +934,10 @@ export default function App() {
       }),
       (nd) => {
         const c = nd.itemCatalog.find((x) => x.id === itemId);
-        return c ? sbSaveItemCatalogItem(c, user.id) : Promise.resolve();
+        return Promise.all([
+          c ? sbSaveItemCatalogItem(c, user.id) : Promise.resolve(),
+          logActivity('edit', 'catalog_item', itemId, { archived: true }),
+        ]);
       }
     );
 
@@ -896,7 +951,10 @@ export default function App() {
       }),
       (nd) => {
         const c = nd.itemCatalog.find((x) => x.id === itemId);
-        return c ? sbSaveItemCatalogItem(c, user.id) : Promise.resolve();
+        return Promise.all([
+          c ? sbSaveItemCatalogItem(c, user.id) : Promise.resolve(),
+          logActivity('edit', 'catalog_item', itemId, { archived: false }),
+        ]);
       }
     );
 
@@ -1018,6 +1076,9 @@ export default function App() {
     { key: "reports",     label: "Laporan",           icon: "reports" },
     { key: "outstanding", label: "Piutang & Hutang",  icon: "warning",  badge: outstandingBadge },
     { key: "settings",    label: "Pengaturan",        icon: "settings" },
+    ...(profile?.role === "owner"
+      ? [{ key: "activityLog", label: "Log Aktivitas", icon: "clock" }]
+      : []),
   ];
 
   /**
@@ -1079,7 +1140,10 @@ export default function App() {
         const now = new Date().toISOString();
         update(
           (d) => ({ ...d, settings: { ...d.settings, lastExportDate: now } }),
-          (nd) => sbSaveSettings(nd.settings, user.id)
+          (nd) => Promise.all([
+            sbSaveSettings(nd.settings, user.id),
+            logActivity('export', 'settings', 'singleton', { format: 'json' }),
+          ])
         );
       } catch (err) {
         console.error("Export failed:", err);
@@ -1445,9 +1509,20 @@ export default function App() {
             data={data}
             onSave={(s) => update(
               (d) => ({ ...d, settings: s }),
-              () => sbSaveSettings(s, user.id)
+              () => Promise.all([
+                sbSaveSettings(s, user.id),
+                logActivity('edit', 'settings', 'singleton', {}),
+              ])
             )}
             onImport={handleImport}
+          />
+        )}
+        {page === "activityLog" && profile?.role === "owner" && (
+          <ActivityLog
+            currentUser={user}
+            profile={profile}
+            onLoadLog={sbLoadActivityLog}
+            onBack={() => setPage("penjualan")}
           />
         )}
       </main>

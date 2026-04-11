@@ -4,6 +4,7 @@
 
 import { createContext, useContext, useState, useEffect } from "react";
 import supabase from "./supabaseClient";
+import { saveActivityLog } from "./supabaseStorage";
 
 const AuthContext = createContext(null);
 
@@ -71,6 +72,14 @@ export function AuthProvider({ children }) {
   const signIn = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    // Non-blocking audit log — failure must not prevent login
+    saveActivityLog({
+      user_name:   data.user.email || '',
+      action:      'login',
+      entity_type: 'auth',
+      entity_id:   data.user.id,
+      changes:     {},
+    }, data.user.id).catch(() => {});
     return data;
   };
 

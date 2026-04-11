@@ -4,6 +4,7 @@
 
 import React, { useState } from "react";
 import { useAuth } from "../utils/AuthContext";
+import Icon from "../components/Icon";
 
 const APP_NAME = "BukuKas";
 
@@ -11,8 +12,9 @@ export default function Login() {
   const { signIn } = useAuth();
   const [email,      setEmail]      = useState("");
   const [password,   setPassword]   = useState("");
-  const [error,      setError]      = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [error,        setError]        = useState("");
+  const [submitting,   setSubmitting]   = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -70,17 +72,29 @@ export default function Login() {
 
           <div className="login-field">
             <label htmlFor="login-password" className="login-label">Kata Sandi</label>
-            <input
-              id="login-password"
-              type="password"
-              className="form-input"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Masukkan kata sandi"
-              autoComplete="current-password"
-              required
-              disabled={submitting}
-            />
+            <div className="login-password-wrapper">
+              <input
+                id="login-password"
+                type={showPassword ? "text" : "password"}
+                className="form-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Masukkan kata sandi"
+                autoComplete="current-password"
+                required
+                disabled={submitting}
+              />
+              <button
+                type="button"
+                className="login-password-toggle"
+                onClick={() => setShowPassword((v) => !v)}
+                disabled={submitting}
+                aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+                tabIndex={-1}
+              >
+                <Icon name="eye" size={16} color={showPassword ? "#007bff" : "#9ca3af"} />
+              </button>
+            </div>
           </div>
 
           {error && (

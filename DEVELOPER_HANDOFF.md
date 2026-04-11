@@ -51,6 +51,7 @@ src/
     Settings.js                    554  Business settings + JSON/CSV backup/restore + printer type toggle
     ArchivedItems.js               286  Archived catalog items — restore or delete
     ArchivedContacts.js            222  Archived contacts — restore or delete
+    ActivityLog.js                 178  Audit trail viewer — Pemilik-only, reads activity_log table
 
   components/
     TransactionPage.js             600  Shared base: Penjualan + Pembelian day-view
@@ -261,6 +262,7 @@ renameInventoryItem, deleteInventoryItem, handleViewItem, navigateToOutstanding,
     {page === "archivedItems"    && <ArchivedItems ...>}
     {page === "contacts"         && <Contacts ...>}
     {page === "archivedContacts" && <ArchivedContacts ...>}
+    {page === "activityLog"      && profile?.role === "owner" && <ActivityLog ...>}
     {page === "reports"          && <Reports ...>}
     {page === "outstanding"      && <Outstanding ...>}
     {page === "settings"         && <Settings ...>}

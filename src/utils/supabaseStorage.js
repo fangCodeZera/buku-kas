@@ -350,3 +350,45 @@ export async function saveSettings(settings, userId) {
   }, { onConflict: 'id' });
   if (error) throw new Error(`Gagal menyimpan pengaturan: ${error.message}`);
 }
+
+// ── Phase 6: Activity Log ─────────────────────────────────────────────────────
+
+/**
+ * Insert one activity log entry. Failures are intentionally non-blocking —
+ * callers should `.catch()` and warn rather than surface to SaveErrorModal.
+ * @param {{ user_name, action, entity_type, entity_id, changes }} entry
+ * @param {string} userId
+ */
+export async function saveActivityLog(entry, userId) {
+  const { error } = await supabase.from('activity_log').insert({
+    user_id:     userId || null,
+    user_name:   entry.user_name   || '',
+    action:      entry.action,
+    entity_type: entry.entity_type,
+    entity_id:   entry.entity_id   || null,
+    changes:     entry.changes     || {},
+  });
+  if (error) throw new Error(`Gagal menyimpan log aktivitas: ${error.message}`);
+}
+
+/**
+ * Fetch activity log entries with optional filters.
+ * Returns newest-first, capped at 200 rows.
+ * @param {{ userId?, action?, entityType?, dateFrom?, dateTo? }} filters
+ * @returns {Promise<Array>}
+ */
+export async function loadActivityLog(filters = {}) {
+  let q = supabase
+    .from('activity_log')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (filters.userId)     q = q.eq('user_id', filters.userId);
+  if (filters.action)     q = q.eq('action', filters.action);
+  if (filters.entityType) q = q.eq('entity_type', filters.entityType);
+  if (filters.dateFrom)   q = q.gte('created_at', filters.dateFrom + 'T00:00:00Z');
+  if (filters.dateTo)     q = q.lte('created_at', filters.dateTo + 'T23:59:59Z');
+  const { data, error } = await q;
+  if (error) throw new Error(`Gagal memuat log aktivitas: ${error.message}`);
+  return data || [];
+}
