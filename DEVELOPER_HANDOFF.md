@@ -2,10 +2,10 @@
 
 Digital bookkeeping for a small Indonesian family business (agricultural commodity trading).
 
-**Stack:** React 19.2.4, react-scripts 5.0.1. No router. No backend. `localStorage` only.
+**Stack:** React 19.2.4, react-scripts 5.0.1. No router. Supabase backend (USE_SUPABASE=true).
 **UI Language:** Indonesian (all labels, toasts, status strings).
 **Schema version:** NORM_VERSION = 18 (in `src/utils/storage.js`).
-**Storage key:** `"bukukas_data_v2"` (`STORAGE_KEY` in `storage.js`).
+**Storage key:** `"bukukas_data_v2"` (`STORAGE_KEY` in `storage.js`) — used only for import/export; live data is in Supabase.
 **Print portal:** `<div id="print-portal">` in `public/index.html` — used by `printWithPortal()`.
 
 ---
@@ -24,8 +24,8 @@ npm run build    # production build
 
 ```
 src/
-  App.js                          1086  Root component — all state, all handlers, nav
-  styles.css                      2938  All styling (BEM-inspired, no CSS modules)
+  App.js                          1623  Root component — all state, all handlers, nav, Supabase integration
+  styles.css                      3051  All styling (BEM-inspired, no CSS modules)
   index.js                              React root render
 
   utils/
@@ -40,6 +40,12 @@ src/
     printUtils.js                   47  printWithPortal, escapeHtml
     stockUtils.js                  114  computeStockMap, computeStockMapForDate
     textFormatter.js               387  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText)
+    AuthContext.js                 103  AuthProvider, useAuth — session state, signIn (with login audit log), signOut
+    supabaseClient.js               19  Creates Supabase client (anon key only, env var validated)
+    supabaseStorage.js             ~600  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog
+    storageConfig.js                ~30  USE_SUPABASE flag
+    realtimeManager.js             ~100  subscribeToChanges, subscribeToPresence (Phase 5)
+    conflictDetector.js             ~86  ConflictError class, checkVersion (Phase 5)
 
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
@@ -51,10 +57,10 @@ src/
     Settings.js                    554  Business settings + JSON/CSV backup/restore + printer type toggle
     ArchivedItems.js               286  Archived catalog items — restore or delete
     ArchivedContacts.js            222  Archived contacts — restore or delete
-    ActivityLog.js                 178  Audit trail viewer — Pemilik-only, reads activity_log table
+    ActivityLog.js                 312  Audit trail viewer — Pemilik-only, reads activity_log table
 
   components/
-    TransactionPage.js             600  Shared base: Penjualan + Pembelian day-view
+    TransactionPage.js             652  Shared base: Penjualan + Pembelian day-view
     TransactionForm.js            1430  Full transaction input form (multi-item, catalog autocomplete)
     PaymentHistoryPanel.js         290  Expandable payment timeline
     PaymentUpdateModal.js          183  Record payment modal
@@ -74,6 +80,8 @@ src/
     StockChip.js                    25  Coloured stock qty pill
     Toast.js                        50  Auto-dismissing 3-second notification
     Icon.js                         72  Inline SVG icon system
+    ConflictModal.js                63  Non-blocking conflict warning, 8s auto-dismiss (Phase 5)
+    SaveErrorModal.js               91  Blocks UI on Supabase write failure (Phase 4)
 ```
 
 ---
@@ -175,20 +183,37 @@ Runs on every `loadData()`. Skipped when `_normVersion >= NORM_VERSION`. Applies
 
 ### useState
 ```js
+// Data + persistence
 const [data,                  setData]                  = useState(loadData);
-const [page,                  setPage]                  = useState("penjualan");
 const [saved,                 setSaved]                 = useState(true);
 const [saveError,             setSaveError]             = useState(false);
-const [editTx,                setEditTx]                = useState(null);
-const [invoiceTxs,            setInvoiceTxs]            = useState(null);
+const [saveErrorModal,        setSaveErrorModal]        = useState(null);  // { message, retryFn } | null — Supabase errors
+const [appLoading,            setAppLoading]            = useState(USE_SUPABASE);  // true while loading from Supabase
+
+// Auth (Supabase)
+// user, profile, session come from useAuth() — not useState in App.js
+
+// Navigation
+const [page,                  setPage]                  = useState("penjualan");
 const [sidebarOpen,           setSidebarOpen]           = useState(() => window.innerWidth > 1024);
-const [reportItemFilter,      setReportItemFilter]      = useState(null);
-const [outstandingHighlight,  setOutstandingHighlight]  = useState(null);
-const [reportState,           setReportState]           = useState(null);
+
+// Cross-page navigation state
+const [reportItemFilter,      setReportItemFilter]      = useState(null);   // item name pre-filter from Inventory "Lihat"
+const [outstandingHighlight,  setOutstandingHighlight]  = useState(null);   // tx ID array to highlight on Outstanding page
+const [txPageHighlight,       setTxPageHighlight]       = useState(null);   // { txId, date } — highlight a tx on Penjualan/Pembelian from ActivityLog "Lihat"
+const [reportState,           setReportState]           = useState(null);   // { transactions, dateFrom, dateTo } — opens ReportModal
+
+// UI state
 const [backupBannerDismissed, setBackupBannerDismissed] = useState(false);
-const [suratJalanTx,          setSuratJalanTx]          = useState(null);
+const [editTx,                setEditTx]                = useState(null);   // opens EditModal
+const [invoiceTxs,            setInvoiceTxs]            = useState(null);   // opens InvoiceModal (A4)
+const [suratJalanTx,          setSuratJalanTx]          = useState(null);   // opens SuratJalanModal (A4)
 const [showStockReport,       setShowStockReport]       = useState(false);
-const [dotMatrixData,         setDotMatrixData]         = useState(null);
+const [dotMatrixData,         setDotMatrixData]         = useState(null);   // { transaction, mode } — opens DotMatrixPrintModal
+
+// Conflict detection (Phase 5)
+const [conflictUpdatedBy,     setConflictUpdatedBy]     = useState(null);
+const [showConflictModal,     setShowConflictModal]     = useState(false);
 ```
 
 ### useRef
@@ -236,6 +261,24 @@ const handleSuratJalan = (tx) => {
 ```
 
 These wrappers are passed as `onInvoice` and `onSuratJalan` props to all pages. No useCallback — matches existing handler pattern.
+
+### Navigation helpers
+```js
+const handleViewItem = (itemName) => { setReportItemFilter(itemName); setPage("reports"); };
+const navigateToOutstanding = (txIds) => { setOutstandingHighlight(txIds); setPage("outstanding"); };
+// onViewTransaction (inline in ActivityLog JSX):
+//   Finds tx by txnId or internal id; sets txPageHighlight({ txId: tx.id, date: tx.date });
+//   then setPage("penjualan" or "pembelian").
+```
+
+### Audit log helper
+```js
+const logActivity = useCallback((action, entityType, entityId, changes = {}) => {
+  // Non-blocking — .catch() swallows all errors, never triggers SaveErrorModal
+  // user_name from profile?.full_name || user.email
+  // entityId must be the computed txnId (from newTx/updated), NOT nt.txnId (which is undefined for new income txs)
+}, [user, profile]);
+```
 
 ### Handlers
 ```
@@ -383,16 +426,20 @@ Thin wrappers — just pass props to `TransactionPage` with `type`, `title`, `ac
 type, title, accentColor,
 transactions, contacts, stockMap, threshold, defaultDueDateDays,
 onAdd, onEdit, onDelete, onInvoice, onMarkPaid, onCreateContact,
-onSuratJalan?,        (income only — Penjualan passes this, Pembelian does not)
+onSuratJalan?,          (income only — Penjualan passes this, Pembelian does not)
 onNavigateOutstanding?,
 saved, itemCatalog,
-onAddCatalogItem, onUpdateCatalogItem, onUnarchiveCatalogItem, onUnarchiveSubtype, onUnarchiveContact
+onAddCatalogItem, onUpdateCatalogItem, onUnarchiveCatalogItem, onUnarchiveSubtype, onUnarchiveContact,
+initViewDate?,          (string YYYY-MM-DD — sets viewDate on mount/change; from App.js txPageHighlight)
+highlightTxIds?,        (string[] — tx internal IDs to flash; from App.js txPageHighlight)
+onClearHighlight?       (callback — called when flash clears; resets txPageHighlight to null)
 ```
 
 **Local state:**
 ```
 showForm, search, searchCategory ("invoiceNo"|"itemName"|"klien"), sortBy,
-stockWarn, deleteTx, paidTx, toast, viewDate, overdueDismissed, dueSoonDismissed, expandedTxId
+stockWarn, deleteTx, paidTx, toast, viewDate, overdueDismissed, dueSoonDismissed, expandedTxId,
+flashIds (Set)          — IDs currently highlighted; synced from highlightTxIds prop
 ```
 
 **Key useMemos:** `filtered` — transactions of correct type for viewDate, filtered by search, sorted.
@@ -404,6 +451,7 @@ stockWarn, deleteTx, paidTx, toast, viewDate, overdueDismissed, dueSoonDismissed
 - `[🕐]` history button with red badge when `paymentHistory.length > 1`
 - `expandedTxId` — only one PaymentHistoryPanel open at a time
 - Overdue and near-due banners (each dismissible per session)
+- **External navigation highlight:** When `initViewDate` changes, `viewDate` is synced via `useEffect`. When `highlightTxIds` changes, `flashIds` is populated. Highlighted rows get `.tx-row--flash` (blue, 3s CSS fade-out animation). First highlighted row is scrolled into view (50ms setTimeout). Flash cleared on first user interaction (click/keydown/scroll) after 500ms debounce — same pattern as `Outstanding.js`.
 
 ### pages/Inventory.js
 **Props:**
@@ -467,6 +515,47 @@ Note: `onInvoice` prop is not used in the current code (was removed). `onReport`
 The `form` state includes `printerType` (initialized from `settings.printerType || "A4"`). The "Format Cetak" section uses `.filter-btn` / `.filter-btn--active` toggle buttons. `onSave(form)` persists the full form including `printerType`.
 
 **CSV export:** 14-column format: Tanggal, Waktu, No. Invoice, Klien, Jenis, Barang, Karung, Berat (Kg), Harga/Kg, Subtotal, Nilai Total, Status, Sisa Tagihan, Jatuh Tempo. Expands `items[]` into separate rows. Includes BOM (`\uFEFF`) for Excel compatibility.
+
+### pages/ActivityLog.js (Pemilik-only)
+**Props:** `currentUser, profile, onLoadLog, onBack, onViewTransaction?`
+
+**Access guard:** Renders "Akses ditolak" message when `profile?.role !== "owner"`. Also gated in App.js nav items and in the JSX render condition.
+
+**Filter bar:** Aksi (select), Entitas (select), Dari tanggal, Sampai tanggal, Reset Filter button. All filters trigger `loadLogs()` via `useCallback` deps.
+
+**Table columns:** Waktu (timestamp), Pengguna (user_name), Aksi (color-coded badge), Entitas (type + id), Detail (formatted changes), Lihat button.
+
+**Action badge colors:**
+| Action | Color |
+|--------|-------|
+| `create` | Green `#10b981` |
+| `edit` | Amber `#f59e0b` |
+| `delete` | Red `#ef4444` |
+| `payment` | Blue `#007bff` |
+| `stock_adjustment` | Indigo `#6366f1` |
+| `login`, `export`, `import` | Gray `#6b7280` |
+
+**Entity ID display (`isTxnId` helper):**
+- Pattern `/^\d{2}-\d{2}-\d{4,5}$/` — matches txnId format (e.g. `26-04-00023`)
+- txnId match → displayed as `#26-04-00023` in indigo bold
+- Old internal IDs → displayed as `#90vxehs` (last 6 chars) in gray
+- Non-transaction entities → `#xxxxxx` (last 6 chars) in gray
+
+**"Lihat" button:** Shown for `entity_type === "transaction"` and `action !== "delete"`. Calls `onViewTransaction(log.entity_id)`. The App.js handler finds the tx by `txnId` OR internal `id`, sets `txPageHighlight`, then navigates to penjualan/pembelian.
+
+**`formatChanges(changes, entityType)`:** Returns `[{ label, val }]` array for rendering the Detail column. Recognizes: `type`, `items`, `value`, `counterparty`, `amount`, `note`, `name`, `itemName`, `qty`. Returns null for `settings` and `auth` entity types.
+
+### pages/Login.js
+**Props:** none (reads `signIn` from `useAuth()`)
+
+**State:** `email`, `password`, `error`, `submitting`, `showPassword`
+
+**Features:**
+- Standard email + password form with Indonesian labels
+- Password show/hide toggle button (eye icon, `tabIndex=-1`) — toggles `type="password"` / `type="text"`
+- Error messages localized to Indonesian ("Email atau kata sandi salah." etc.)
+- Submit button disabled while `submitting` or when email/password are empty
+- On success: AuthContext updates `user` state; App.js re-renders to main shell automatically
 
 ### pages/ArchivedItems.js
 **Props:** `itemCatalog, stockMap, transactions, onUnarchiveCatalogItem, onUnarchiveSubtype, onDeleteCatalogItem, onViewItem, onBack`
@@ -590,6 +679,29 @@ Auto-dismisses after 3 seconds. Slide-in animation.
 **Props:** `name, size?, color?`
 Inline SVG icons. Valid names: `income, expense, inventory, contacts, reports, warning, settings, menu, plus, edit, trash, invoice, check, clock, search, download, link, upload, eye, adjust, truck, dashboard`
 
+### ConflictModal.js (Phase 5)
+**Props:** `conflictUpdatedBy?, showModal: boolean, onClose`
+Non-blocking conflict warning — shown when a realtime update from another user conflicts with an in-flight save. 8-second auto-dismiss. Backdrop click and Escape key close it. Conditionally mounted.
+
+### SaveErrorModal.js (Phase 4)
+**Props:** `error?, onDismiss?, onRetry?`
+Blocks UI when a Supabase write fails. Shows error message with Retry and Dismiss buttons.
+
+### AuthContext.js (src/utils/)
+**Exports:** `AuthProvider` (component), `useAuth()` (hook)
+
+**Context value:** `{ user, profile, session, loading, signIn, signOut }`
+
+**`signIn(email, password)`:**
+1. Calls `supabase.auth.signInWithPassword`
+2. Awaits `fetchProfile(data.user.id)` to get `full_name`
+3. Fires non-blocking `saveActivityLog({ user_name: prof?.full_name || email, action: 'login', ... })` — failure never prevents login
+4. Returns auth data; AuthContext updates user/profile state automatically via `onAuthStateChange`
+
+**`handleSession`:** Fetches profile, force-signs-out inactive accounts (`is_active === false`).
+
+**`fetchProfile(userId)`:** Queries `profiles` table for `id, email, full_name, role, is_active`.
+
 ---
 
 ## 9. Print System
@@ -622,7 +734,7 @@ Used when `settings.printerType === "Dot Matrix"`. Optimized for Epson LX-300+II
 
 ## 10. CSS Structure
 
-File: `src/styles.css` — 2938 lines. BEM-inspired kebab-case. No CSS modules.
+File: `src/styles.css` — 3051 lines. BEM-inspired kebab-case. No CSS modules.
 
 **Color palette:**
 | Role | Value |
@@ -648,6 +760,7 @@ File: `src/styles.css` — 2938 lines. BEM-inspired kebab-case. No CSS modules.
 - Forms: `.form-input--error`, `.form-select--error`, `.field-error`
 - Inventory: `.inventory-group-header` (hover locked to `#1e3a5f` to prevent flicker)
 - Dot matrix: `.dot-matrix-preview` (monospace pre block for preview)
+- Flash highlight: `.outstanding-row--flash` (static blue `#dbeafe` — Outstanding page); `.tx-row--flash` (animated blue `#bfdbfe` → transparent over 3s — Penjualan/Pembelian "Lihat" navigation from ActivityLog)
 - Print: `@media print` section hides `#root`, shows `#print-portal`; `#print-portal pre { page-break-inside: auto; }`
 
 Always search `styles.css` before adding a new class.
@@ -686,6 +799,8 @@ Key patterns to never reintroduce:
 - Ledger loop breaking on first item match: must accumulate ALL matching item rows in multi-item transactions
 - CSV export without BOM: always prepend `\uFEFF` for Excel compatibility with Indonesian characters
 - Invoice date from `today()`: always use `transactions[0]?.date` for invoice date
+- `logActivity` with `nt.txnId` for income: `txnId` is generated inside `update()` state fn — always use `newTx?.txnId` (for create) or `updated?.txnId || nt.txnId` (for edit) so the generated ID is captured correctly
+- ActivityLog entity_id for transactions: use `isTxnId()` pattern check before displaying — old entries have internal IDs, new entries have `YY-MM-NNNNN` format
 
 ---
 

@@ -9,7 +9,7 @@
  *   accentColor — accent hex colour for the page
  *   + all standard transaction-page props (transactions, contacts, …)
  */
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import TransactionForm    from "./TransactionForm";
 import StockWarningModal  from "./StockWarningModal";
 import DeleteConfirmModal from "./DeleteConfirmModal";
@@ -56,6 +56,9 @@ const TransactionPage = ({
   onUnarchiveCatalogItem = () => {},
   onUnarchiveSubtype = () => {},
   onUnarchiveContact = () => {},
+  initViewDate = null,
+  highlightTxIds = null,
+  onClearHighlight = () => {},
 }) => {
   const [showForm,          setShowForm]          = useState(false);
   const [search,            setSearch]            = useState("");
@@ -69,12 +72,61 @@ const TransactionPage = ({
   const [overdueDismissed,  setOverdueDismissed]  = useState(false);
   const [dueSoonDismissed, setDueSoonDismissed] = useState(false);
   const [expandedTxId,      setExpandedTxId]      = useState(null);
+  const [flashIds,          setFlashIds]          = useState(new Set());
 
   const tableRef       = useRef(null);
   const searchInputRef = useRef(null);
   const dateNavRef     = useRef(null);
+  const clearFlashRef  = useRef(null);
 
   const todayStr = today();
+
+  // ── External navigation: sync viewDate + flash when arriving from ActivityLog ─
+  useEffect(() => {
+    if (initViewDate) setViewDate(initViewDate);
+  }, [initViewDate]);
+
+  useEffect(() => {
+    if (highlightTxIds && highlightTxIds.length > 0) {
+      setFlashIds(new Set(highlightTxIds));
+    }
+  }, [highlightTxIds]);
+
+  const hasFlash = flashIds.size > 0;
+
+  // Scroll to highlighted row after React commits the new class
+  useEffect(() => {
+    if (!hasFlash) return;
+    const timer = setTimeout(() => {
+      const firstRow = document.querySelector("tr.tx-row--flash");
+      if (firstRow) firstRow.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [hasFlash]);
+
+  // Clear flash on first user interaction (500ms delay skips the scroll-into-view event)
+  useEffect(() => {
+    if (!hasFlash) return;
+    const clearFlash = () => {
+      setFlashIds(new Set());
+      onClearHighlight();
+    };
+    const timer = setTimeout(() => {
+      clearFlashRef.current = clearFlash;
+      document.addEventListener("click",   clearFlash, { once: true, capture: true });
+      document.addEventListener("keydown", clearFlash, { once: true, capture: true });
+      document.addEventListener("scroll",  clearFlash, { once: true, capture: true, passive: true });
+    }, 500);
+    return () => {
+      clearTimeout(timer);
+      if (clearFlashRef.current) {
+        document.removeEventListener("click",   clearFlashRef.current, { capture: true });
+        document.removeEventListener("keydown", clearFlashRef.current, { capture: true });
+        document.removeEventListener("scroll",  clearFlashRef.current, { capture: true });
+        clearFlashRef.current = null;
+      }
+    };
+  }, [hasFlash, onClearHighlight]);
 
   // ── Table: type + date + search + sort ───────────────────────────────────
   const filtered = useMemo(() =>
@@ -430,7 +482,7 @@ const TransactionPage = ({
                 {filtered.map((t, i) => {
                   return (
                     <React.Fragment key={t.id}>
-                    <tr className={i % 2 === 0 ? "" : "row-alt"}>
+                    <tr className={[i % 2 === 0 ? "" : "row-alt", flashIds.has(t.id) ? "tx-row--flash" : ""].filter(Boolean).join(" ")}>
                       <td className="td-date whitespace-nowrap">
                         {fmtDate(t.date)}<br />
                         <span className="text-muted">{t.time}</span>

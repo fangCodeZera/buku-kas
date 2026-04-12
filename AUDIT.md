@@ -260,5 +260,45 @@
 
 ---
 
+## Third Audit — 2026-04-12 (ActivityLog polish + TransactionPage highlight)
+
+**Scope:** New code since 2026-04-11 — ActivityLog.js improvements, AuthContext.js login logging, TransactionPage.js external navigation, App.js txPageHighlight state, styles.css `.tx-row--flash`.
+
+**Status:** 6 findings resolved ✅ · 1 informational — noted
+
+### RESOLVED
+
+**[B1] ActivityLog PENGGUNA shows email instead of display name for login entries** ✅ RESOLVED
+- **File:** `src/utils/AuthContext.js`
+- `signIn` was logging `data.user.email` before `fetchProfile` resolved. Fix: `await fetchProfile(data.user.id)` before `saveActivityLog`; `user_name` uses `prof?.full_name || email`.
+
+**[B2] ActivityLog ENTITAS shows raw internal IDs (e.g. `1775933722773-90vxehs`) for old transaction entries** ✅ RESOLVED
+- **File:** `src/pages/ActivityLog.js`
+- Added `isTxnId(id)` helper (`/^\d{2}-\d{2}-\d{4,5}$/`). txnId-format IDs shown as `#26-04-00023` (indigo bold); old internal IDs truncated to last 6 chars with `#` prefix (gray).
+
+**[B3] ActivityLog ENTITAS missing `#` prefix for new-format txnId entries** ✅ RESOLVED
+- **File:** `src/pages/ActivityLog.js`
+- Both branches of `isTxnId` check now prepend `#`. Display: `#26-04-00023` not `26-04-00023`.
+
+**[B4] ActivityLog "Lihat" button navigates to page but transaction not found for old log entries** ✅ RESOLVED
+- **File:** `src/App.js`
+- `onViewTransaction` now tries `t.txnId === entityId` first, falls back to `t.id === entityId`. Old entries stored internal IDs; new entries store txnIds.
+
+**[B5] ActivityLog "Lihat" navigates to correct page but viewDate stays on today — transaction not visible** ✅ RESOLVED
+- **Files:** `src/App.js`, `src/components/TransactionPage.js`
+- `onViewTransaction` now sets `txPageHighlight({ txId: tx.id, date: tx.date })` before `setPage()`. TransactionPage gained `initViewDate`, `highlightTxIds`, `onClearHighlight` props. `initViewDate` syncs `viewDate` via `useEffect`; `highlightTxIds` populates `flashIds` and applies `.tx-row--flash` with scroll-into-view (same pattern as Outstanding.js). CSS: `.tx-row--flash` with `@keyframes tx-flash-fade` 3s animation (`#bfdbfe` → transparent).
+
+**[B6] `logActivity` in `addTransaction` passes `nt.txnId` — always undefined for income transactions** ✅ RESOLVED
+- **File:** `src/App.js`
+- For income, `txnId` is generated inside the `update()` state function and never written back to `nt`. Fix: use `newTx?.txnId` (retrieved from `nd.transactions.find(x => x.id === nt.id)`). Applied same fix to `editTransaction`: `updated?.txnId || nt.txnId` (handles date-prefix-change regeneration).
+
+### INFORMATIONAL
+
+**[B7] `.tx-row--flash` uses CSS animation while `.outstanding-row--flash` uses static color** — Noted
+- The two flash classes behave slightly differently: `outstanding-row--flash` stays solid until JS removes the class on user interaction; `tx-row--flash` fades out over 3s via `@keyframes tx-flash-fade` regardless of interaction. Both clear on user interaction via the same JS pattern. The animation provides a more natural feel for the Penjualan/Pembelian context where the user has just navigated to find a specific row.
+
+---
+
 *Original audit: 2026-04-04. All 35 actionable findings resolved: 2026-04-05.*
 *Second audit: 2026-04-01. All 3 actionable findings resolved: 2026-04-01.*
+*Third audit: 2026-04-12. All 6 actionable findings resolved: 2026-04-12.*

@@ -3,7 +3,7 @@
 // Never writes — display only. All text in Indonesian.
 
 import React, { useState, useEffect, useCallback } from "react";
-import { fmtDate } from "../utils/idGenerators";
+import { fmtDate, fmtIDR } from "../utils/idGenerators";
 
 const ACTION_LABELS = {
   create:           "Dibuat",
@@ -16,6 +16,17 @@ const ACTION_LABELS = {
   import:           "Impor",
 };
 
+const ACTION_COLORS = {
+  create:           { bg: "#10b981", text: "#fff" },
+  edit:             { bg: "#f59e0b", text: "#fff" },
+  delete:           { bg: "#ef4444", text: "#fff" },
+  payment:          { bg: "#007bff", text: "#fff" },
+  stock_adjustment: { bg: "#6366f1", text: "#fff" },
+  login:            { bg: "#6b7280", text: "#fff" },
+  export:           { bg: "#6b7280", text: "#fff" },
+  import:           { bg: "#6b7280", text: "#fff" },
+};
+
 const ENTITY_LABELS = {
   transaction:      "Transaksi",
   contact:          "Kontak",
@@ -25,18 +36,43 @@ const ENTITY_LABELS = {
   auth:             "Autentikasi",
 };
 
-const ACTION_OPTIONS = Object.entries(ACTION_LABELS).map(([v, l]) => ({ value: v, label: l }));
-const ENTITY_OPTIONS = Object.entries(ENTITY_LABELS).map(([v, l]) => ({ value: v, label: l }));
+const ACTION_OPTIONS  = Object.entries(ACTION_LABELS).map(([v, l]) => ({ value: v, label: l }));
+const ENTITY_OPTIONS  = Object.entries(ENTITY_LABELS).map(([v, l]) => ({ value: v, label: l }));
 
-function fmtChanges(changes) {
-  if (!changes || typeof changes !== "object" || Object.keys(changes).length === 0) return "—";
-  return Object.entries(changes)
-    .map(([k, v]) => {
-      if (Array.isArray(v)) return `${k}: [${v.join(", ")}]`;
-      if (typeof v === "boolean") return `${k}: ${v ? "ya" : "tidak"}`;
-      return `${k}: ${v}`;
-    })
-    .join(", ");
+// Returns true for txnId format like "26-04-00023" (new entries).
+// Old entries have internal IDs like "1775933722773-90vxehs" — those get truncated.
+const isTxnId = (id) => /^\d{2}-\d{2}-\d{4,5}$/.test(id);
+
+// Returns an array of { label, val } lines or null if nothing to show.
+function formatChanges(changes, entityType) {
+  if (!changes || typeof changes !== "object" || Object.keys(changes).length === 0) return null;
+  if (entityType === "settings" || entityType === "auth") return null;
+
+  const lines = [];
+  const add = (label, val) => {
+    if (val !== undefined && val !== null && val !== "") lines.push({ label, val: String(val) });
+  };
+
+  if (changes.type !== undefined)
+    add("Jenis", changes.type === "income" ? "Penjualan" : "Pembelian");
+  if (changes.items !== undefined)
+    add("Barang", Array.isArray(changes.items) ? changes.items.join(", ") : changes.items);
+  if (changes.value !== undefined)
+    add("Nilai", fmtIDR(changes.value));
+  if (changes.counterparty !== undefined)
+    add("Kontak", changes.counterparty);
+  if (changes.amount !== undefined)
+    add("Jumlah", fmtIDR(changes.amount));
+  if (changes.note !== undefined)
+    add("Catatan", changes.note);
+  if (changes.name !== undefined)
+    add("Nama", changes.name);
+  if (changes.itemName !== undefined)
+    add("Barang", changes.itemName);
+  if (changes.qty !== undefined)
+    add("Jumlah", changes.qty > 0 ? `+${changes.qty}` : String(changes.qty));
+
+  return lines.length > 0 ? lines : null;
 }
 
 function fmtTimestamp(ts) {
@@ -53,16 +89,16 @@ function fmtTimestamp(ts) {
 }
 
 /**
- * @param {{ currentUser: object, profile: object, onLoadLog: function, onBack: function }} props
+ * @param {{ currentUser: object, profile: object, onLoadLog: function, onBack: function, onViewTransaction?: function }} props
  */
-export default function ActivityLog({ currentUser, profile, onLoadLog, onBack }) {
-  const [logs,            setLogs]           = useState([]);
-  const [loading,         setLoading]        = useState(true);
-  const [error,           setError]          = useState(null);
-  const [filterAction,    setFilterAction]   = useState("");
-  const [filterEntity,    setFilterEntity]   = useState("");
-  const [filterDateFrom,  setFilterDateFrom] = useState("");
-  const [filterDateTo,    setFilterDateTo]   = useState("");
+export default function ActivityLog({ currentUser, profile, onLoadLog, onBack, onViewTransaction }) {
+  const [logs,           setLogs]           = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [error,          setError]          = useState(null);
+  const [filterAction,   setFilterAction]   = useState("");
+  const [filterEntity,   setFilterEntity]   = useState("");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo,   setFilterDateTo]   = useState("");
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
@@ -182,49 +218,88 @@ export default function ActivityLog({ currentUser, profile, onLoadLog, onBack })
                 <th style={{ minWidth: 150 }}>Waktu</th>
                 <th style={{ minWidth: 120 }}>Pengguna</th>
                 <th style={{ minWidth: 130 }}>Aksi</th>
-                <th style={{ minWidth: 130 }}>Entitas</th>
+                <th style={{ minWidth: 160 }}>Entitas</th>
                 <th>Detail</th>
+                <th style={{ minWidth: 60 }}></th>
               </tr>
             </thead>
             <tbody>
-              {logs.map((log, i) => (
-                <tr key={log.id || i} className={i % 2 === 1 ? "row-alt" : ""}>
-                  <td className="td-date whitespace-nowrap">{fmtTimestamp(log.created_at)}</td>
-                  <td style={{ color: "#1e3a5f" }}>{log.user_name || "—"}</td>
-                  <td>
-                    <span style={{
-                      display: "inline-block",
-                      padding: "2px 8px",
-                      borderRadius: 12,
-                      fontSize: "0.75rem",
-                      fontWeight: 600,
-                      background: log.action === "delete" ? "#fee2e2"
-                        : log.action === "create"          ? "#d1fae5"
-                        : log.action === "login"           ? "#dbeafe"
-                        : log.action === "export"          ? "#fef3c7"
-                        : "#f3f4f6",
-                      color: log.action === "delete" ? "#b91c1c"
-                        : log.action === "create"    ? "#065f46"
-                        : log.action === "login"     ? "#1e40af"
-                        : log.action === "export"    ? "#92400e"
-                        : "#374151",
-                    }}>
-                      {ACTION_LABELS[log.action] || log.action}
-                    </span>
-                  </td>
-                  <td style={{ color: "#6b7280", fontSize: "0.85rem" }}>
-                    {ENTITY_LABELS[log.entity_type] || log.entity_type}
-                    {log.entity_id && log.entity_id !== "null" && log.entity_id !== "undefined"
-                      ? <span style={{ fontSize: "0.72rem", color: "#9ca3af", marginLeft: 4 }}>
-                          #{String(log.entity_id).slice(-6)}
-                        </span>
-                      : null}
-                  </td>
-                  <td style={{ fontSize: "0.82rem", color: "#374151", maxWidth: 280, wordBreak: "break-word" }}>
-                    {fmtChanges(log.changes)}
-                  </td>
-                </tr>
-              ))}
+              {logs.map((log, i) => {
+                const ac = ACTION_COLORS[log.action] || { bg: "#6b7280", text: "#fff" };
+                const lines = formatChanges(log.changes, log.entity_type);
+                const showLihat = log.entity_type === "transaction"
+                  && log.action !== "delete"
+                  && onViewTransaction;
+
+                return (
+                  <tr key={log.id || i} className={i % 2 === 1 ? "row-alt" : ""}>
+                    {/* Waktu */}
+                    <td className="td-date whitespace-nowrap">{fmtTimestamp(log.created_at)}</td>
+
+                    {/* Pengguna */}
+                    <td style={{ color: "#1e3a5f" }}>{log.user_name || "—"}</td>
+
+                    {/* Aksi badge */}
+                    <td>
+                      <span style={{
+                        display: "inline-block",
+                        padding: "2px 8px",
+                        borderRadius: 12,
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        background: ac.bg,
+                        color: ac.text,
+                        whiteSpace: "nowrap",
+                      }}>
+                        {ACTION_LABELS[log.action] || log.action}
+                      </span>
+                    </td>
+
+                    {/* Entitas */}
+                    <td style={{ color: "#6b7280", fontSize: "0.85rem" }}>
+                      {ENTITY_LABELS[log.entity_type] || log.entity_type}
+                      {log.entity_id && log.entity_id !== "null" && log.entity_id !== "undefined"
+                        ? log.entity_type === "transaction"
+                          ? <span style={{ fontSize: "0.78rem", color: "#6366f1", marginLeft: 4, fontWeight: 600 }}>
+                              {isTxnId(log.entity_id)
+                                ? `#${log.entity_id}`
+                                : `#${String(log.entity_id).slice(-6)}`}
+                            </span>
+                          : <span style={{ fontSize: "0.72rem", color: "#9ca3af", marginLeft: 4 }}>
+                              #{String(log.entity_id).slice(-6)}
+                            </span>
+                        : null}
+                    </td>
+
+                    {/* Detail */}
+                    <td style={{ maxWidth: 280 }}>
+                      {lines
+                        ? lines.map((l, j) => (
+                            <div key={j} style={{ fontSize: "0.82rem", lineHeight: 1.5 }}>
+                              <span style={{ color: "#9ca3af", marginRight: 4 }}>{l.label}:</span>
+                              <span style={{ color: "#374151" }}>{l.val}</span>
+                            </div>
+                          ))
+                        : <span style={{ color: "#9ca3af" }}>—</span>
+                      }
+                    </td>
+
+                    {/* Lihat button */}
+                    <td>
+                      {showLihat && (
+                        <button
+                          className="btn btn-sm btn-outline"
+                          onClick={() => onViewTransaction(log.entity_id)}
+                          title="Lihat transaksi"
+                          style={{ fontSize: 11, padding: "2px 8px", whiteSpace: "nowrap" }}
+                        >
+                          Lihat
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           <div style={{ padding: "8px 12px", color: "#9ca3af", fontSize: "0.8rem", borderTop: "1px solid #e5e7eb" }}>

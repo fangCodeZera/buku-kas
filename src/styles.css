@@ -639,6 +639,18 @@ body {
 .outstanding-row--flash td {
   background-color: #dbeafe !important;
 }
+@keyframes tx-flash-fade {
+  0%, 60% { background-color: #bfdbfe; }
+  100%     { background-color: transparent; }
+}
+.tx-row--flash {
+  border-left: 4px solid #3b82f6;
+  box-shadow: inset 0 0 0 1px #3b82f633;
+  animation: tx-flash-fade 3s ease forwards;
+}
+.tx-row--flash td {
+  animation: tx-flash-fade 3s ease forwards;
+}
 
 .td-date  { color: #6b7280; font-size: 11px; white-space: nowrap; }
 .td-name  { font-weight: 600; color: #1e3a5f; }

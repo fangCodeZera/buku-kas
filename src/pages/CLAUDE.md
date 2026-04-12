@@ -220,6 +220,63 @@
 
 ---
 
+### File: `ActivityLog.js`
+**Nav key:** `activityLog` (sidebar link — Pemilik only via `profile.role === "owner"`)
+**Purpose:** Read-only audit trail viewer. Reads from the `activity_log` Supabase table. Never writes.
+
+**Props received:**
+- `currentUser: object` — the logged-in auth user
+- `profile: object` — the user's profile row (role, full_name, etc.)
+- `onLoadLog: (filters) => Promise<Array>` — `sbLoadActivityLog` from supabaseStorage.js
+- `onBack: () => void`
+- `onViewTransaction?: (entityId: string) => void` — called when "Lihat" button is clicked
+
+**Access guard:** Renders "Akses ditolak" when `profile?.role !== "owner"`. Also gated in App.js `navItems` and JSX render condition.
+
+**Key local state:** `logs`, `loading`, `error`, `filterAction`, `filterEntity`, `filterDateFrom`, `filterDateTo`
+
+**Filter bar:** Dropdown selects for Aksi + Entitas, date range inputs, Reset button. All filter changes trigger `loadLogs()` via `useCallback` dep array.
+
+**Table columns:**
+- **Waktu** — `fmtTimestamp()` (local HH:MM, date in Indonesian format)
+- **Pengguna** — `log.user_name` (display name from profile, NOT email)
+- **Aksi** — color-coded badge pill (create=green, edit=amber, delete=red, payment=blue, stock_adjustment=indigo, login/export/import=gray)
+- **Entitas** — entity type label + `#id` suffix. For transactions: `isTxnId()` check — txnId format shown as `#26-04-00023` (indigo bold); old internal IDs shown as `#90vxehs` (last 6 chars, gray)
+- **Detail** — `formatChanges(changes, entityType)` renders `{ label, val }` pairs. Returns null for `settings`/`auth` entity types
+- **Lihat** — shown for `entity_type === "transaction"` and `action !== "delete"`. Calls `onViewTransaction(log.entity_id)`.
+
+**`isTxnId(id)` helper:** `/^\d{2}-\d{2}-\d{4,5}$/.test(id)` — distinguishes new-format txnIds from old internal IDs.
+
+**`onViewTransaction` in App.js:**
+```js
+(entityId) => {
+  const tx = data.transactions.find(t => t.txnId === entityId)
+          || data.transactions.find(t => t.id === entityId);
+  if (tx) {
+    setTxPageHighlight({ txId: tx.id, date: tx.date });
+    setPage(tx.type === "income" ? "penjualan" : "pembelian");
+  }
+}
+```
+
+---
+
+### File: `Login.js`
+**Nav key:** n/a — rendered by App.js auth gate when `!user`
+**Purpose:** Email + password login form. No registration flow — users are invited by admin via Supabase dashboard.
+
+**Props received:** none (reads `signIn` from `useAuth()`)
+
+**Key local state:** `email`, `password`, `error`, `submitting`, `showPassword`
+
+**Key behaviors:**
+- Password show/hide toggle: eye icon button (`tabIndex=-1`) toggles `type="password"` / `type="text"`. Button color: blue (`#007bff`) when visible, gray (`#9ca3af`) when hidden.
+- Submit button disabled while `submitting` OR when `email.trim()` or `password` is empty
+- Error messages localized: invalid credentials → `"Email atau kata sandi salah."`, network error → `"Gagal terhubung."`, inactive account → `"Akun Anda tidak aktif."`
+- On success: `signIn` in AuthContext fires non-blocking `saveActivityLog` (login audit), then AuthContext updates `user` state; App.js re-renders to main shell automatically
+
+---
+
 ## TransactionPage Base Component
 
 `src/components/TransactionPage.js` is the shared base for both Penjualan and Pembelian.
@@ -248,6 +305,9 @@
 - `onUnarchiveCatalogItem?: () => void`
 - `onUnarchiveSubtype?: () => void`
 - `onUnarchiveContact?: () => void`
+- `initViewDate?: string` — YYYY-MM-DD; when set, syncs `viewDate` via `useEffect`. Passed from App.js `txPageHighlight?.date`. Used by ActivityLog "Lihat" navigation.
+- `highlightTxIds?: string[]` — internal tx IDs to flash-highlight. Passed from App.js `txPageHighlight ? [txPageHighlight.txId] : null`.
+- `onClearHighlight?: () => void` — called when flash clears (user interaction or animation end). Resets `txPageHighlight` to null in App.js.
 
 **How Penjualan and Pembelian differ:**
 - `type="income"` → green accent, auto-generates txnId, labels say "Penjualan/Piutang", shows surat jalan button
@@ -256,7 +316,8 @@
 **Key local state:**
 ```
 showForm, search, searchCategory ("invoiceNo"|"itemName"|"klien"), sortBy,
-stockWarn, deleteTx, paidTx, toast, viewDate, overdueDismissed, dueSoonDismissed, expandedTxId
+stockWarn, deleteTx, paidTx, toast, viewDate, overdueDismissed, dueSoonDismissed, expandedTxId,
+flashIds (Set)  — tx internal IDs currently highlighted; populated from highlightTxIds prop via useEffect
 ```
 
 **Key behaviors:**
@@ -266,6 +327,7 @@ stockWarn, deleteTx, paidTx, toast, viewDate, overdueDismissed, dueSoonDismissed
 - `[🕐]` history button with red corner badge when `paymentHistory.length > 1` (class: `action-btn--history`)
 - `expandedTxId` — only one PaymentHistoryPanel open at a time
 - Overdue and near-due banners (each dismissible per session via `overdueDismissed`/`dueSoonDismissed`)
+- **External navigation highlight (from ActivityLog "Lihat"):** `initViewDate` change → `setViewDate(initViewDate)` via `useEffect`. `highlightTxIds` change → `setFlashIds(new Set(highlightTxIds))`. Flash rows: `.tx-row--flash` (3s CSS fade-out animation, `#bfdbfe`). First flash row scrolled into view (50ms setTimeout). Flash cleared on first click/keydown/scroll (500ms debounce). Exact same pattern as Outstanding.js `highlightTxIds`/`flashIds`.
 
 **Rule: Any change to TransactionPage affects BOTH Penjualan AND Pembelian. Always test both after editing.**
 

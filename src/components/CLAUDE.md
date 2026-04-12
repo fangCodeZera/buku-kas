@@ -5,12 +5,13 @@
 ---
 
 ### Component: `TransactionPage`
-**File:** `TransactionPage.js` (600 lines)
+**File:** `TransactionPage.js` (652 lines)
 **Purpose:** Shared base component for Penjualan and Pembelian — day-view transaction table with search, sort, payment history timeline, and all action buttons.
 **Props:** See `src/pages/CLAUDE.md` → TransactionPage Base Component section.
 **Used by:** `Penjualan.js`, `Pembelian.js` (both via spread `{...props}`)
 **Special behaviour:**
 - Payment history timeline toggled by `expandedTxId` state — only one row open at a time
+- **External navigation highlight:** `initViewDate` prop → syncs `viewDate` via `useEffect`. `highlightTxIds` prop → populates `flashIds` (Set) via `useEffect`. Highlighted rows get `.tx-row--flash` CSS class (3s fade-out animation `#bfdbfe` → transparent). First highlighted row scrolled into view (50ms setTimeout). Flash cleared on first user interaction (click/keydown/scroll) after 500ms debounce — same pattern as `Outstanding.js`. `onClearHighlight` called on clear to reset `txPageHighlight` in App.js.
 - History button renders as icon-only `[🕐]` with red corner badge when `paymentHistory.length > 1` (class: `action-btn action-btn--history`)
 - Nilai (Rp) cell shows payment progress bar for all payment states
 - `confirmPaid(amount, note)` passes note through to `onMarkPaid`

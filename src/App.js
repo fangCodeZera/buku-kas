@@ -158,6 +158,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 1024);
   const [reportItemFilter,   setReportItemFilter]   = useState(null); // item name pre-filter from Inventory "Lihat"
   const [outstandingHighlight, setOutstandingHighlight] = useState(null); // array of tx IDs to highlight on Outstanding page
+  const [txPageHighlight, setTxPageHighlight] = useState(null); // { txId, date } — highlight a tx on Penjualan/Pembelian from ActivityLog
   const [reportState, setReportState] = useState(null); // { transactions, dateFrom, dateTo }
   const [backupBannerDismissed, setBackupBannerDismissed] = useState(false);
   const [suratJalanTx, setSuratJalanTx] = useState(null);
@@ -499,7 +500,7 @@ export default function App() {
         return Promise.all([
           newTx ? sbSaveTransaction(newTx, user.id) : Promise.resolve(),
           newContact ? sbSaveContact(newContact, user.id) : Promise.resolve(),
-          logActivity('create', 'transaction', nt.id, {
+          logActivity('create', 'transaction', newTx?.txnId, {
             type: nt.type, counterparty: nt.counterparty, value: nt.value,
             items: nt.items?.map((i) => i.itemName),
           }),
@@ -584,7 +585,7 @@ export default function App() {
       const updated = nd.transactions.find((x) => x.id === nt.id);
       return Promise.all([
         updated ? sbSaveTransaction(updated, user.id, true) : Promise.resolve(),
-        logActivity('edit', 'transaction', nt.id, {
+        logActivity('edit', 'transaction', updated?.txnId || nt.txnId, {
           counterparty: nt.counterparty, value: nt.value,
         }),
       ]);
@@ -592,11 +593,13 @@ export default function App() {
     );
   };
 
-  const deleteTransaction = (id) =>
-    update(
+  const deleteTransaction = (id) => {
+    const txnId = dataRef.current.transactions.find((t) => t.id === id)?.txnId || id;
+    return update(
       (d) => ({ ...d, transactions: d.transactions.filter((t) => t.id !== id) }),
-      () => Promise.all([sbDeleteTransaction(id), logActivity('delete', 'transaction', id)])
+      () => Promise.all([sbDeleteTransaction(id), logActivity('delete', 'transaction', txnId)])
     );
+  };
 
   // ── Apply a payment (full or partial) against a transaction's outstanding ──
   /**
@@ -649,7 +652,7 @@ export default function App() {
         const updated = nd.transactions.find((x) => x.id === id);
         return Promise.all([
           updated ? sbSaveTransaction(updated, user.id) : Promise.resolve(),
-          logActivity('payment', 'transaction', id, { amount: paidAmount, note: paymentNote }),
+          logActivity('payment', 'transaction', updated?.txnId || id, { amount: paidAmount, note: paymentNote }),
         ]);
       }
     );
@@ -1381,6 +1384,9 @@ export default function App() {
             onUnarchiveSubtype={unarchiveSubtype}
             onUnarchiveContact={unarchiveContact}
             saved={saved}
+            initViewDate={txPageHighlight?.date}
+            highlightTxIds={txPageHighlight ? [txPageHighlight.txId] : null}
+            onClearHighlight={() => setTxPageHighlight(null)}
           />
         )}
         {page === "pembelian" && (
@@ -1404,6 +1410,9 @@ export default function App() {
             onUnarchiveSubtype={unarchiveSubtype}
             onUnarchiveContact={unarchiveContact}
             saved={saved}
+            initViewDate={txPageHighlight?.date}
+            highlightTxIds={txPageHighlight ? [txPageHighlight.txId] : null}
+            onClearHighlight={() => setTxPageHighlight(null)}
           />
         )}
         {page === "inventory" && (
@@ -1523,6 +1532,14 @@ export default function App() {
             profile={profile}
             onLoadLog={sbLoadActivityLog}
             onBack={() => setPage("penjualan")}
+            onViewTransaction={(entityId) => {
+              const tx = data.transactions.find((t) => t.txnId === entityId)
+                      || data.transactions.find((t) => t.id === entityId);
+              if (tx) {
+                setTxPageHighlight({ txId: tx.id, date: tx.date });
+                setPage(tx.type === "income" ? "penjualan" : "pembelian");
+              }
+            }}
           />
         )}
       </main>

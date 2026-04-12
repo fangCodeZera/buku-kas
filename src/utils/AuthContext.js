@@ -72,9 +72,11 @@ export function AuthProvider({ children }) {
   const signIn = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    // Fetch profile to get display name for audit log (same call handleSession makes)
+    const prof = await fetchProfile(data.user.id).catch(() => null);
     // Non-blocking audit log — failure must not prevent login
     saveActivityLog({
-      user_name:   data.user.email || '',
+      user_name:   prof?.full_name || data.user.email || '',
       action:      'login',
       entity_type: 'auth',
       entity_id:   data.user.id,
