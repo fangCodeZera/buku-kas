@@ -1,6 +1,6 @@
 // Phase 3: Authentication context.
 // All auth state lives here. Never access supabase.auth directly outside this file.
-// Exposes: { user, profile, session, loading, signIn, signOut }
+// Exposes: { user, profile, session, loading, signIn, signOut, idleTimedOut, clearIdleTimedOut }
 
 import { createContext, useContext, useState, useEffect } from "react";
 import supabase from "./supabaseClient";
@@ -8,11 +8,16 @@ import { saveActivityLog } from "./supabaseStorage";
 
 const AuthContext = createContext(null);
 
+const IDLE_TIMEOUT_MS  = 15 * 60 * 1000; // 15 minutes
+const ACTIVITY_EVENTS  = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"];
+
 export function AuthProvider({ children }) {
-  const [user,    setUser]    = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user,         setUser]         = useState(null);
+  const [profile,      setProfile]      = useState(null);
+  const [session,      setSession]      = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  // idleTimedOut is NOT cleared by signOut() — only cleared by clearIdleTimedOut() on re-login.
+  const [idleTimedOut, setIdleTimedOut] = useState(false);
 
   // Fetch profile row from profiles table
   const fetchProfile = async (userId) => {
@@ -86,11 +91,52 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
+    setSession(null);
+    setUser(null);
+    setProfile(null);
     await supabase.auth.signOut();
+    // NOTE: idleTimedOut is intentionally NOT cleared here.
+    // It survives sign-out so Login.js can show the "session expired" message.
+    // Only clearIdleTimedOut() resets it, called after successful re-login.
   };
 
+  // ── Idle timeout: auto sign-out after 15 minutes of inactivity ────────────
+  // Effect depends on [user]: starts when user logs in, cleans up on logout.
+  // setIdleTimedOut(true) is called AFTER signOut() so the flag survives the
+  // synchronous user/session/profile clear inside signOut().
+  useEffect(() => {
+    if (!user) return;
+
+    let timerId;
+
+    const resetTimer = () => {
+      clearTimeout(timerId);
+      timerId = setTimeout(async () => {
+        await signOut();
+        setIdleTimedOut(true);
+      }, IDLE_TIMEOUT_MS);
+    };
+
+    ACTIVITY_EVENTS.forEach((ev) =>
+      window.addEventListener(ev, resetTimer, { passive: true })
+    );
+    resetTimer(); // start the initial 15-minute countdown
+
+    return () => {
+      clearTimeout(timerId);
+      ACTIVITY_EVENTS.forEach((ev) =>
+        window.removeEventListener(ev, resetTimer)
+      );
+    };
+    // signOut and setIdleTimedOut are stable (React setters + same-scope function);
+    // omitting from deps is intentional — effect must only re-run on user change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const clearIdleTimedOut = () => setIdleTimedOut(false);
+
   return (
-    <AuthContext.Provider value={{ user, profile, session, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, profile, session, loading, signIn, signOut, idleTimedOut, clearIdleTimedOut }}>
       {children}
     </AuthContext.Provider>
   );

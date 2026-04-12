@@ -480,33 +480,38 @@ export default function App() {
         : "Belum ada pembayaran saat transaksi dibuat",
       method: null,
     };
-    update(
-      (d) => {
-        const txnId = nt.type === "income"
-          ? generateTxnId(d.transactions, nt.date)
-          : (nt.txnId || null);
-        const newTx = { ...nt, txnId, paymentHistory: [initialPayment] };
-        return {
-          ...d,
-          transactions: [...d.transactions, newTx],
-          contacts: ensureContact(nt.counterparty, d.contacts),
-        };
-      },
-      (nd) => {
-        const newTx = nd.transactions.find((x) => x.id === nt.id);
-        const newContact = nd.contacts.find(
-          (c) => c.name.toLowerCase() === normalizeTitleCase(nt.counterparty).toLowerCase()
-        );
-        return Promise.all([
-          newTx ? sbSaveTransaction(newTx, user.id) : Promise.resolve(),
-          newContact ? sbSaveContact(newContact, user.id) : Promise.resolve(),
-          logActivity('create', 'transaction', newTx?.txnId, {
-            type: nt.type, counterparty: nt.counterparty, value: nt.value,
-            items: nt.items?.map((i) => i.itemName),
-          }),
-        ]);
-      }
-    );
+    // C2 fix: state mutation only — no supabaseOperation passed, so update() does not set a retry.
+    // We call persistToSupabase directly below with a retry that only re-runs the Supabase write,
+    // not the state mutation. This prevents duplicate transactions on SaveErrorModal retry.
+    update((d) => {
+      const txnId = nt.type === "income"
+        ? generateTxnId(d.transactions, nt.date)
+        : (nt.txnId || null);
+      const newTx = { ...nt, txnId, paymentHistory: [initialPayment] };
+      return {
+        ...d,
+        transactions: [...d.transactions, newTx],
+        contacts: ensureContact(nt.counterparty, d.contacts),
+      };
+    });
+    if (USE_SUPABASE) {
+      // dataRef.current === nd at this point (set synchronously inside update())
+      const nd = dataRef.current;
+      const newTx     = nd.transactions.find((x) => x.id === nt.id);
+      const newContact = nd.contacts.find(
+        (c) => c.name.toLowerCase() === normalizeTitleCase(nt.counterparty).toLowerCase()
+      );
+      const supabaseSave = () => Promise.all([
+        newTx     ? sbSaveTransaction(newTx,     user.id) : Promise.resolve(),
+        newContact ? sbSaveContact(newContact, user.id)   : Promise.resolve(),
+        logActivity('create', 'transaction', newTx?.txnId, {
+          type: nt.type, counterparty: nt.counterparty, value: nt.value,
+          items: nt.items?.map((i) => i.itemName),
+        }),
+      ]);
+      const retryFn = () => persistToSupabase(supabaseSave, retryFn);
+      persistToSupabase(supabaseSave, retryFn);
+    }
   };
 
   const editTransaction = (t) => {
@@ -606,56 +611,60 @@ export default function App() {
    * @param {string} id          - transaction id
    * @param {number} paidAmount  - amount being paid now (1 ≤ paidAmount ≤ outstanding)
    */
-  const applyPayment = (id, paidAmount, paymentNote = "") =>
-    update(
-      (d) => ({
-        ...d,
-        transactions: d.transactions.map((t) => {
-          if (t.id !== id) return t;
-          const outstandingBefore = Number(t.outstanding) || 0;
-          const newOutstanding    = Math.max(0, outstandingBefore - paidAmount);
-          const isFullyPaid       = newOutstanding === 0;
-          const newPaymentEntry   = {
-            id:                generateId(),
-            paidAt:            new Date().toISOString(),
-            date:              today(),
-            time:              nowTime(),
-            amount:            paidAmount,
-            outstandingBefore,
-            outstandingAfter:  newOutstanding,
-            note:              paymentNote || (isFullyPaid ? "Pelunasan" : "Pembayaran sebagian"),
-            method:            null,
-          };
-          return {
-            ...t,
-            outstanding:    newOutstanding,
-            status:         deriveStatus(t.type, !isFullyPaid),
-            dueDate:        isFullyPaid ? null : (t.dueDate ?? null),
-            paymentHistory: [...(t.paymentHistory || []), newPaymentEntry],
-            editLog:        [...(t.editLog || []), { at: new Date().toISOString(), prev: {
-              date:         t.date,
-              time:         t.time,
-              counterparty: t.counterparty,
-              itemName:     t.itemName,
-              stockQty:     t.stockQty,
-              stockUnit:    t.stockUnit,
-              value:        t.value,
-              outstanding:  t.outstanding,
-              status:       t.status,
-              dueDate:      t.dueDate,
-              itemNames:    Array.isArray(t.items) ? t.items.map((it) => it.itemName) : [t.itemName],
-            }}].slice(-20),
-          };
-        }),
+  const applyPayment = (id, paidAmount, paymentNote = "") => {
+    // C2 fix: state mutation only — retry closure below only re-runs the Supabase write,
+    // not the state mutation. This prevents duplicate payment history entries on retry.
+    update((d) => ({
+      ...d,
+      transactions: d.transactions.map((t) => {
+        if (t.id !== id) return t;
+        const outstandingBefore = Number(t.outstanding) || 0;
+        const newOutstanding    = Math.max(0, outstandingBefore - paidAmount);
+        const isFullyPaid       = newOutstanding === 0;
+        const newPaymentEntry   = {
+          id:                generateId(),
+          paidAt:            new Date().toISOString(),
+          date:              today(),
+          time:              nowTime(),
+          amount:            paidAmount,
+          outstandingBefore,
+          outstandingAfter:  newOutstanding,
+          note:              paymentNote || (isFullyPaid ? "Pelunasan" : "Pembayaran sebagian"),
+          method:            null,
+        };
+        return {
+          ...t,
+          outstanding:    newOutstanding,
+          status:         deriveStatus(t.type, !isFullyPaid),
+          dueDate:        isFullyPaid ? null : (t.dueDate ?? null),
+          paymentHistory: [...(t.paymentHistory || []), newPaymentEntry],
+          editLog:        [...(t.editLog || []), { at: new Date().toISOString(), prev: {
+            date:         t.date,
+            time:         t.time,
+            counterparty: t.counterparty,
+            itemName:     t.itemName,
+            stockQty:     t.stockQty,
+            stockUnit:    t.stockUnit,
+            value:        t.value,
+            outstanding:  t.outstanding,
+            status:       t.status,
+            dueDate:      t.dueDate,
+            itemNames:    Array.isArray(t.items) ? t.items.map((it) => it.itemName) : [t.itemName],
+          }}].slice(-20),
+        };
       }),
-      (nd) => {
-        const updated = nd.transactions.find((x) => x.id === id);
-        return Promise.all([
-          updated ? sbSaveTransaction(updated, user.id) : Promise.resolve(),
-          logActivity('payment', 'transaction', updated?.txnId || id, { amount: paidAmount, note: paymentNote }),
-        ]);
-      }
-    );
+    }));
+    if (USE_SUPABASE) {
+      const nd = dataRef.current;
+      const updated = nd.transactions.find((x) => x.id === id);
+      const supabaseSave = () => Promise.all([
+        updated ? sbSaveTransaction(updated, user.id) : Promise.resolve(),
+        logActivity('payment', 'transaction', updated?.txnId || id, { amount: paidAmount, note: paymentNote }),
+      ]);
+      const retryFn = () => persistToSupabase(supabaseSave, retryFn);
+      persistToSupabase(supabaseSave, retryFn);
+    }
+  };
 
   // ── Instantly create a named contact (called from TransactionForm dropdown) ─
   const createContact = (name) => {
@@ -787,14 +796,19 @@ export default function App() {
   };
 
   // ── Add a manual stock adjustment (Inventory page) ────────────────────────
-  const addStockAdjustment = (adj) =>
-    update(
-      (d) => ({ ...d, stockAdjustments: [...(d.stockAdjustments || []), adj] }),
-      () => Promise.all([
+  const addStockAdjustment = (adj) => {
+    // C2 fix: state mutation only — retry closure below only re-runs the Supabase write,
+    // not the state mutation. This prevents duplicate stock adjustments on retry.
+    update((d) => ({ ...d, stockAdjustments: [...(d.stockAdjustments || []), adj] }));
+    if (USE_SUPABASE) {
+      const supabaseSave = () => Promise.all([
         sbSaveStockAdjustment(adj, user.id),
         logActivity('stock_adjustment', 'stock_adjustment', adj.id, { itemName: adj.itemName, qty: adj.adjustmentQty }),
-      ])
-    );
+      ]);
+      const retryFn = () => persistToSupabase(supabaseSave, retryFn);
+      persistToSupabase(supabaseSave, retryFn);
+    }
+  };
 
   // ── Delete a single stock adjustment by id ───────────────────────────────
   const deleteStockAdjustment = (adjustmentId) =>

@@ -40,7 +40,7 @@ src/
     printUtils.js                   47  printWithPortal, escapeHtml
     stockUtils.js                  114  computeStockMap, computeStockMapForDate
     textFormatter.js               387  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText)
-    AuthContext.js                 103  AuthProvider, useAuth — session state, signIn (with login audit log), signOut
+    AuthContext.js                ~130  AuthProvider, useAuth — session state, signIn (with login audit log), signOut, 15-min idle timeout
     supabaseClient.js               19  Creates Supabase client (anon key only, env var validated)
     supabaseStorage.js             ~600  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog
     storageConfig.js                ~30  USE_SUPABASE flag
@@ -74,6 +74,7 @@ src/
     StockReportModal.js            330  Printable stock report
     Badge.js                       113  StatusBadge, TypeBadge (named exports)
     DueBadge.js                     32  Due date status badge
+    ErrorBoundary.js                89  React class error boundary — catches unhandled render errors, shows Indonesian fallback UI with "Muat Ulang" reload button
     MultiSelect.js                 151  Zero-dep multi-select dropdown
     RupiahInput.js                 107  Comma-formatted Rupiah currency input
     SaveIndicator.js                41  "Tersimpan ✓ · HH:MM" / "Menyimpan..." indicator
@@ -238,10 +239,20 @@ const balanceMap      // per-contact { totalIncome, totalExpense, ar, ap, netOut
 
 ### Core helpers
 ```js
-const persist = useCallback(...)   // debounced 500ms localStorage write; sets saved/saveError
-const retrySave = useCallback(...)  // immediate retry write
-const update = (fn) => setData(...)  // ALL mutations go through this
-const normTx = (t) => ...           // title-cases itemName + counterparty before save
+const persist = useCallback(...)         // debounced 500ms localStorage write; sets saved/saveError
+const retrySave = useCallback(...)       // immediate retry write
+const persistToSupabase = useCallback(async (operation, retryFn) => ...)
+                                         // async Supabase write; on failure shows SaveErrorModal with retryFn
+const update = (fn, supabaseOperation) => { ... }
+                                         // ALL mutations go through this; computes nd = fn(dataRef.current),
+                                         // syncs dataRef.current = nd synchronously, calls setData(nd),
+                                         // then calls persistToSupabase with retry = () => update(fn, supabaseOperation)
+                                         // NOTE (C2 fix): append-style handlers (addTransaction, applyPayment,
+                                         // addStockAdjustment) call update(fn) with NO supabaseOperation, then
+                                         // call persistToSupabase directly — retry closure only re-runs the
+                                         // Supabase write, never the state mutation. Idempotent handlers
+                                         // (edit, delete, archive) still use update(fn, supabaseOperation).
+const normTx = (t) => ...               // title-cases itemName + counterparty before save
 const ensureContact = (cp, contacts) => ...  // auto-creates contact for new counterparty
 ```
 
@@ -546,7 +557,7 @@ The `form` state includes `printerType` (initialized from `settings.printerType 
 **`formatChanges(changes, entityType)`:** Returns `[{ label, val }]` array for rendering the Detail column. Recognizes: `type`, `items`, `value`, `counterparty`, `amount`, `note`, `name`, `itemName`, `qty`. Returns null for `settings` and `auth` entity types.
 
 ### pages/Login.js
-**Props:** none (reads `signIn` from `useAuth()`)
+**Props:** none (reads `signIn`, `idleTimedOut`, `clearIdleTimedOut` from `useAuth()`)
 
 **State:** `email`, `password`, `error`, `submitting`, `showPassword`
 
@@ -555,7 +566,8 @@ The `form` state includes `printerType` (initialized from `settings.printerType 
 - Password show/hide toggle button (eye icon, `tabIndex=-1`) — toggles `type="password"` / `type="text"`
 - Error messages localized to Indonesian ("Email atau kata sandi salah." etc.)
 - Submit button disabled while `submitting` or when email/password are empty
-- On success: AuthContext updates `user` state; App.js re-renders to main shell automatically
+- **Idle timeout banner:** When `idleTimedOut === true`, shows amber alert box between subtitle and form: "Sesi Anda telah berakhir karena tidak aktif. Silakan masuk kembali." Inline styles only (no CSS class). `role="alert"` for accessibility.
+- On success: `clearIdleTimedOut()` called to reset the banner flag; AuthContext updates `user` state; App.js re-renders to main shell automatically
 
 ### pages/ArchivedItems.js
 **Props:** `itemCatalog, stockMap, transactions, onUnarchiveCatalogItem, onUnarchiveSubtype, onDeleteCatalogItem, onViewItem, onBack`
@@ -687,10 +699,10 @@ Non-blocking conflict warning — shown when a realtime update from another user
 **Props:** `error?, onDismiss?, onRetry?`
 Blocks UI when a Supabase write fails. Shows error message with Retry and Dismiss buttons.
 
-### AuthContext.js (src/utils/)
+### AuthContext.js (src/utils/) — ~130 lines
 **Exports:** `AuthProvider` (component), `useAuth()` (hook)
 
-**Context value:** `{ user, profile, session, loading, signIn, signOut }`
+**Context value:** `{ user, profile, session, loading, signIn, signOut, idleTimedOut, clearIdleTimedOut }`
 
 **`signIn(email, password)`:**
 1. Calls `supabase.auth.signInWithPassword`
@@ -698,9 +710,20 @@ Blocks UI when a Supabase write fails. Shows error message with Retry and Dismis
 3. Fires non-blocking `saveActivityLog({ user_name: prof?.full_name || email, action: 'login', ... })` — failure never prevents login
 4. Returns auth data; AuthContext updates user/profile state automatically via `onAuthStateChange`
 
+**`signOut()`:** Synchronously clears `session`, `user`, `profile` state, then `await supabase.auth.signOut()`. Does NOT clear `idleTimedOut` — the flag must survive sign-out so Login.js can show the session-expired banner.
+
 **`handleSession`:** Fetches profile, force-signs-out inactive accounts (`is_active === false`).
 
 **`fetchProfile(userId)`:** Queries `profiles` table for `id, email, full_name, role, is_active`.
+
+**Idle timeout (15 minutes):**
+- `IDLE_TIMEOUT_MS = 15 * 60 * 1000`
+- `ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"]`
+- `useEffect` depends on `[user]` — starts timer when user logs in, cleans up on logout
+- `resetTimer()` clears and restarts a `setTimeout`; each activity event calls `resetTimer()`
+- On timeout: `await signOut()` then `setIdleTimedOut(true)` — order matters so flag outlives cleared state
+- `idleTimedOut` state: NOT cleared in `signOut()` — only `clearIdleTimedOut()` resets it (called after successful re-login in Login.js)
+- All event listeners use `{ passive: true }` for performance
 
 ---
 

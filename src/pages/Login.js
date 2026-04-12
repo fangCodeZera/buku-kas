@@ -9,7 +9,7 @@ import Icon from "../components/Icon";
 const APP_NAME = "BukuKas";
 
 export default function Login() {
-  const { signIn } = useAuth();
+  const { signIn, idleTimedOut, clearIdleTimedOut } = useAuth();
   const [email,      setEmail]      = useState("");
   const [password,   setPassword]   = useState("");
   const [error,        setError]        = useState("");
@@ -23,6 +23,7 @@ export default function Login() {
     setError("");
     try {
       await signIn(email.trim(), password);
+      clearIdleTimedOut(); // clear idle flag after successful re-login
       // On success, AuthContext updates user state — App re-renders automatically
     } catch (err) {
       if (!err) {
@@ -52,6 +53,25 @@ export default function Login() {
         <div className="login-logo" aria-hidden="true">📒</div>
         <h1 className="login-title">{APP_NAME}</h1>
         <p className="login-subtitle">Pembukuan Digital Usaha Keluarga</p>
+
+        {idleTimedOut && (
+          <div
+            role="alert"
+            style={{
+              backgroundColor: "#fffbeb",
+              border: "1px solid #f59e0b",
+              borderRadius: "6px",
+              color: "#f59e0b",
+              fontSize: "13px",
+              padding: "10px 14px",
+              marginBottom: "16px",
+              lineHeight: "1.5",
+              textAlign: "center",
+            }}
+          >
+            Sesi Anda telah berakhir karena tidak aktif. Silakan masuk kembali.
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} noValidate>
           <div className="login-field">

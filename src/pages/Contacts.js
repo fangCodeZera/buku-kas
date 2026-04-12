@@ -353,6 +353,7 @@ const Contacts = ({
                 onClick={() => {
                   setForm({ name: sel.name, email: sel.email || "", phone: sel.phone || "", address: sel.address || "" });
                   setEditMode(true);
+                  setNameError("");
                   // Intentionally NOT setting selected="new" so we keep original contact ID for save
                 }}
                 className="btn btn-sm btn-outline"
