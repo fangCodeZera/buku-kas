@@ -812,6 +812,7 @@ Key patterns to never reintroduce:
 - `setData()` outside App.js: never call it directly
 - `.push()` on state arrays: never mutate state in place
 - `generateTxnId` with expense transactions: filter to income only (function handles this internally)
+- `generateTxnId` collision (short-term fix in place): post-save collision detection in `addTransaction` fires a toast warning when a duplicate txnId is detected in local state after save. This fires only for income transactions and never blocks the save. Long-term fix requires a Supabase DB sequence: `txn_counters` table with a SERIAL column per `YY-MM` key, using `SELECT nextval(...)` or `INSERT ... ON CONFLICT DO UPDATE ... RETURNING serial` — this guarantees atomic, globally unique invoice numbers. **Keep both checks when the DB sequence is implemented — defense-in-depth.**
 - `editLog[].prev` as full copy: only store the 11-field slim snapshot
 - `deleteInventoryItem` checking only `t.itemName`: must check all `items[]` entries
 - `setSubmitting(true)` after validation: always set it as the first line of `handleSubmit` to block rapid double-clicks
@@ -842,3 +843,4 @@ Key patterns to never reintroduce:
 - `M9` (`contactBalance` in TransactionForm recomputed on every render) is still present — acceptable for current data sizes.
 - `autoDetectCategories` in `categoryUtils.js` is O(n²) worst case — acceptable for <200 items. Performance comment in source.
 - `SuratJalanModal` uses transaction-level `t.stockUnit` for all item rows — per-item unit field doesn't exist on `items[]` (known design limitation).
+- **H2 long-term:** `generateTxnId` needs a Supabase DB sequence for atomic invoice numbering. Short-term collision detection toast is in place (`addTransaction` in `App.js`). Implementation plan: create `txn_counters` table with `yy_mm TEXT PRIMARY KEY` and `last_serial INT DEFAULT 0`; use `INSERT INTO txn_counters (yy_mm, last_serial) VALUES ($1, 1) ON CONFLICT (yy_mm) DO UPDATE SET last_serial = txn_counters.last_serial + 1 RETURNING last_serial` to atomically claim the next serial; format as `YY-MM-NNNNN`. See AUDIT.md H2 for full rationale.

@@ -34,6 +34,7 @@ import Icon               from "./components/Icon";
 import ReportModal        from "./components/ReportModal";
 import StockReportModal   from "./components/StockReportModal";
 import DotMatrixPrintModal from "./components/DotMatrixPrintModal";
+import Toast               from "./components/Toast";
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 import { useAuth } from "./utils/AuthContext";
@@ -168,6 +169,7 @@ export default function App() {
   const [showConflictModal,  setShowConflictModal]  = useState(false);
   const [conflictUpdatedBy,  setConflictUpdatedBy]  = useState('');
   const [onlineUsers,        setOnlineUsers]        = useState([]); // [{ id, name, role }]
+  const [toast,              setToast]              = useState(null); // app-level warning toast (e.g. txnId collision)
   const saveTimer = useRef();
   // dataRef always mirrors the latest committed data. update() reads from it instead
   // of using setData's functional updater, which prevents React StrictMode from
@@ -511,6 +513,19 @@ export default function App() {
       ]);
       const retryFn = () => persistToSupabase(supabaseSave, retryFn);
       persistToSupabase(supabaseSave, retryFn);
+      // H2 SHORT-TERM FIX: Post-save collision detection for txnId.
+      // This catches duplicate invoice numbers when two users create income transactions simultaneously.
+      // LONG-TERM FIX NEEDED: Replace with Supabase DB sequence (txn_counters table with SERIAL column
+      // per YY-MM key, using SELECT nextval(...) or INSERT ... ON CONFLICT DO UPDATE ... RETURNING serial).
+      // See AUDIT.md H2 for full details.
+      if (nt.type === "income" && newTx?.txnId) {
+        const collision = nd.transactions.some(
+          (x) => x.id !== newTx.id && x.txnId === newTx.txnId
+        );
+        if (collision) {
+          setToast("⚠️ Nomor faktur mungkin duplikat — periksa dan perbaiki secara manual.");
+        }
+      }
     }
   };
 
@@ -1286,7 +1301,7 @@ export default function App() {
         {sidebarOpen && USE_SUPABASE && onlineUsers.length > 0 && (
           <div className="presence-section">
             <div className="presence-label">Online sekarang</div>
-            {onlineUsers.map((u) => (
+            {[...onlineUsers].sort((a, b) => a.name.localeCompare(b.name, 'id')).map((u) => (
               <div key={u.id} className="presence-user">
                 <span className="presence-dot" />
                 <span>{u.name}</span>
@@ -1633,6 +1648,7 @@ export default function App() {
           onClose={() => { setShowConflictModal(false); setConflictUpdatedBy(''); }}
         />
       )}
+      {toast && <Toast message={toast} type="error" onDone={() => setToast(null)} />}
     </div>
   );
 }

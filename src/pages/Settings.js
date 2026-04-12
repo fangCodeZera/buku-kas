@@ -183,6 +183,12 @@ const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
             );
           if (tx.items !== undefined && !Array.isArray(tx.items))
             throw new Error(`Field 'items' pada transaksi id: ${tx.id} harus berupa array`);
+          if (Array.isArray(tx.items)) {
+            for (const it of tx.items) {
+              if (typeof it !== 'object' || it === null)
+                throw new Error(`Item tidak valid pada transaksi ${tx.id}`);
+            }
+          }
           if (tx.paymentHistory !== undefined && !Array.isArray(tx.paymentHistory))
             throw new Error(`Field 'paymentHistory' pada transaksi id: ${tx.id} harus berupa array`);
         }

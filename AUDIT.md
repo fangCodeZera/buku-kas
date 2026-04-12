@@ -9,6 +9,31 @@
 
 ---
 
+## Resolution Status
+
+| ID | Status | Date |
+|----|--------|------|
+| C1 | ✅ Fixed | 2026-04-12 |
+| C2 | ✅ Fixed | 2026-04-12 |
+| H1 | ✅ Fixed | 2026-04-12 |
+| H2 | ⚠️ Short-term fix (collision detection toast). Long-term fix needed: Supabase DB sequence — add txn_counters table with SERIAL column per YY-MM key | 2026-04-13 |
+| H3 | ✅ Fixed | 2026-04-12 |
+| M1 | ⏭️ Skipped — React 18+ batches setState; no user impact | — |
+| M2 | ✅ Fixed | 2026-04-12 |
+| M3 | ✅ Fixed | 2026-04-12 |
+| M4 | ✅ Fixed | 2026-04-12 |
+| M5 | ⏭️ Skipped — CRA limitation, accepted risk | — |
+| M6 | ✅ Fixed | 2026-04-13 |
+| M7 | ⏭️ Skipped — no user impact, React tolerates pattern | — |
+| L1 | ✅ Fixed by C2 | 2026-04-12 |
+| L2 | ✅ Fixed | 2026-04-13 |
+| L3 | ⏭️ Skipped — all current icons work, maintenance-only risk | — |
+| L4 | ✅ Fixed | 2026-04-13 |
+| L5 | ✅ Fixed | 2026-04-13 |
+| I1–I7 | ℹ️ Informational — no action needed | — |
+
+---
+
 ## Top Priorities (fix first)
 
 1. **[C1]** ✅ RESOLVED — XSS in `printWithPortal` — `escapeHtml` exported from `printUtils.js`; `DotMatrixPrintModal` manually escapes output before portal injection; import validation strips HTML tags from all string fields.
