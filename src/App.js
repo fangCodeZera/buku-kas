@@ -1368,6 +1368,32 @@ export default function App() {
     }
   };
 
+  // ── Quick Export (backup banner inline download) ─────────────────────────
+  const quickExport = useCallback(() => {
+    try {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `BukuKas_Backup_${today()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      const now = new Date().toISOString();
+      const newSettings = { ...data.settings, lastExportDate: now };
+      update(
+        (d) => ({ ...d, settings: newSettings }),
+        () => Promise.all([
+          sbSaveSettings(newSettings, user.id),
+          logActivity('export', 'settings', 'singleton', {}),
+        ])
+      );
+    } catch (err) {
+      console.error("quickExport failed:", err);
+    }
+  }, [data, user, logActivity]);
+
   // ── Backup Warning Logic ──────────────────────────────────────────────────
   const lastExport = data.settings.lastExportDate;
   const daysSinceExport = lastExport
@@ -1547,8 +1573,8 @@ export default function App() {
               <span
                 role="button"
                 tabIndex={0}
-                onClick={() => setPage("settings")}
-                onKeyDown={(e) => e.key === "Enter" && setPage("settings")}
+                onClick={quickExport}
+                onKeyDown={(e) => e.key === "Enter" && quickExport()}
                 style={{ marginLeft: 4, color: "#007bff", fontWeight: 700, textDecoration: "underline", cursor: "pointer", whiteSpace: "nowrap" }}
               >
                 Ekspor Sekarang
