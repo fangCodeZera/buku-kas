@@ -1392,7 +1392,8 @@ export default function App() {
     } catch (err) {
       console.error("quickExport failed:", err);
     }
-  }, [data, user, logActivity, update]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, user, logActivity]);
 
   // ── Backup Warning Logic ──────────────────────────────────────────────────
   const lastExport = data.settings.lastExportDate;
