@@ -1,6 +1,6 @@
 // Phase 3: Authentication context.
 // All auth state lives here. Never access supabase.auth directly outside this file.
-// Exposes: { user, profile, session, loading, signIn, signOut, idleTimedOut, clearIdleTimedOut }
+// Exposes: { user, profile, session, loading, signIn, signOut, resetPassword, idleTimedOut, clearIdleTimedOut, passwordRecovery, updatePassword, clearPasswordRecovery }
 
 import { createContext, useContext, useState, useEffect } from "react";
 import supabase from "./supabaseClient";
@@ -18,6 +18,8 @@ export function AuthProvider({ children }) {
   const [loading,      setLoading]      = useState(true);
   // idleTimedOut is NOT cleared by signOut() — only cleared by clearIdleTimedOut() on re-login.
   const [idleTimedOut, setIdleTimedOut] = useState(false);
+  // passwordRecovery is set when the user arrives via a reset-password email link.
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   // Fetch profile row from profiles table
   const fetchProfile = async (userId) => {
@@ -65,7 +67,10 @@ export function AuthProvider({ children }) {
 
     // Keep session in sync with Supabase auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
+        if (event === "PASSWORD_RECOVERY") {
+          setPasswordRecovery(true);
+        }
         handleSession(session);
       }
     );
@@ -142,8 +147,16 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   };
 
+  const updatePassword = async (newPassword) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+    setPasswordRecovery(false);
+  };
+
+  const clearPasswordRecovery = () => setPasswordRecovery(false);
+
   return (
-    <AuthContext.Provider value={{ user, profile, session, loading, signIn, signOut, resetPassword, idleTimedOut, clearIdleTimedOut }}>
+    <AuthContext.Provider value={{ user, profile, session, loading, signIn, signOut, resetPassword, idleTimedOut, clearIdleTimedOut, passwordRecovery, updatePassword, clearPasswordRecovery }}>
       {children}
     </AuthContext.Provider>
   );

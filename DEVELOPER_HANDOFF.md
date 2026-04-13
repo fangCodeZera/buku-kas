@@ -215,6 +215,9 @@ const [dotMatrixData,         setDotMatrixData]         = useState(null);   // {
 // Conflict detection (Phase 5)
 const [conflictUpdatedBy,     setConflictUpdatedBy]     = useState(null);
 const [showConflictModal,     setShowConflictModal]     = useState(false);
+
+// Password reset completion
+const [showPasswordChange,    setShowPasswordChange]    = useState(false);
 ```
 
 ### useRef
@@ -235,6 +238,7 @@ const balanceMap      // per-contact { totalIncome, totalExpense, ar, ap, netOut
 ```js
 // beforeunload guard — warns if unsaved during 500ms debounce
 // resize handler — auto-collapse sidebar when window.innerWidth <= 1024
+// passwordRecovery guard — opens PasswordChangeModal when passwordRecovery && user
 ```
 
 ### Core helpers
@@ -327,10 +331,16 @@ renameInventoryItem, deleteInventoryItem, handleViewItem, navigateToOutstanding,
   {reportState  && <ReportModal ...>}
   {showStockReport && <StockReportModal ...>}
   {dotMatrixData && <DotMatrixPrintModal ...>}
+  {saveErrorModal && <SaveErrorModal ...>}
+  {showConflictModal && <ConflictModal ...>}
+  {showPasswordChange && <PasswordChangeModal ...>}
+  {toast && <Toast ...>}
 </div>
 ```
 
-`EditModal` is a local function component defined inside App.js (not exported). It wraps `TransactionForm` in a modal overlay and computes `adjustedStockMap` to exclude the current transaction's stock contribution before stock-warning validation.
+`EditModal` is a local function component defined before `App` in App.js (not exported). It wraps `TransactionForm` in a modal overlay and computes `adjustedStockMap` to exclude the current transaction's stock contribution before stock-warning validation.
+
+`PasswordChangeModal` is a local function component defined before `App` in App.js (not exported). It is shown when `passwordRecovery && user` — i.e. the user arrived via a Supabase password reset email link. Validates min 6 chars and password match; calls `updatePassword(newPassword)` from AuthContext on submit. "Nanti Saja" skips without changing the password.
 
 ---
 
@@ -570,7 +580,7 @@ The `form` state includes `printerType` (initialized from `settings.printerType 
 - Submit button disabled while `submitting` or when email/password are empty
 - **Idle timeout banner:** When `idleTimedOut === true`, shows amber alert box between subtitle and form: "Sesi Anda telah berakhir karena tidak aktif. Silakan masuk kembali." Inline styles only (no CSS class). `role="alert"` for accessibility.
 - On success: `clearIdleTimedOut()` called to reset the banner flag; AuthContext updates `user` state; App.js re-renders to main shell automatically
-- **Forgot password flow:** "Lupa Password?" link below submit button switches to the reset view (`showForgotPassword = true`). Reset view replaces the login form (same card, same logo/title). User enters email → `handleResetPassword` calls `resetPassword(email)` from AuthContext → on success shows green "Link reset...terkirim" message; on error shows red error. "← Kembali ke Login" switches back and clears reset states. `resetEmail` is pre-filled with whatever email was typed in the login form.
+- **Forgot password flow (complete):** "Lupa Password?" link → reset view → user enters email → `resetPassword(email)` sends Supabase email → user clicks link in email → app opens, Supabase fires `PASSWORD_RECOVERY` event → AuthContext sets `passwordRecovery = true` → App.js `useEffect([passwordRecovery, user])` opens `PasswordChangeModal` → user enters new password + confirmation → `updatePassword(newPassword)` calls `supabase.auth.updateUser()` → success toast "Kata sandi berhasil diubah." and modal closes. "Nanti Saja" button calls `clearPasswordRecovery()` and closes without changing the password.
 
 ### pages/ArchivedItems.js
 **Props:** `itemCatalog, stockMap, transactions, onUnarchiveCatalogItem, onUnarchiveSubtype, onDeleteCatalogItem, onViewItem, onBack`
@@ -705,7 +715,7 @@ Blocks UI when a Supabase write fails. Shows error message with Retry and Dismis
 ### AuthContext.js (src/utils/) — ~130 lines
 **Exports:** `AuthProvider` (component), `useAuth()` (hook)
 
-**Context value:** `{ user, profile, session, loading, signIn, signOut, resetPassword, idleTimedOut, clearIdleTimedOut }`
+**Context value:** `{ user, profile, session, loading, signIn, signOut, resetPassword, idleTimedOut, clearIdleTimedOut, passwordRecovery, updatePassword, clearPasswordRecovery }`
 
 **`signIn(email, password)`:**
 1. Calls `supabase.auth.signInWithPassword`

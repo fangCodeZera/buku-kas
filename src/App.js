@@ -131,10 +131,102 @@ function EditModal({ transaction, contacts, transactions = [], stockMap, itemCat
   );
 }
 
+// ─── Password Change Modal ────────────────────────────────────────────────────
+/**
+ * Shown when the user arrives via a Supabase PASSWORD_RECOVERY reset link.
+ * Lets the user set a new password without leaving the app.
+ */
+function PasswordChangeModal({ onSubmit, onCancel }) {
+  const [newPassword,     setNewPassword]     = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error,           setError]           = useState("");
+  const [submitting,      setSubmitting]      = useState(false);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && !submitting) onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel, submitting]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (newPassword.length < 6) { setError("Kata sandi minimal 6 karakter."); return; }
+    if (newPassword !== confirmPassword) { setError("Kata sandi tidak cocok."); return; }
+    setSubmitting(true);
+    try {
+      await onSubmit(newPassword);
+    } catch (err) {
+      setError(err.message || "Gagal mengubah kata sandi. Coba lagi.");
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-box" style={{ maxWidth: 400 }}>
+        <h2 className="modal-title">Ubah Kata Sandi</h2>
+        <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
+          Masukkan kata sandi baru Anda.
+        </p>
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+              Kata Sandi Baru
+            </label>
+            <input
+              type="password"
+              className="form-input"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Minimal 6 karakter"
+              autoFocus
+              disabled={submitting}
+            />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+              Konfirmasi Kata Sandi
+            </label>
+            <input
+              type="password"
+              className="form-input"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Ketik ulang kata sandi"
+              disabled={submitting}
+            />
+          </div>
+          {error && (
+            <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{error}</div>
+          )}
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onCancel}
+              disabled={submitting}
+            >
+              Nanti Saja
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={submitting || !newPassword.trim()}
+            >
+              {submitting ? "Menyimpan..." : "Simpan Kata Sandi"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   // ── Auth (must be first hook) ─────────────────────────────────────────────
-  const { user, profile, loading: authLoading, signOut } = useAuth();
+  const { user, profile, loading: authLoading, signOut, passwordRecovery, updatePassword, clearPasswordRecovery } = useAuth();
 
   // ── Global state ────────────────────────────────────────────────────────────
   const [data, setData] = useState(() =>
@@ -170,6 +262,7 @@ export default function App() {
   const [conflictUpdatedBy,  setConflictUpdatedBy]  = useState('');
   const [onlineUsers,        setOnlineUsers]        = useState([]); // [{ id, name, role }]
   const [toast,              setToast]              = useState(null); // app-level warning toast (e.g. txnId collision)
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
   const saveTimer = useRef();
   // dataRef always mirrors the latest committed data. update() reads from it instead
   // of using setData's functional updater, which prevents React StrictMode from
@@ -312,6 +405,13 @@ export default function App() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // Open password-change modal when user arrives via a reset-password email link.
+  useEffect(() => {
+    if (passwordRecovery && user) {
+      setShowPasswordChange(true);
+    }
+  }, [passwordRecovery, user]);
 
   // ── Phase 4: load data from Supabase on mount ────────────────────────────
   // loadedRef guards against React StrictMode double-invoking this effect in
@@ -1672,6 +1772,19 @@ export default function App() {
         <ConflictModal
           updatedBy={conflictUpdatedBy}
           onClose={() => { setShowConflictModal(false); setConflictUpdatedBy(''); }}
+        />
+      )}
+      {showPasswordChange && (
+        <PasswordChangeModal
+          onSubmit={async (newPassword) => {
+            await updatePassword(newPassword);
+            setShowPasswordChange(false);
+            setToast("Kata sandi berhasil diubah.");
+          }}
+          onCancel={() => {
+            clearPasswordRecovery();
+            setShowPasswordChange(false);
+          }}
         />
       )}
       {toast && <Toast message={toast} type="error" onDone={() => setToast(null)} />}
