@@ -24,7 +24,7 @@ npm run build    # production build
 
 ```
 src/
-  App.js                          1623  Root component — all state, all handlers, nav, Supabase integration
+  App.js                          1830  Root component — all state, all handlers, nav, Supabase integration
   styles.css                      3051  All styling (BEM-inspired, no CSS modules)
   index.js                              React root render
 
@@ -40,9 +40,9 @@ src/
     printUtils.js                   47  printWithPortal, escapeHtml
     stockUtils.js                  114  computeStockMap, computeStockMapForDate
     textFormatter.js               387  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText)
-    AuthContext.js                ~130  AuthProvider, useAuth — session state, signIn (with login audit log), signOut, 15-min idle timeout
+    AuthContext.js                 169  AuthProvider, useAuth — session state, signIn (with login audit log), signOut, 15-min idle timeout
     supabaseClient.js               19  Creates Supabase client (anon key only, env var validated)
-    supabaseStorage.js             ~630  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog, getNextTxnSerial
+    supabaseStorage.js             445  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog, getNextTxnSerial, isSupabaseReachable
     storageConfig.js                ~30  USE_SUPABASE flag
     realtimeManager.js             ~100  subscribeToChanges, subscribeToPresence (Phase 5)
     conflictDetector.js             ~86  ConflictError class, checkVersion (Phase 5)
@@ -52,9 +52,10 @@ src/
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
     Inventory.js                  1665  Stock inventory with catalog table + ledger
     Contacts.js                    639  Contact list + detail panel + transaction history
-    Reports.js                     504  Date-range financial report + CSV/JSON export
+    Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
+    Reports.js                     508  Date-range financial report + CSV/JSON export (Laba/Rugi hidden from Karyawan)
     Outstanding.js                 557  AR/AP outstanding transactions view
-    Settings.js                    554  Business settings + JSON/CSV backup/restore + printer type toggle
+    Settings.js                    591  Business settings + JSON/CSV backup/restore + printer type toggle
     ArchivedItems.js               286  Archived catalog items — restore or delete
     ArchivedContacts.js            222  Archived contacts — restore or delete
     ActivityLog.js                 312  Audit trail viewer — Pemilik-only, reads activity_log table
@@ -218,6 +219,12 @@ const [showConflictModal,     setShowConflictModal]     = useState(false);
 
 // Password reset completion
 const [showPasswordChange,    setShowPasswordChange]    = useState(false);
+
+// Supabase pause detection
+const [databasePaused,        setDatabasePaused]        = useState(false);
+
+// App-level toast (e.g. txnId collision warning, import success)
+const [toast,                 setToast]                 = useState(null);
 ```
 
 ### useRef
@@ -302,7 +309,7 @@ createContact, archiveContact, unarchiveContact, deleteContact, updateContact,
 handleImport, addStockAdjustment, deleteStockAdjustment, updateItemCategories,
 addCatalogItem, updateCatalogItem, deleteCatalogItem,
 archiveCatalogItem, unarchiveCatalogItem, archiveSubtype, unarchiveSubtype,
-renameInventoryItem, deleteInventoryItem, handleViewItem, navigateToOutstanding, quickExport
+renameInventoryItem, deleteInventoryItem, handleViewItem, navigateToOutstanding
 ```
 
 ### JSX render tree
@@ -340,7 +347,9 @@ renameInventoryItem, deleteInventoryItem, handleViewItem, navigateToOutstanding,
 
 `EditModal` is a local function component defined before `App` in App.js (not exported). It wraps `TransactionForm` in a modal overlay and computes `adjustedStockMap` to exclude the current transaction's stock contribution before stock-warning validation.
 
-`PasswordChangeModal` is a local function component defined before `App` in App.js (not exported). It is shown when `passwordRecovery && user` — i.e. the user arrived via a Supabase password reset email link. Validates min 6 chars and password match; calls `updatePassword(newPassword)` from AuthContext on submit. "Nanti Saja" skips without changing the password.
+`PasswordChangeModal` is a local function component defined before `App` in App.js (not exported). It is shown when `passwordRecovery && user` — i.e. the user arrived via a Supabase password reset email link. Validates min 6 chars and password match; calls `updatePassword(newPassword)` from AuthContext on submit. Modal is **uncloseable** — no Escape key, no backdrop click, no skip button. Both password fields have show/hide eye toggles (`.login-password-toggle` pattern from Login.js).
+
+`DatabasePausedScreen` is a local function component defined before `App` in App.js (not exported). It replaces the entire app UI (full-screen, not a modal) when `databasePaused === true`. Shown when `isSupabaseReachable()` returns false — either on initial load failure or after a write failure in `persistToSupabase`. Shows an Indonesian explanation and a "Coba Lagi" button that calls `window.location.reload()`.
 
 ---
 
@@ -580,7 +589,7 @@ The `form` state includes `printerType` (initialized from `settings.printerType 
 - Submit button disabled while `submitting` or when email/password are empty
 - **Idle timeout banner:** When `idleTimedOut === true`, shows amber alert box between subtitle and form: "Sesi Anda telah berakhir karena tidak aktif. Silakan masuk kembali." Inline styles only (no CSS class). `role="alert"` for accessibility.
 - On success: `clearIdleTimedOut()` called to reset the banner flag; AuthContext updates `user` state; App.js re-renders to main shell automatically
-- **Forgot password flow (complete):** "Lupa Password?" link → reset view → user enters email → `resetPassword(email)` sends Supabase email → user clicks link in email → app opens, Supabase fires `PASSWORD_RECOVERY` event → AuthContext sets `passwordRecovery = true` → App.js `useEffect([passwordRecovery, user])` opens `PasswordChangeModal` → user enters new password + confirmation → `updatePassword(newPassword)` calls `supabase.auth.updateUser()` → success toast "Kata sandi berhasil diubah." and modal closes. "Nanti Saja" button calls `clearPasswordRecovery()` and closes without changing the password.
+- **Forgot password flow (complete):** "Lupa Password?" link → reset view → user enters email → `resetPassword(email)` sends Supabase email → user clicks link in email → app opens, Supabase fires `PASSWORD_RECOVERY` event → AuthContext sets `passwordRecovery = true` → App.js `useEffect([passwordRecovery, user])` opens `PasswordChangeModal` → user enters new password + confirmation → `updatePassword(newPassword)` calls `supabase.auth.updateUser()` → success toast "Kata sandi berhasil diubah." and modal closes. The `PasswordChangeModal` is **uncloseable** — user must complete the password change to dismiss it (no Escape, no backdrop, no skip button).
 
 ### pages/ArchivedItems.js
 **Props:** `itemCatalog, stockMap, transactions, onUnarchiveCatalogItem, onUnarchiveSubtype, onDeleteCatalogItem, onViewItem, onBack`
@@ -839,7 +848,7 @@ Key patterns to never reintroduce:
 - `logActivity` with `nt.txnId` for income: `txnId` is generated inside `update()` state fn — always use `newTx?.txnId` (for create) or `updated?.txnId || nt.txnId` (for edit) so the generated ID is captured correctly
 - ActivityLog entity_id for transactions: use `isTxnId()` pattern check before displaying — old entries have internal IDs, new entries have `YY-MM-NNNNN` format
 - Cloudflare DDoS/rate limiting: deferred until custom domain is purchased. See Section 14 for setup steps.
-- Supabase free tier auto-pause: database pauses after 1 week of no activity. See Section 14 for mitigation options.
+- Supabase free tier auto-pause: gracefully handled — `isSupabaseReachable()` is checked on load failure and write failure; shows `DatabasePausedScreen` with restore instructions instead of the generic `SaveErrorModal`. External keep-alive cron (cron-job.org, every 5 days) prevents pauses proactively.
 
 ---
 
@@ -884,8 +893,33 @@ Key patterns to never reintroduce:
 - **Site URL:** https://frabjous-gecko-a0ad5c.netlify.app
 - **Realtime:** Enabled on transactions, contacts, stock_adjustments, item_catalog
 
+### Supabase Tables (9 total)
+| Table | Purpose | RLS |
+|-------|---------|-----|
+| `profiles` | User display name, role (owner/staff), is_active | ✅ |
+| `transactions` | All income + expense transactions (full JSON-like row) | ✅ |
+| `contacts` | Contact list with archived flag | ✅ |
+| `item_catalog` | Catalog items with subtypes + archive state | ✅ |
+| `stock_adjustments` | Manual stock correction entries | ✅ |
+| `item_categories` | Category groupings with codes and item lists | ✅ |
+| `app_settings` | Per-user settings row (one row per user_id) | ✅ |
+| `activity_log` | Audit trail — action, entity, user, timestamp, changes | ✅ |
+| `txn_counters` | Atomic invoice serial counter per YY-MM prefix | No RLS (function-level) |
+
+**`txn_counters` schema:** `prefix TEXT PRIMARY KEY, last_serial INTEGER NOT NULL DEFAULT 0`
+
+**`next_txn_serial(p_prefix TEXT)` Postgres function:**
+```sql
+INSERT INTO txn_counters (prefix, last_serial)
+VALUES (p_prefix, 1)
+ON CONFLICT (prefix) DO UPDATE
+  SET last_serial = txn_counters.last_serial + 1
+RETURNING last_serial;
+```
+Called by `getNextTxnSerial(dateStr)` in `supabaseStorage.js`. Returns `"YY-MM-NNNNN"` string. Falls back to local `generateTxnId()` on RPC error.
+
 ### Security in Production
-- RLS enabled on all 9 tables (role-aware policies)
+- RLS enabled on all 9 tables (role-aware policies; txn_counters is function-level access only)
 - Session idle timeout: 15 minutes (auto sign-out)
 - HTTP security headers via public/_headers and netlify.toml (CSP, X-Frame-Options, etc.)
 - Supabase anon key is public by design — RLS enforces all access control
@@ -899,6 +933,14 @@ Deferred until a custom domain is purchased. Setup steps when ready:
 4. In Supabase: update Site URL and Redirect URLs to new domain
 5. In public/_headers: tighten CSP connect-src from `*.supabase.co` to specific project URL
 6. Enable Cloudflare rate limiting and DDoS rules as needed
+
+### Keep-Alive (prevents Supabase free tier pause)
+An external cron job pings the Supabase REST API every 5 days to prevent auto-pause:
+- **Service:** cron-job.org (free tier)
+- **URL:** `https://yjqhgmbgbfjmytgtqtmu.supabase.co/rest/v1/profiles?select=id&limit=1`
+- **Headers:** `apikey: <anon key>`, `Authorization: Bearer <anon key>`
+- **Schedule:** Every 5 days
+- If the cron ever fails and the DB pauses, the app shows a friendly "Database Sedang Istirahat" screen (`DatabasePausedScreen`) with a link to Supabase Dashboard and a "Coba Lagi" button.
 
 ### Adding Family Members
 Create accounts via Supabase Dashboard → Authentication → Users → Invite User:

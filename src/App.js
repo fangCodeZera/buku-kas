@@ -61,6 +61,7 @@ import {
   mapStockAdjustment,
   mapCatalogItem,
   getNextTxnSerial,
+  isSupabaseReachable,
 } from "./utils/supabaseStorage";
 import SaveErrorModal from "./components/SaveErrorModal";
 import ConflictModal from "./components/ConflictModal";
@@ -132,22 +133,67 @@ function EditModal({ transaction, contacts, transactions = [], stockMap, itemCat
   );
 }
 
+// ─── Database Paused Screen ───────────────────────────────────────────────────
+/**
+ * Full-screen fallback shown when Supabase free tier has auto-paused the database.
+ * Replaces the entire app UI — not a modal.
+ */
+function DatabasePausedScreen() {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "center",
+      minHeight: "100vh", backgroundColor: "#f0f6ff", padding: 24,
+    }}>
+      <div style={{
+        backgroundColor: "#fff", borderRadius: 12, padding: 32,
+        maxWidth: 480, width: "100%", textAlign: "center",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+      }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>😴</div>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: "#1e3a5f", marginBottom: 12 }}>
+          Database Sedang Istirahat
+        </h2>
+        <p style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.6, marginBottom: 20 }}>
+          Database BukuKas sedang dalam mode istirahat karena tidak ada aktivitas
+          selama 7 hari. Ini adalah fitur otomatis dari Supabase untuk menghemat
+          sumber daya.
+        </p>
+        <p style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.6, marginBottom: 24 }}>
+          Untuk mengaktifkan kembali, pemilik akun perlu masuk ke{" "}
+          <a
+            href="https://supabase.com/dashboard"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "#007bff" }}
+          >
+            Supabase Dashboard
+          </a>{" "}
+          dan klik tombol "Restore" pada project BukuKas.
+        </p>
+        <button
+          className="btn btn-primary"
+          onClick={() => window.location.reload()}
+          style={{ minWidth: 200 }}
+        >
+          Coba Lagi
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Password Change Modal ────────────────────────────────────────────────────
 /**
  * Shown when the user arrives via a Supabase PASSWORD_RECOVERY reset link.
  * Lets the user set a new password without leaving the app.
  */
-function PasswordChangeModal({ onSubmit, onCancel }) {
-  const [newPassword,     setNewPassword]     = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [error,           setError]           = useState("");
-  const [submitting,      setSubmitting]      = useState(false);
-
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape" && !submitting) onCancel(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel, submitting]);
+function PasswordChangeModal({ onSubmit }) {
+  const [newPassword,      setNewPassword]      = useState("");
+  const [confirmPassword,  setConfirmPassword]  = useState("");
+  const [error,            setError]            = useState("");
+  const [submitting,       setSubmitting]       = useState(false);
+  const [showNewPassword,  setShowNewPassword]  = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -175,45 +221,62 @@ function PasswordChangeModal({ onSubmit, onCancel }) {
             <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
               Kata Sandi Baru
             </label>
-            <input
-              type="password"
-              className="form-input"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Minimal 6 karakter"
-              autoFocus
-              disabled={submitting}
-            />
+            <div className="login-password-wrapper">
+              <input
+                type={showNewPassword ? "text" : "password"}
+                className="form-input"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Minimal 6 karakter"
+                autoFocus
+                disabled={submitting}
+              />
+              <button
+                type="button"
+                className="login-password-toggle"
+                onClick={() => setShowNewPassword((v) => !v)}
+                disabled={submitting}
+                aria-label={showNewPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+                tabIndex={-1}
+              >
+                <Icon name="eye" size={16} color={showNewPassword ? "#007bff" : "#9ca3af"} />
+              </button>
+            </div>
           </div>
           <div style={{ marginBottom: 12 }}>
             <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
               Konfirmasi Kata Sandi
             </label>
-            <input
-              type="password"
-              className="form-input"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Ketik ulang kata sandi"
-              disabled={submitting}
-            />
+            <div className="login-password-wrapper">
+              <input
+                type={showConfirmPassword ? "text" : "password"}
+                className="form-input"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Ketik ulang kata sandi"
+                disabled={submitting}
+              />
+              <button
+                type="button"
+                className="login-password-toggle"
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                disabled={submitting}
+                aria-label={showConfirmPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+                tabIndex={-1}
+              >
+                <Icon name="eye" size={16} color={showConfirmPassword ? "#007bff" : "#9ca3af"} />
+              </button>
+            </div>
           </div>
           {error && (
             <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{error}</div>
           )}
-          <div className="modal-actions">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={onCancel}
-              disabled={submitting}
-            >
-              Nanti Saja
-            </button>
+          <div className="modal-actions" style={{ justifyContent: "center" }}>
             <button
               type="submit"
               className="btn btn-primary"
               disabled={submitting || !newPassword.trim()}
+              style={{ minWidth: 200 }}
             >
               {submitting ? "Menyimpan..." : "Simpan Kata Sandi"}
             </button>
@@ -227,7 +290,7 @@ function PasswordChangeModal({ onSubmit, onCancel }) {
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   // ── Auth (must be first hook) ─────────────────────────────────────────────
-  const { user, profile, loading: authLoading, signOut, passwordRecovery, updatePassword, clearPasswordRecovery } = useAuth();
+  const { user, profile, loading: authLoading, signOut, passwordRecovery, updatePassword } = useAuth();
 
   // ── Global state ────────────────────────────────────────────────────────────
   const [data, setData] = useState(() =>
@@ -243,6 +306,7 @@ export default function App() {
     } : loadData()
   );
   const [appLoading,      setAppLoading]      = useState(USE_SUPABASE);
+  const [databasePaused,  setDatabasePaused]  = useState(false);
   const [saveErrorModal,  setSaveErrorModal]  = useState(null); // { message, retryFn } | null
   const [page,        setPage]        = useState("penjualan");
   const [saved,       setSaved]       = useState(true);
@@ -315,9 +379,16 @@ export default function App() {
       }
       setSaveError(true);
       setSaved(false);
-      setSaveErrorModal({ message: err.message, retryFn });
+      // Check if the failure is due to a paused database before showing the generic retry modal.
+      isSupabaseReachable().then((reachable) => {
+        if (!reachable) {
+          setDatabasePaused(true);
+        } else {
+          setSaveErrorModal({ message: err.message, retryFn });
+        }
+      });
     }
-  }, []);
+  }, [setDatabasePaused]);
 
   // Keep dataRef in sync with every committed state update.
   // Must be a useEffect (not inline) so it runs after React commits the new state.
@@ -429,8 +500,14 @@ export default function App() {
         setData(loaded);
         setAppLoading(false);
       })
-      .catch((err) => {
+      .catch(async (err) => {
         console.error("Failed to load data from Supabase:", err);
+        const reachable = await isSupabaseReachable();
+        if (!reachable) {
+          setDatabasePaused(true);
+          setAppLoading(false);
+          return;
+        }
         setAppLoading(false);
         setSaveErrorModal({ message: err.message, retryFn: () => window.location.reload() });
       });
@@ -1313,6 +1390,8 @@ export default function App() {
     );
   }
 
+  if (databasePaused) return <DatabasePausedScreen />;
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="app-shell">
@@ -1743,10 +1822,6 @@ export default function App() {
             await updatePassword(newPassword);
             setShowPasswordChange(false);
             setToast("Kata sandi berhasil diubah.");
-          }}
-          onCancel={() => {
-            clearPasswordRecovery();
-            setShowPasswordChange(false);
           }}
         />
       )}

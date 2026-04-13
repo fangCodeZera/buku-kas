@@ -7,6 +7,25 @@ import supabase from './supabaseClient';
 import { defaultData } from './storage';
 import { checkVersion, ConflictError } from './conflictDetector';
 
+/**
+ * Health check: returns true if the Supabase database is reachable, false if paused/unreachable.
+ * Uses a lightweight query (1 row from profiles). Times out after 5 seconds.
+ */
+export async function isSupabaseReachable() {
+  try {
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), 5000)
+    );
+    const query = supabase.from("profiles").select("id").limit(1).maybeSingle();
+    const { error } = await Promise.race([query, timeout]);
+    // PGRST116 = "no rows found" — DB is reachable, just empty
+    if (error && error.code !== "PGRST116") return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Field mappers: DB row → JS object ─────────────────────────────────────────
 
 export const mapTransaction = (row) => ({
