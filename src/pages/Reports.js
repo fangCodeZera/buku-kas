@@ -142,7 +142,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
 
   const exportCSV = () => {
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = [["Tanggal","Waktu","No. Invoice","Klien","Barang","Stok","Karung","Berat (Kg)","Harga/Kg","Jenis","Status","Jatuh Tempo","Nilai Total","Sisa Tagihan","Nilai (Rp)"]];
+    const rows = [["Tanggal","Waktu","No. Invoice","Klien","Barang","Stok","Karung","Berat (Kg)","Harga/Kg","Jenis","Status","Jatuh Tempo","Total Transaksi","Sisa Tagihan","Sudah Dibayar"]];
     filtered.forEach((t) => {
       const contrib = getMultiItemContribution(t, selectedItems);
       const jenisLabel = t.type === "income" ? "Penjualan" : "Pembelian";
