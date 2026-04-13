@@ -58,7 +58,8 @@ function getMultiItemContribution(t, selItems) {
   };
 }
 
-const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = null, onClearItemFilter = () => {} }) => {
+const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = null, onClearItemFilter = () => {}, profile }) => {
+  const isOwner = profile?.role === "owner";
   const [dateFrom,        setDateFrom]        = useState(() => {
     if (initItemFilter) return "";
     const [y, m] = today().split("-");
@@ -360,11 +361,11 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
       )}
 
       {/* Summary cards */}
-      <div className="summary-grid summary-grid--3" style={{ marginBottom:18 }}>
+      <div className={`summary-grid summary-grid--${isOwner ? 3 : 2}`} style={{ marginBottom:18 }}>
         {[
           { l:"Total Pemasukan",   sub:"Kas diterima",      v:income,          c:"#10b981" },
           { l:"Total Pengeluaran", sub:"Kas dikeluarkan",   v:expense,         c:"#ef4444" },
-          { l:"Laba / Rugi",       sub:"Posisi kas bersih", v:income-expense,  c:(income-expense)>=0?"#007bff":"#ef4444" },
+          ...(isOwner ? [{ l:"Laba / Rugi", sub:"Posisi kas bersih", v:income-expense, c:(income-expense)>=0?"#007bff":"#ef4444" }] : []),
         ].map((x) => (
           <div key={x.l} className="summary-card" style={{ borderBottom:`4px solid ${x.c}`, textAlign:"center" }}>
             <div className="summary-card__label">{x.l}</div>

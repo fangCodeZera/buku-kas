@@ -155,7 +155,7 @@ const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const parsed = JSON.parse(ev.target.result);
 
@@ -222,8 +222,18 @@ const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
             parsed.settings.address = stripTags(parsed.settings.address);
         }
 
-        onImport(parsed);
-        setImportMsg("✅ Data berhasil diimpor!");
+        setImportMsg("Mengimpor data...");
+        const result = await onImport(parsed);
+        // Supabase mode returns { succeeded, failed } — localStorage mode returns undefined
+        if (result && result.failed === 0) {
+          const txCount = (parsed.transactions || []).length;
+          const cCount  = (parsed.contacts     || []).length;
+          setImportMsg(`✅ Impor berhasil — ${txCount} transaksi, ${cCount} kontak disinkronkan ke database.`);
+        } else if (result && result.failed > 0) {
+          setImportMsg(`⚠️ Impor sebagian berhasil. ${result.failed} item gagal disinkronkan. Silakan periksa dan coba lagi.`);
+        } else {
+          setImportMsg("✅ Data berhasil diimpor!");
+        }
       } catch (err) {
         setImportMsg(`❌ Gagal: ${err.message}`);
       }
@@ -540,37 +550,25 @@ const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
           >
             <Icon name="download" size={14} color="#007bff" /> Ekspor Backup
           </button>
-          {USE_SUPABASE ? (
-            <button
-              className="btn btn-outline"
-              disabled
-              style={{ borderColor: "#9ca3af", color: "#9ca3af", cursor: "not-allowed" }}
-              aria-label="Impor dinonaktifkan sementara"
-            >
-              <Icon name="upload" size={14} color="#9ca3af" /> Impor Backup
-            </button>
-          ) : (
-            <button
-              onClick={() => fileRef.current && fileRef.current.click()}
-              className="btn btn-outline"
-              style={{ borderColor: "#10b981", color: "#10b981" }}
-              aria-label="Impor data dari file JSON"
-            >
-              <Icon name="upload" size={14} color="#10b981" /> Impor Backup
-            </button>
-          )}
+          <button
+            onClick={() => fileRef.current && fileRef.current.click()}
+            className="btn btn-outline"
+            style={{ borderColor: "#10b981", color: "#10b981" }}
+            aria-label="Impor data dari file JSON"
+            disabled={importMsg === "Mengimpor data..."}
+          >
+            <Icon name="upload" size={14} color="#10b981" /> Impor Backup
+          </button>
 
-          {/* Hidden file input — only used in localStorage mode */}
-          {!USE_SUPABASE && (
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".json,application/json"
-              onChange={handleImportFile}
-              style={{ display: "none" }}
-              aria-hidden="true"
-            />
-          )}
+          {/* Hidden file input */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={handleImportFile}
+            style={{ display: "none" }}
+            aria-hidden="true"
+          />
         </div>
         <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 4px" }}>
           {exportFormat === "json"
@@ -578,11 +576,6 @@ const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
             : "Format tabel — dapat dibuka di Excel / Google Sheets"}
         </p>
 
-        {USE_SUPABASE && (
-          <p style={{ fontSize: 12, color: "#9ca3af", margin: "6px 0 0" }}>
-            Fitur impor akan diaktifkan kembali setelah migrasi selesai.
-          </p>
-        )}
         {importMsg && (
           <div
             className={`import-msg ${importMsg.startsWith("✅") ? "import-msg--success" : "import-msg--error"}`}

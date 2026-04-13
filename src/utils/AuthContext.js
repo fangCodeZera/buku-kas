@@ -135,8 +135,15 @@ export function AuthProvider({ children }) {
 
   const clearIdleTimedOut = () => setIdleTimedOut(false);
 
+  const resetPassword = async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    if (error) throw error;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, session, loading, signIn, signOut, idleTimedOut, clearIdleTimedOut }}>
+    <AuthContext.Provider value={{ user, profile, session, loading, signIn, signOut, resetPassword, idleTimedOut, clearIdleTimedOut }}>
       {children}
     </AuthContext.Provider>
   );

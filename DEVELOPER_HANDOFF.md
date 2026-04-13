@@ -498,12 +498,14 @@ onNavigateToArchive?
 - `submitting` debounce guard on save
 
 ### pages/Reports.js
-**Props:** `transactions, contacts, settings, onReport?, initItemFilter?, onClearItemFilter?`
+**Props:** `transactions, contacts, settings, onReport?, initItemFilter?, onClearItemFilter?, profile?`
 Note: `onInvoice` prop is not used in the current code (was removed). `onReport` triggers ReportModal via App.js.
 
 **Key state:** `dateFrom`, `dateTo`, `selectedClients`, `selectedItems`, `period`, `toast`, `confirmCount`, `exportFormat`
 
-**Export:** Can export JSON (raw localStorage) or CSV. CSV format has 14 columns. JSON export tracks `lastExportDate` in settings.
+**Role-based visibility:** `isOwner = profile?.role === "owner"`. The "Laba / Rugi" summary card (net profit) is hidden when `!isOwner` — Karyawan staff see only Total Pemasukan and Total Pengeluaran. Grid switches from `summary-grid--3` to `summary-grid--2` when Laba/Rugi is hidden. Transaction table and export remain fully visible to all roles.
+
+**Export:** Can export JSON or CSV. CSV format has 14 columns (per-transaction rows, no summary row). JSON export tracks `lastExportDate` in settings. Import now re-enabled in Supabase mode — upserts each entity via `Promise.allSettled`.
 
 **Internal:** `getMultiItemContribution(t, selItems)` — computes item breakdown for multi-item transactions when item filter active.
 
@@ -557,9 +559,9 @@ The `form` state includes `printerType` (initialized from `settings.printerType 
 **`formatChanges(changes, entityType)`:** Returns `[{ label, val }]` array for rendering the Detail column. Recognizes: `type`, `items`, `value`, `counterparty`, `amount`, `note`, `name`, `itemName`, `qty`. Returns null for `settings` and `auth` entity types.
 
 ### pages/Login.js
-**Props:** none (reads `signIn`, `idleTimedOut`, `clearIdleTimedOut` from `useAuth()`)
+**Props:** none (reads `signIn`, `resetPassword`, `idleTimedOut`, `clearIdleTimedOut` from `useAuth()`)
 
-**State:** `email`, `password`, `error`, `submitting`, `showPassword`
+**State:** `email`, `password`, `error`, `submitting`, `showPassword`, `showForgotPassword`, `resetEmail`, `resetStatus`, `resetError`
 
 **Features:**
 - Standard email + password form with Indonesian labels
@@ -568,6 +570,7 @@ The `form` state includes `printerType` (initialized from `settings.printerType 
 - Submit button disabled while `submitting` or when email/password are empty
 - **Idle timeout banner:** When `idleTimedOut === true`, shows amber alert box between subtitle and form: "Sesi Anda telah berakhir karena tidak aktif. Silakan masuk kembali." Inline styles only (no CSS class). `role="alert"` for accessibility.
 - On success: `clearIdleTimedOut()` called to reset the banner flag; AuthContext updates `user` state; App.js re-renders to main shell automatically
+- **Forgot password flow:** "Lupa Password?" link below submit button switches to the reset view (`showForgotPassword = true`). Reset view replaces the login form (same card, same logo/title). User enters email → `handleResetPassword` calls `resetPassword(email)` from AuthContext → on success shows green "Link reset...terkirim" message; on error shows red error. "← Kembali ke Login" switches back and clears reset states. `resetEmail` is pre-filled with whatever email was typed in the login form.
 
 ### pages/ArchivedItems.js
 **Props:** `itemCatalog, stockMap, transactions, onUnarchiveCatalogItem, onUnarchiveSubtype, onDeleteCatalogItem, onViewItem, onBack`
@@ -702,7 +705,7 @@ Blocks UI when a Supabase write fails. Shows error message with Retry and Dismis
 ### AuthContext.js (src/utils/) — ~130 lines
 **Exports:** `AuthProvider` (component), `useAuth()` (hook)
 
-**Context value:** `{ user, profile, session, loading, signIn, signOut, idleTimedOut, clearIdleTimedOut }`
+**Context value:** `{ user, profile, session, loading, signIn, signOut, resetPassword, idleTimedOut, clearIdleTimedOut }`
 
 **`signIn(email, password)`:**
 1. Calls `supabase.auth.signInWithPassword`
@@ -894,6 +897,7 @@ Create accounts via Supabase Dashboard → Authentication → Users → Invite U
 3. Set `role` to `owner` (Pemilik) or `staff` (Karyawan) for each user
 4. Set `is_active` to `true`
 5. Share the production URL and have them set their password on first login
+6. Users can reset their own password at any time via the "Lupa Password?" link on the login page — no admin action required
 
 ### Redeploying
 Any push to `main` branch auto-deploys to Netlify. To manually redeploy:

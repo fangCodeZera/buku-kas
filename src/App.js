@@ -799,15 +799,40 @@ export default function App() {
   };
 
   // ── Import handler for Settings backup restore ────────────────────────────
-  const handleImport = (importedData) => {
-    if (USE_SUPABASE) {
-      alert("Fitur impor dinonaktifkan sementara. Silakan masukkan data secara manual.");
-      return;
+  const handleImport = async (importedData) => {
+    if (!USE_SUPABASE) {
+      // localStorage mode: write then re-read to run migrations
+      saveData(importedData);
+      const migrated = loadData();
+      update(() => migrated);
+      return undefined; // Settings.js shows its default success message
     }
-    // localStorage mode only: write then re-read to run migrations
-    saveData(importedData);
-    const migrated = loadData();
-    update(() => migrated);
+
+    // Supabase mode: update local React state first (also writes to localStorage as backup)
+    update(() => importedData);
+
+    // Then upsert each entity to Supabase — merge/add only, no deletions
+    const txPromises      = (importedData.transactions     || []).map((tx)  => sbSaveTransaction(tx, user.id));
+    const contactPromises = (importedData.contacts         || []).map((c)   => sbSaveContact(c, user.id));
+    const adjPromises     = (importedData.stockAdjustments || []).map((adj) => sbSaveStockAdjustment(adj, user.id));
+    const catalogPromises = (importedData.itemCatalog      || []).map((item)=> sbSaveItemCatalogItem(item, user.id));
+    const catPromise      = sbSaveItemCategories(importedData.itemCategories || []);
+    // NOTE: importedData.settings intentionally NOT synced — app_settings managed separately
+
+    const results = await Promise.allSettled([
+      ...txPromises,
+      ...contactPromises,
+      ...adjPromises,
+      ...catalogPromises,
+      catPromise,
+    ]);
+
+    const failed    = results.filter((r) => r.status === "rejected").length;
+    const succeeded = results.filter((r) => r.status === "fulfilled").length;
+
+    logActivity("import", "settings", null, { count: (importedData.transactions || []).length });
+
+    return { succeeded, failed, total: results.length };
   };
 
   // ── Add a manual stock adjustment (Inventory page) ────────────────────────
@@ -1527,6 +1552,7 @@ export default function App() {
             onReport={setReportState}
             initItemFilter={reportItemFilter}
             onClearItemFilter={() => setReportItemFilter(null)}
+            profile={profile}
           />
         )}
         {page === "outstanding" && (
