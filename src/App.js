@@ -1392,7 +1392,7 @@ export default function App() {
     } catch (err) {
       console.error("quickExport failed:", err);
     }
-  }, [data, user, logActivity]);
+  }, [data, user, logActivity, update]);
 
   // ── Backup Warning Logic ──────────────────────────────────────────────────
   const lastExport = data.settings.lastExportDate;
