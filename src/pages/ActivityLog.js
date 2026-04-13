@@ -79,7 +79,12 @@ function fmtTimestamp(ts) {
   if (!ts) return "—";
   try {
     const d = new Date(ts);
-    const date = fmtDate(d.toISOString().slice(0, 10));
+    const localDate = [
+      d.getFullYear(),
+      String(d.getMonth() + 1).padStart(2, "0"),
+      String(d.getDate()).padStart(2, "0"),
+    ].join("-");
+    const date = fmtDate(localDate);
     const hh = String(d.getHours()).padStart(2, "0");
     const mm = String(d.getMinutes()).padStart(2, "0");
     return `${date} ${hh}:${mm}`;

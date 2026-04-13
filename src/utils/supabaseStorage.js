@@ -432,9 +432,9 @@ export async function loadActivityLog(filters = {}) {
  * @returns {Promise<string>} txnId in format "YY-MM-NNNNN"
  */
 export async function getNextTxnSerial(dateStr) {
-  const d = new Date(dateStr + "T00:00:00");
-  const yy = String(d.getFullYear()).slice(-2);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const d = new Date(dateStr + "T00:00:00Z");
+  const yy = String(d.getUTCFullYear()).slice(-2);
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
   const prefix = `${yy}-${mm}`;
 
   const { data, error } = await supabase.rpc("next_txn_serial", { p_prefix: prefix });

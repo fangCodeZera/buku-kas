@@ -938,10 +938,13 @@ export default function App() {
         if (hasTx) return d;
         return { ...d, contacts: d.contacts.filter((c) => c.id !== contactId) };
       },
-      () => Promise.all([
-        sbDeleteContact(contactId),
-        logActivity('delete', 'contact', contactId),
-      ])
+      (nd) => {
+        if (nd.contacts.some((c) => c.id === contactId)) return Promise.resolve(); // guard blocked deletion
+        return Promise.all([
+          sbDeleteContact(contactId),
+          logActivity('delete', 'contact', contactId),
+        ]);
+      }
     );
 
   // ── Update a contact and cascade name changes to transactions ───────────────
@@ -1166,12 +1169,15 @@ export default function App() {
           ),
         };
       },
-      (nd) => Promise.all([
-        sbDeleteItemCatalogItem(itemId),
-        sbSaveItemCategories(nd.itemCategories, user.id),
-        ...adjIdsToDelete.map((id) => sbDeleteStockAdjustment(id)),
-        logActivity('delete', 'catalog_item', itemId),
-      ])
+      (nd) => {
+        if (nd.itemCatalog.some((it) => it.id === itemId)) return Promise.resolve(); // guard blocked deletion
+        return Promise.all([
+          sbDeleteItemCatalogItem(itemId),
+          sbSaveItemCategories(nd.itemCategories, user.id),
+          ...adjIdsToDelete.map((id) => sbDeleteStockAdjustment(id)),
+          logActivity('delete', 'catalog_item', itemId),
+        ]);
+      }
     );
   };
 

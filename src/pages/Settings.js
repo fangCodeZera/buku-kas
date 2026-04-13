@@ -138,17 +138,18 @@ const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
   const handleExport = () => {
     if (submitting) return;
     setSubmitting(true);
-
-    if (exportFormat === "json") {
-      exportJSON();
-    } else {
-      exportCSV();
+    try {
+      if (exportFormat === "json") {
+        exportJSON();
+      } else {
+        exportCSV();
+      }
+      const now = new Date().toISOString();
+      set("lastExportDate", now);
+      onSave({ ...form, lastExportDate: now });
+    } finally {
+      setTimeout(() => setSubmitting(false), 1000);
     }
-
-    const now = new Date().toISOString();
-    set("lastExportDate", now);
-    onSave({ ...form, lastExportDate: now });
-    setTimeout(() => setSubmitting(false), 1000);
   };
 
   const handleImportFile = (e) => {

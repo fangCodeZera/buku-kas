@@ -1,329 +1,281 @@
-# BukuKas — Comprehensive Audit Report
+# BukuKas — Comprehensive Audit Report (Post-Deployment)
 
-**Date:** 2026-04-04
-**Audited by:** Claude Sonnet 4.6 (automated audit)
-**Resolved:** 2026-04-05
-**Scope:** Full codebase — all utils, components, pages, CSS, HTML
+**Date:** 2026-04-14
+**Audited by:** Claude Sonnet 4.6 (automated audit — line-by-line review of all source files)
+**Scope:** Full codebase — all utils, components, pages, CSS, HTML, config, Supabase integration, security, deployment
+**App version:** Post-Phase 7 deployment (all prior audit findings resolved per AUDIT.md 2026-04-04)
 
-**Status:** All 42 findings resolved (3 Critical ✅ · 8 High ✅ · 14 Medium ✅ · 10 Low ✅ · 7 Informational — noted)
-
----
-
-## Resolution Status
-
-| ID | Status | Date |
-|----|--------|------|
-| C1 | ✅ Fixed | 2026-04-12 |
-| C2 | ✅ Fixed | 2026-04-12 |
-| H1 | ✅ Fixed | 2026-04-12 |
-| H2 | ✅ Fixed — atomic DB sequence (`txn_counters` + `next_txn_serial` RPC). Short-term collision toast kept as defense-in-depth. | 2026-04-13 |
-| H3 | ✅ Fixed | 2026-04-12 |
-| M1 | ⏭️ Skipped — React 18+ batches setState; no user impact | — |
-| M2 | ✅ Fixed | 2026-04-12 |
-| M3 | ✅ Fixed | 2026-04-12 |
-| M4 | ✅ Fixed | 2026-04-12 |
-| M5 | ⏭️ Skipped — CRA limitation, accepted risk | — |
-| M6 | ✅ Fixed | 2026-04-13 |
-| M7 | ⏭️ Skipped — no user impact, React tolerates pattern | — |
-| L1 | ✅ Fixed by C2 | 2026-04-12 |
-| L2 | ✅ Fixed | 2026-04-13 |
-| L3 | ⏭️ Skipped — all current icons work, maintenance-only risk | — |
-| L4 | ✅ Fixed | 2026-04-13 |
-| L5 | ✅ Fixed | 2026-04-13 |
-| I1–I7 | ℹ️ Informational — no action needed | — |
+**Summary: 0 Critical · 1 High · 3 Medium · 3 Low · 4 Informational**
 
 ---
 
-## Top Priorities (fix first)
+## CRITICAL (data loss, data corruption, or security vulnerability)
 
-1. **[C1]** ✅ RESOLVED — XSS in `printWithPortal` — `escapeHtml` exported from `printUtils.js`; `DotMatrixPrintModal` manually escapes output before portal injection; import validation strips HTML tags from all string fields.
-2. **[C2]** ✅ RESOLVED — Import validation now checks `outstanding` bounds, nested `items[]`, `settings` structure, and strips HTML tags from string fields.
-3. **[H6]** ✅ RESOLVED — Invoice date now uses `fmtDate(transactions[0]?.date)`.
-4. **[H4]** ✅ RESOLVED — `PaymentUpdateModal` has `submitting` state with `try/finally` guard.
-5. **[H7]** ✅ RESOLVED — `setSubmitting(true)` moved to first line of `handleSubmit`, before validation.
-6. **[C3]** ✅ RESOLVED — `ensureContact` now includes `archived: false`.
-7. **[H2]** ✅ RESOLVED — `customDueDays` minimum enforced at 1 in `doSave` via `Math.max(1, ...)`.
+None found.
 
 ---
 
-## CRITICAL (data loss, corruption, or security)
+## HIGH (broken feature, wrong calculation, bad UX)
 
-**[C1] XSS via innerHTML in printWithPortal** ✅ RESOLVED
-- **File:** `src/utils/printUtils.js`
-- **Description:** `portal.innerHTML = htmlString` is called with `modalRef.current.outerHTML` from `InvoiceModal` and `SuratJalanModal`. These include user-supplied fields: `t.counterparty`, `it.itemName`, `invoiceNote`, `settings.businessName`, `settings.address`, `platMobil`. A contact named `<img src=x onerror=alert(1)>` would execute when the portal renders. The `DotMatrixPrintModal` path (ASCII pre-formatted text) is safe — only A4 paths are affected.
-- **Resolution:** `escapeHtml` named export added to `printUtils.js`. `DotMatrixPrintModal` manually escapes `<`, `>`, `&` before injecting into portal. Settings import validation (`stripTags`) sanitizes all string fields on import to prevent malicious data from entering the data store.
+### H1 — `deleteContact` fires `sbDeleteContact` even when guard blocks deletion
+**File:** `src/App.js`, lines 930–945
+**What's wrong:**
+The `update()` helper always calls `supabaseOperation` when `USE_SUPABASE && supabaseOperation` is truthy, regardless of whether the state function actually mutated data. For `deleteContact`, the state function guards against contacts that have transactions (returns `d` unchanged), but the `supabaseOperation` closure `() => Promise.all([sbDeleteContact(contactId), logActivity(...)])` still executes, deleting the contact row from Supabase even though React state was not updated.
 
-**[C2] Import Validation is Insufficient — Allows Corrupt or Malicious Data** ✅ RESOLVED
-- **File:** `src/pages/Settings.js`
-- **Description:** The import validator only checked that `transactions` and `contacts` are arrays, each transaction has an `id`, `value` is a number, and `type` is `"income"/"expense"`. It did NOT validate: `outstanding` sign/bounds, `paymentHistory` integrity, `items[]` structure, `itemCatalog[]` shape, `settings` field types, or string field content.
-- **Resolution:** Added financial bounds check (`outstanding >= 0 && outstanding <= value`), nested array checks for `items[]`, `settings` structure validation, and `stripTags()` to sanitize `counterparty`, `itemName`, `items[].itemName`, `contacts[].name`, `settings.businessName`, `settings.address` on import.
+```js
+const deleteContact = (contactId) =>
+  update(
+    (d) => {
+      const contact = d.contacts.find((c) => c.id === contactId);
+      if (!contact) return d;        // guard 1: not found
+      const hasTx = d.transactions.some(...);
+      if (hasTx) return d;           // guard 2: has transactions — returns unchanged d
+      return { ...d, contacts: d.contacts.filter(...) };
+    },
+    () => Promise.all([
+      sbDeleteContact(contactId),    // ← still called even if guard 2 fired
+      logActivity('delete', 'contact', contactId),
+    ])
+  );
+```
 
-**[C3] `ensureContact` Creates Contacts Without `archived` Field** ✅ RESOLVED
-- **File:** `src/App.js`
-- **Description:** `ensureContact` created `{ id, name, email: "", phone: "", address: "" }` — missing `archived: false`. Auto-created contacts would have `archived: undefined`.
-- **Resolution:** `archived: false` added to the object literal in `ensureContact`.
+The `update()` function (line 402–414) calls `persistToSupabase(() => supabaseOperation(nd), ...)` unconditionally when a supabaseOperation is provided — it has no mechanism to detect that the state function returned `d` unchanged.
 
----
+**Impact:** If a contact with transactions somehow reaches `deleteContact` (e.g. via a stale UI state or programmatic call), the Supabase row is deleted while React state still shows the contact. On next page reload, the contact row is gone from the DB but transactions still reference its `counterparty` name. This is data inconsistency, not outright data loss, since the contact name is stored denormalized in transactions. However it could confuse `updateContact` cascade logic and the Contacts page.
 
-## HIGH (broken feature, wrong calculation)
-
-**[H1] `submitting` Flag Has No `finally` Block in `doSave` — Permanent Lock on Throw** ✅ RESOLVED
-- **File:** `src/components/TransactionForm.js`
-- **Description:** If `doSave` threw, `submitting` stayed `true` forever and the form became dead.
-- **Resolution:** `doSave` is wrapped in `try/finally { setSubmitting(false); }`. Comment in source references `// H1: always unlock, even if onSave throws`.
-
-**[H2] `customDueDays = 0` Creates Immediately-Overdue Transactions** ✅ RESOLVED
-- **File:** `src/components/TransactionForm.js`
-- **Description:** If the user cleared the "Tempo Pembayaran" field, `customDueDays` became 0, causing `addDays(t.date, 0)` to return today as the due date.
-- **Resolution:** `doSave` now uses `Math.max(1, Number(customDueDays) || 14)` to enforce a minimum of 1 day.
-
-**[H3] Ledger Running Total Diverges From `computeStockMapForDate` for Same-Day Transactions** ✅ RESOLVED
-- **File:** `src/pages/Inventory.js`
-- **Description:** `ledgerEntries` used a different sort order from `computeStockMapForDate` for same-day same-time transactions.
-- **Resolution:** `ledgerEntries` sort comparator updated to match `computeStockMap` comparator (date+time string first, then `createdAt` as tiebreak).
-
-**[H4] `PaymentUpdateModal` Has No `submitting` Guard — Double-Payment Possible** ✅ RESOLVED
-- **File:** `src/components/PaymentUpdateModal.js`
-- **Description:** `handleConfirm` had no double-submit guard. Rapidly double-clicking "Konfirmasi Bayar" fired `onConfirm` twice.
-- **Resolution:** `const [submitting, setSubmitting] = useState(false)` added; `handleConfirm` guards with `if (submitting) return`, then `setSubmitting(true)` before `try/finally { setSubmitting(false) }`. Button shows "Memproses..." when `submitting` is true and is `disabled`.
-
-**[H5] Reports.js CSV Export Missing BOM — Excel Garbles Indonesian Characters** ✅ RESOLVED
-- **File:** `src/pages/Reports.js`
-- **Description:** CSV exported without a BOM prefix. Indonesian names with special characters displayed as garbled text in Excel on Windows.
-- **Resolution:** `const BOM = "\uFEFF"` prepended to CSV content, matching the pattern in `Settings.js`.
-
-**[H6] InvoiceModal Shows Today's Date as Invoice Date Instead of Transaction Date** ✅ RESOLVED
-- **File:** `src/components/InvoiceModal.js`
-- **Description:** `fmtDate(today())` always showed the current date when the modal was opened, not the transaction date.
-- **Resolution:** Replaced with `fmtDate(transactions[0]?.date)`.
-
-**[H7] `submitting` Set After Validation in `handleSubmit` — Race on Double-Click** ✅ RESOLVED
-- **File:** `src/components/TransactionForm.js`
-- **Description:** `setSubmitting(true)` was called after validation ran. A rapid double-click could fire `handleSubmit` twice, both passing the `if (submitting) return` guard.
-- **Resolution:** `setSubmitting(true)` moved to the very first line of `handleSubmit`, before validation. Each early-return validation failure path calls `setSubmitting(false)`. Source comment: `// H7: set before validation so rapid double-clicks are blocked immediately`.
-
-**[H8] `TransactionPage.js` Multi-Item Stock Delta Hardcodes "karung" Unit** ✅ RESOLVED
-- **File:** `src/components/TransactionPage.js`
-- **Description:** For multi-item transactions, the stock delta display rendered `{qty} karung` — the unit was hardcoded.
-- **Resolution:** Replaced hardcoded `"karung"` with `t.stockUnit || "karung"`. Also added `minHeight: 28, alignItems: "flex-start"` on `.item-list__row` for BARANG/STOK column alignment.
+**Suggested fix:** Change the `deleteContact` supabaseOperation to check whether the contact was actually removed before calling `sbDeleteContact`:
+```js
+(nd) => {
+  const stillExists = nd.contacts.some((c) => c.id === contactId);
+  if (stillExists) return Promise.resolve(); // guard blocked deletion
+  return Promise.all([
+    sbDeleteContact(contactId),
+    logActivity('delete', 'contact', contactId),
+  ]);
+}
+```
+Apply the same pattern to `deleteCatalogItem` as a defense: check that the item is gone from `nd.itemCatalog` before calling `sbDeleteItemCatalogItem`.
 
 ---
 
 ## MEDIUM (missing validation, edge cases, UI bugs)
 
-**[M1] `categoryUtils.js` Uses `.push()` on State-Adjacent Objects — Violates Rule 8** ✅ RESOLVED
-- **File:** `src/utils/categoryUtils.js`
-- **Description:** `mergedCats[idx].items.push(item)` mutated a shallow clone of categories.
-- **Resolution:** Replaced with immutable spread: `mergedCats[idx] = { ...mergedCats[idx], items: [...mergedCats[idx].items, ...newItems] }`. Performance comment added referencing O(n²) complexity note.
+### M1 — `getNextTxnSerial` uses local-time date parsing (no `Z`) — wrong month at year-end midnight
+**File:** `src/utils/supabaseStorage.js`, line 435
+**What's wrong:**
+```js
+const d = new Date(dateStr + "T00:00:00"); // no Z = local time
+const yy = String(d.getFullYear()).slice(-2);
+const mm = String(d.getMonth() + 1).padStart(2, "0");
+```
+This violates Rule 3 (date arithmetic must use `T00:00:00Z` + UTC methods). `dateStr` is a user-supplied `YYYY-MM-DD` date (e.g. `"2026-03-15"`). The intention is simply to extract year and month for the `YY-MM` prefix used in txnIds.
 
-**[M2] `Contacts.js` Detail Panel Silently Disappears When Archived Contact Was Selected** — already correct — no change needed
-- **File:** `src/pages/Contacts.js`
-- **Description:** When archiving an active contact while its detail panel is open, the panel disappears.
-- **Note:** Verified — `Contacts.js` already clears `selected` on archive via the `contactAction` confirm flow, and shows a toast. No code change required.
+In practice this is safe for most dates. However, for a transaction dated `"2026-12-31"` entered at or after midnight local time in Jakarta (UTC+7), `"2026-12-31T00:00:00"` parses as local midnight (2026-12-30T17:00:00Z), but `getFullYear()` and `getMonth()` correctly return 2026/11 for local time, so the result (`26-12`) is actually correct. The real risk is if someone passes a date near a year boundary. More practically: since `dateStr` always comes from the form's date field (user's local date), the parsed local year/month is always what the user intended. This is low-severity in practice for Jakarta but is still a Rule 3 violation.
 
-**[M3] `Contacts.js` `handleSave` Has No `finally` Around `setSubmitting(false)`** ✅ RESOLVED
-- **File:** `src/pages/Contacts.js`
-- **Description:** If `onUpdateContact` threw, `setSubmitting(false)` was never called.
-- **Resolution:** `handleSave` wrapped in `try/finally { setSubmitting(false); }`.
+**Impact:** Low — produces incorrect `YY-MM` prefix only in edge cases involving midnight at year/month boundaries across timezones. May cause a txnId to be assigned to the wrong month counter if a transaction is created exactly at UTC midnight on the 1st of the month.
 
-**[M4] Reports.js Export Filename is `Laporan__sd_.csv` When "All Time" Selected** ✅ RESOLVED
-- **File:** `src/pages/Reports.js`
-- **Description:** When `period === "all-time"`, `dateFrom` and `dateTo` were empty strings, producing filename `Laporan__sd_.csv`.
-- **Resolution:** Template literal now uses `dateFrom || "semua"` and `dateTo || "semua"`, producing `Laporan_semua_sd_semua.csv`.
+**Suggested fix:**
+```js
+const d = new Date(dateStr + "T00:00:00Z"); // add Z for UTC parsing
+const yy = String(d.getUTCFullYear()).slice(-2);
+const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+```
+Since `dateStr` is already the user's local date, UTC interpretation is correct here (same as `addDays`).
 
-**[M5] `checkDuplicate` Uses Floating-Point Equality — Potential Merge Miss** ✅ RESOLVED (documented)
-- **File:** `src/components/TransactionForm.js`
-- **Description:** Duplicate detection compares `item.pricePerKg` with `Number(it.pricePerKg)` for equality. Since `pricePerKg` is set via `RupiahInput` which returns integers, this is currently safe.
-- **Resolution:** Integer-only invariant documented. `checkDuplicate` function added for duplicate item detection with `duplicateConfirmed` state per row. Merge-on-save implemented in `mergeItems()`.
+---
 
-**[M6] `StockWarningModal` `onCancel` Is Optional But Required in Practice** ✅ RESOLVED
-- **File:** `src/components/StockWarningModal.js`
-- **Description:** When Escape was pressed, `data.onCancel?.()` was called. If `onCancel` was not provided, the modal closed but `submitting` in TransactionForm remained `true`.
-- **Resolution:** `TransactionForm` always passes `onCancel: () => setSubmitting(false)` to `onStockWarning`.
+### M2 — Reports.js CSV export does not format currency columns with Indonesian thousand separators
+**File:** `src/pages/Reports.js`, lines 143–196
+**What's wrong:**
+The CLAUDE.md maintenance log entry for 2026-04-13 states: "CSV export (Reports.js): currency columns now formatted with Indonesian thousand separators (`id-ID` locale via `fmtCSV()`)." However, the actual `exportCSV()` function in Reports.js uses no `fmtCSV` helper — currency values are emitted as raw numbers (e.g. `5215000` instead of `5.215.000`). The `q()` quoter only adds double-quote wrapping. No `toLocaleString('id-ID')` call exists anywhere in the function.
 
-**[M7] `autoDetectCategories` Has Quadratic Complexity** ✅ RESOLVED (documented)
-- **File:** `src/utils/categoryUtils.js`
-- **Description:** O(n²) worst case. Fine for <200 items.
-- **Resolution:** Performance comment added: `// Performance: O(n²) worst case for large item catalogs. Fine for <200 items.` Separate from date-dependent memos in Inventory.js.
+This contradicts the documented changelog entry. Either the fix was applied to a different file (Settings.js CSV, not Reports.js), or the change was accidentally omitted. The Settings.js `exportCSV` (lines 92–135) similarly emits raw numbers without locale formatting.
 
-**[M8] `SuratJalanModal` Uses Transaction-Level `stockUnit` for All Items** — design limitation, documented
-- **File:** `src/components/SuratJalanModal.js`
-- **Description:** For multi-item transactions with different units per item, all rows show the same `t.stockUnit`.
-- **Note:** Known limitation of the current data model (no per-item unit field on `items[]`). Documented in CLAUDE.md Known Issues.
+**Impact:** Reports exported from the Laporan page open in Excel/Google Sheets with numbers like `5215000` rather than `5.215.000`, making the spreadsheet harder to read and requiring manual formatting.
 
-**[M9] `contactBalance` in TransactionForm Recomputed on Every Dropdown Keystroke** — acknowledged, not fixed
-- **File:** `src/components/TransactionForm.js`
-- **Description:** `contactBalance(c.name, transactions)` called for every visible contact on every render.
-- **Note:** Acceptable performance for current data sizes. Noted in Section 13 (Tech Debt) of DEVELOPER_HANDOFF.md.
+**Suggested fix:** Add a currency formatter to `exportCSV` in Reports.js:
+```js
+const fmtCSV = (n) => Number(n).toLocaleString('id-ID');
+// In the push rows, replace raw numbers:
+fmtCSV(itSubtotal), fmtCSV(itOutstanding), fmtCSV(itSubtotal - itOutstanding)
+```
+The `q()` wrapper already adds double quotes, so the formatted string (which contains periods as thousands separator) will be safely quoted.
 
-**[M10] `DueBadge` Doesn't Handle Empty String `dueDate`** — already correct — no change needed
-- **File:** `src/components/DueBadge.js`
-- **Description:** `diffDays("2026-04-04", "")` returns `null` because `""` is falsy — same behavior as `null`.
-- **Note:** Verified — `diffDays` returns `null` for empty string (falsy check at top), and `DueBadge` renders `—` for null. No code change required.
+---
 
-**[M11] Inventory Ledger Misses Duplicate Same-Item Rows in Multi-Item Transactions** ✅ RESOLVED
-- **File:** `src/pages/Inventory.js`
-- **Description:** The ledger loop `continue`d after first item match. Multi-row same-item transactions only showed first row's quantity.
-- **Resolution:** Ledger accumulates ALL matching item rows instead of breaking on first match.
+### M3 — `console.log` left in production code in `realtimeManager.js`
+**File:** `src/utils/realtimeManager.js`, line 66
+**What's wrong:**
+```js
+.subscribe((status) => {
+  console.log('Realtime subscription status:', status);
+});
+```
+This fires on every realtime reconnect/reconnect-attempt — potentially multiple times per session. In production mode, this pollutes the browser console and can expose internal state information.
 
-**[M12] `migration v17` Uses Shared Object References via Mutation — Fragile Pattern** ✅ RESOLVED
-- **File:** `src/utils/storage.js`
-- **Description:** `seenNames[key]` and `deduped[i]` both referenced the same `mutable` object.
-- **Resolution:** Code comment added explaining the shared-reference design intent. Source comment: `// Design note: seenNames[key] and deduped entries share object references. Mutations to 'existing' (e.g., existing.subtypes = [...]) propagate to both because they point to the same object. Do NOT spread-copy 'existing' before mutating — that would break the dedup merge.`
+**Impact:** Minor UX/professionalism concern. In Supabase free tier, reconnects may happen frequently. No security impact.
 
-**[M13] `generateId()` Collision Risk in Migration Loops** ✅ RESOLVED (documented)
-- **File:** `src/utils/idGenerators.js`
-- **Description:** During v13 migration, `generateId()` is called in a tight loop within the same millisecond. Collision probability ~1 in 78 billion per pair.
-- **Resolution:** Comment added in v13 migration block: `// Note: generateId() uses ms-precision timestamps. In tight loops, theoretical collision risk exists (~1 in 78 billion per pair). Acceptable for one-time migration of typically <100 items.`
-
-**[M14] `update()` Is Not Wrapped in `useCallback` — Inconsistency With `persist`/`retrySave`** ✅ RESOLVED (documented)
-- **File:** `src/App.js`
-- **Description:** `persist` and `retrySave` are `useCallback` but `update` is a plain arrow function recreated every render.
-- **Resolution:** Comment added to `update`: `// Not wrapped in useCallback — uses setData functional updater which is stable, so no stale closure risk. If update is ever passed as a prop to memoized children, consider wrapping in useCallback([persist]).`
+**Suggested fix:** Remove the `console.log` or replace with a conditional:
+```js
+.subscribe((status) => {
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Realtime subscription status:', status);
+  }
+});
+```
 
 ---
 
 ## LOW (cosmetic, minor inconsistencies)
 
-**[L1] Browser Tab Title Is "React App"** ✅ RESOLVED
-- **File:** `public/index.html`
-- **Fix applied:** `<title>BukuKas</title>`
+### L1 — `handleExport` in Settings.js does not guard against `submitting` for the JSON export path
+**File:** `src/pages/Settings.js`, lines 137–151
+**What's wrong:**
+`handleExport` sets `submitting = true`, but the `finally`/timeout only releases it after 1 second via `setTimeout(() => setSubmitting(false), 1000)`. No `try/finally` wraps this — if `exportJSON()` or `exportCSV()` throws, `submitting` stays `true` permanently. The `handleSave` button is a separate function and is protected, but the Export button (`handleExport`) can get permanently stuck if export fails.
 
-**[L2] `<html lang="en">` Should Be `"id"` for Indonesian** ✅ RESOLVED
-- **File:** `public/index.html`
-- **Fix applied:** `<html lang="id">`
+**Impact:** Cosmetic — user must refresh page to re-enable the Export button. Export errors are swallowed silently (the `exportJSON` function has its own `try/catch` with `console.error`). The stuck-button scenario requires `exportJSON` or `exportCSV` to throw, which is rare.
 
-**[L3] `fmtDate` Uses `T00:00:00` Without `Z` — Confusing But Intentional** ✅ RESOLVED
-- **File:** `src/utils/idGenerators.js`
-- **Resolution:** Comment added to `fmtDate` explaining why the exception is safe: `// Uses T00:00:00 WITHOUT Z intentionally — this is for display formatting only, not date arithmetic. Using local midnight is correct here (shows the date as the user entered it). Do NOT add Z — that would shift display dates in UTC+ zones.`
-
-**[L4] `balanceMap` `totalIncome`/`totalExpense` Are Cash-Basis, Not Gross — Misleading Names** ✅ RESOLVED (documented)
-- **File:** `src/App.js`
-- **Resolution:** Comment added: `// Note: totalIncome/totalExpense are CASH-BASIS (value - outstanding), not gross values. The Contacts page labels these as "Total Penjualan/Pembelian" which may imply gross.`
-
-**[L5] Vestigial Print CSS May Interfere With Direct Ctrl+P** ✅ RESOLVED
-- **File:** `src/styles.css`
-- **Resolution:** Legacy `@media print` block removed. Print CSS now uses `body > *:not(#print-portal)` pattern.
-
-**[L6] `ArchivedContacts.js` `DeleteConfirmModal` May Receive Contact Without `txCount`** ✅ RESOLVED
-- **File:** `src/pages/ArchivedContacts.js`
-- **Description:** Verified — `ArchivedContacts.js` uses its own confirm dialog (not `DeleteConfirmModal`). Delete is blocked at the handler level when `txCountMap > 0`. No `txCount` prop needed.
-
-**[L7] `Inventory.js` `eslint-disable` Comment Lacks Explanation** ✅ RESOLVED
-- **File:** `src/pages/Inventory.js`
-- **Resolution:** Explanatory comment added: `// expandedStockItem intentionally excluded — stale read is safe here, we only want this to fire on date change`
-
-**[L8] `DotMatrixPrintModal` Bank Account Names Not Width-Clamped** ✅ RESOLVED
-- **File:** `src/utils/textFormatter.js`
-- **Resolution:** Bank account lines use `padRight("  " + parts.join(" "), LINE_WIDTH)` which truncates at LINE_WIDTH (80 chars).
-
-**[L9] `SuratJalanModal` Uses CSS Classes for Print, Not Inline Styles** ✅ RESOLVED (documented)
-- **File:** `src/components/SuratJalanModal.js`
-- **Resolution:** Documented in DEVELOPER_HANDOFF.md Section 13 (Tech Debt) and in the component source comment.
-
-**[L10] `App.js` `globalAR`/`globalAP` Computed via Separate Pass — Redundant With `balanceMap`** — acknowledged, not changed
-- **File:** `src/App.js`
-- **Note:** `computeARandAP` is an O(n) single-pass; having two separate memos (`balanceMap` and `globalAR/AP`) avoids making `globalAR/AP` dependent on `balanceMap`'s larger computation. Acceptable performance tradeoff for current data sizes.
+**Suggested fix:** Wrap the main body of `handleExport` in `try/finally`:
+```js
+const handleExport = () => {
+  if (submitting) return;
+  setSubmitting(true);
+  try {
+    if (exportFormat === "json") exportJSON();
+    else exportCSV();
+    const now = new Date().toISOString();
+    set("lastExportDate", now);
+    onSave({ ...form, lastExportDate: now });
+  } finally {
+    setTimeout(() => setSubmitting(false), 1000);
+  }
+};
+```
 
 ---
 
-## INFORMATIONAL (architectural observations)
+### L2 — `ReportModal.js` renders "Lunas"/"Belum Lunas" as raw string literals
+**File:** `src/components/ReportModal.js`, line 237
+**What's wrong:**
+```js
+{t.status === STATUS.LUNAS ? "Lunas" : "Belum Lunas"}
+```
+This uses raw string literals "Lunas" and "Belum Lunas" in a display context. Rule 2 states: "Never write `Lunas`, `Belum Lunas (Piutang)`, or `Belum Lunas (Utang)` as raw string literals in new code." The comparison against `STATUS.LUNAS` is correct, but the display values are raw strings. While this is display-only (not stored), it is inconsistent with the codebase convention.
 
-**[I1] No Crash Recovery for In-Flight Data During Tab Crash** — Noted — architectural observation, no fix required
-- The 500ms debounce means data in React state may not be in localStorage if the tab crashes. The `beforeunload` guard covers normal closes. The practical risk is low but worth noting for a real-money app.
+**Impact:** Cosmetic — no functional impact. The printed report shows "Belum Lunas" without the Piutang/Utang qualifier, which is acceptable for a simplified printed format but slightly inconsistent.
 
-**[I2] `generateTxnId` Serial Counter Is Per-Year, Not Per-Month** — Noted — architectural observation, no fix required
-- The txnId format includes the month (`"26-03-00009"`) but the counter is year-scoped. The `00009` means "9th income transaction of 2026", not March.
-
-**[I3] `contactBalance` in TransactionForm is Redundant With App.js `balanceMap`** — Noted — architectural observation, no fix required
-- App.js already computes `balanceMap` via `useMemo`. TransactionForm re-computes the same data from raw `transactions` on every render.
-
-**[I4] `window.print()` Blocks the React Event Loop** — Noted — architectural observation, no fix required
-- `printWithPortal` calls `window.print()` synchronously. On some browsers this blocks all JS until the print dialog is dismissed.
-
-**[I5] All Pages Re-render on Every Transaction Mutation** — Noted — architectural observation, no fix required
-- All pages receive the full `data.transactions` array. Any mutation re-runs `computeStockMap`, `balanceMap`, `computeARandAP`.
-
-**[I6] Import Always Re-runs All Migrations Including Catalog Auto-Population (v13)** — Noted — architectural observation, no fix required
-- `handleImport` writes data then calls `loadData()` which runs all migrations. Since the imported data's `_normVersion` is set to 18 by `migrateData`, future imports skip already-run migrations.
-
-**[I7] No "Unsaved Form" Warning on Page Navigation** — Noted — architectural observation, no fix required
-- If a user fills out a transaction form then switches pages via the sidebar, the form data is silently discarded with no confirmation dialog.
+**Suggested fix:** Use `STATUS.LUNAS` / a helper for consistency, or add a comment explaining the simplification is intentional for print format.
 
 ---
 
-## Second Audit — 2026-04-01 (post-NORM_VERSION 18 changes)
+### L3 — `fmtTimestamp` in `ActivityLog.js` uses UTC for date but local time for hours/minutes
+**File:** `src/pages/ActivityLog.js`, lines 77–88
+**What's wrong:**
+```js
+const date = fmtDate(d.toISOString().slice(0, 10)); // UTC date
+const hh = String(d.getHours()).padStart(2, "0");   // local time hours
+const mm = String(d.getMinutes()).padStart(2, "0");  // local time minutes
+```
+`d.toISOString().slice(0, 10)` returns the UTC date, but `d.getHours()` / `d.getMinutes()` return local time. In Jakarta (UTC+7), an activity logged at 00:30 local time would display the UTC date (previous day) with local time `00:30`, producing `"13 Apr 2026 00:30"` when it should say `"14 Apr 2026 00:30"`.
 
-**Scope:** New code since 2026-04-05 — DotMatrixPrintModal, textFormatter.js, printerType in settings, Reports.js typeFilter, Settings.js CSV export, Outstanding.js highlighting.
+**Impact:** Low — activity log timestamps will show the wrong date for events occurring between midnight local time and UTC midnight (i.e. between 00:00–07:00 local time in Jakarta). Users working late night/early morning could see confusing off-by-1-day timestamps.
 
-**Status:** 3 findings resolved ✅ · 4 informational — noted
-
-### RESOLVED
-
-**[A1] Settings.js `handleSave` sets `submitting` after validation — H7 pattern violation** ✅ RESOLVED
-- Same double-click race as H7 (TransactionForm). `setSubmitting(true)` now moved to first line of `handleSave`, with `setSubmitting(false)` on early validation-fail return.
-
-**[A2] Settings.js `defaultDueDateDays` validated `n >= 0` — allows 0 to be saved** ✅ RESOLVED
-- Saving `0` caused new transactions to silently use 14-day terms (via `Number("0") || 14` fallback in TransactionForm `doSave`). Fixed to `n >= 1` with `Math.max(1, ...)` on revert.
-
-**[A3] Reports.js `exportCSV` used `data:` URI instead of Blob** ✅ RESOLVED
-- `data:` URIs have an implicit ~2MB browser limit. Changed to `Blob + URL.createObjectURL + URL.revokeObjectURL`, matching the pattern used by Settings.js.
-
-### INFORMATIONAL
-
-**[A4] DotMatrixPrintModal prints via Blob path — no UI on print failure** — Noted
-- If `#print-portal` is missing (shouldn't happen), a console error is logged but no UI feedback. Acceptable for the fallback path.
-
-**[A5] Outstanding.js `key={sortBy}` on `OutstandingTable` causes full remount on sort change** — Intentional
-- Resets pagination + closes any open delete/payment dialogs when sort changes. Deliberate design for clean UX reset; no change needed.
-
-**[A6] textFormatter.js dot-matrix uses transaction-level `stockUnit` for all surat jalan items** — Known limitation
-- Same as M8 from prior audit. No per-item unit field exists on `items[]`. Documented.
-
-**[A7] Settings.js shared `submitting` state between `handleSave` and `handleExport`** — Noted
-- Both functions check the same `submitting` flag, so clicking Save blocks Export (and vice versa) for 1-2 seconds with no feedback. Acceptable since simultaneous save+export is rare.
-
----
-
-## Third Audit — 2026-04-12 (ActivityLog polish + TransactionPage highlight)
-
-**Scope:** New code since 2026-04-11 — ActivityLog.js improvements, AuthContext.js login logging, TransactionPage.js external navigation, App.js txPageHighlight state, styles.css `.tx-row--flash`.
-
-**Status:** 6 findings resolved ✅ · 1 informational — noted
-
-### RESOLVED
-
-**[B1] ActivityLog PENGGUNA shows email instead of display name for login entries** ✅ RESOLVED
-- **File:** `src/utils/AuthContext.js`
-- `signIn` was logging `data.user.email` before `fetchProfile` resolved. Fix: `await fetchProfile(data.user.id)` before `saveActivityLog`; `user_name` uses `prof?.full_name || email`.
-
-**[B2] ActivityLog ENTITAS shows raw internal IDs (e.g. `1775933722773-90vxehs`) for old transaction entries** ✅ RESOLVED
-- **File:** `src/pages/ActivityLog.js`
-- Added `isTxnId(id)` helper (`/^\d{2}-\d{2}-\d{4,5}$/`). txnId-format IDs shown as `#26-04-00023` (indigo bold); old internal IDs truncated to last 6 chars with `#` prefix (gray).
-
-**[B3] ActivityLog ENTITAS missing `#` prefix for new-format txnId entries** ✅ RESOLVED
-- **File:** `src/pages/ActivityLog.js`
-- Both branches of `isTxnId` check now prepend `#`. Display: `#26-04-00023` not `26-04-00023`.
-
-**[B4] ActivityLog "Lihat" button navigates to page but transaction not found for old log entries** ✅ RESOLVED
-- **File:** `src/App.js`
-- `onViewTransaction` now tries `t.txnId === entityId` first, falls back to `t.id === entityId`. Old entries stored internal IDs; new entries store txnIds.
-
-**[B5] ActivityLog "Lihat" navigates to correct page but viewDate stays on today — transaction not visible** ✅ RESOLVED
-- **Files:** `src/App.js`, `src/components/TransactionPage.js`
-- `onViewTransaction` now sets `txPageHighlight({ txId: tx.id, date: tx.date })` before `setPage()`. TransactionPage gained `initViewDate`, `highlightTxIds`, `onClearHighlight` props. `initViewDate` syncs `viewDate` via `useEffect`; `highlightTxIds` populates `flashIds` and applies `.tx-row--flash` with scroll-into-view (same pattern as Outstanding.js). CSS: `.tx-row--flash` with `@keyframes tx-flash-fade` 3s animation (`#bfdbfe` → transparent).
-
-**[B6] `logActivity` in `addTransaction` passes `nt.txnId` — always undefined for income transactions** ✅ RESOLVED
-- **File:** `src/App.js`
-- For income, `txnId` is generated inside the `update()` state function and never written back to `nt`. Fix: use `newTx?.txnId` (retrieved from `nd.transactions.find(x => x.id === nt.id)`). Applied same fix to `editTransaction`: `updated?.txnId || nt.txnId` (handles date-prefix-change regeneration).
-
-### INFORMATIONAL
-
-**[B7] `.tx-row--flash` uses CSS animation while `.outstanding-row--flash` uses static color** — Noted
-- The two flash classes behave slightly differently: `outstanding-row--flash` stays solid until JS removes the class on user interaction; `tx-row--flash` fades out over 3s via `@keyframes tx-flash-fade` regardless of interaction. Both clear on user interaction via the same JS pattern. The animation provides a more natural feel for the Penjualan/Pembelian context where the user has just navigated to find a specific row.
+**Suggested fix:** Use consistent local time throughout:
+```js
+function fmtTimestamp(ts) {
+  if (!ts) return "—";
+  try {
+    const d = new Date(ts);
+    const localDate = [
+      d.getFullYear(),
+      String(d.getMonth() + 1).padStart(2, "0"),
+      String(d.getDate()).padStart(2, "0"),
+    ].join("-");
+    const date = fmtDate(localDate);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${date} ${hh}:${mm}`;
+  } catch {
+    return ts;
+  }
+}
+```
 
 ---
 
-*Original audit: 2026-04-04. All 35 actionable findings resolved: 2026-04-05.*
-*Second audit: 2026-04-01. All 3 actionable findings resolved: 2026-04-01.*
-*Third audit: 2026-04-12. All 6 actionable findings resolved: 2026-04-12.*
+## INFORMATIONAL (not bugs — architectural observations, verified non-issues)
+
+### I1 — `netlify.toml` CSP header does not include `font-src` (but `_headers` does)
+`public/_headers` includes `font-src 'self'` in the CSP, but the backup `netlify.toml` CSP header omits it. Since Netlify applies `_headers` first and `netlify.toml` only as a fallback, there is no functional gap. The inconsistency means if `_headers` is accidentally deleted, the netlify.toml backup would allow no custom fonts. Low risk, documented here for awareness.
+
+### I2 — `update()` retry closure re-runs state mutation
+The `update()` helper (App.js line 409) uses `() => update(fn, supabaseOperation)` as the retry function on SaveErrorModal. This means that on retry, the state mutation `fn(dataRef.current)` runs again. For idempotent operations (edit, delete, archive) this is safe. For append-style operations (addTransaction, applyPayment, addStockAdjustment), the C2 fix correctly avoids this pattern by not passing a `supabaseOperation` to `update()` and calling `persistToSupabase` directly with a retry that only re-runs the Supabase write. This architecture is verified correct as documented.
+
+### I3 — `TransactionForm.js` `contactBalance` helper is O(transactions) per dropdown render
+`src/components/TransactionForm.js` line 10–19: `contactBalance(name, transactions)` is called inline for each contact rendered in the dropdown. This iterates all transactions for each contact visible in the autocomplete list. App.js already computes `balanceMap` via `useMemo` and passes it to Contacts.js, but does not pass it to TransactionForm. The comment in TransactionForm (line 860) acknowledges this: `// TODO: Replace with balanceMap prop from App.js`. With a small number of transactions this has no performance impact. Documented as a known technical debt item.
+
+### I4 — `deleteContact` and `deleteCatalogItem` supabaseOperation does not guard against blocked deletion (confirmed as H1 above for contacts; same pattern exists for `deleteCatalogItem`)
+For `deleteCatalogItem` (App.js lines 1143–1176): the state function returns `d` unchanged when `hasTx` is true, but `sbDeleteItemCatalogItem(itemId)` would still be called. However in `deleteCatalogItem`'s case, the Inventory UI already prevents the button from appearing if `hasTx` is true (it shows Archive instead), and `ArchivedItems.js` also checks `txCountMap` before showing the delete button. So the guard bypass is less likely to be triggered in practice for catalog items compared to contacts. Still, the same architectural fix (checking `nd.itemCatalog` for the item before calling `sbDeleteItemCatalogItem`) should be applied for defense in depth.
+
+---
+
+## Previous Audit Resolution Status
+
+| ID | Title (abbreviated) | Status | Date |
+|----|---------------------|--------|------|
+| C1 | XSS via innerHTML in printWithPortal | ✅ Fixed | 2026-04-05 |
+| C2 | Import validation insufficient | ✅ Fixed | 2026-04-05 |
+| C3 (from Phase 4 audit) | ensureContact missing `archived: false` | ✅ Fixed | 2026-04-05 |
+| H1 (prev) | Supabase numeric coercion missing | ✅ Fixed | 2026-04-12 |
+| H2 | txnId collision under concurrent writes | ✅ Fixed — atomic DB sequence + RPC | 2026-04-13 |
+| H3 | signOut() async race | ✅ Fixed | 2026-04-12 |
+| H4 | PaymentUpdateModal double-submit | ✅ Fixed | 2026-04-05 |
+| H5 | TransactionForm double-submit race | ✅ Fixed | 2026-04-05 |
+| H6 | InvoiceModal showed today's date | ✅ Fixed | 2026-04-05 |
+| H7 | customDueDays = 0 allowed | ✅ Fixed | 2026-04-05 |
+| H8 | C2 retry re-ran state mutation | ✅ Fixed | 2026-04-12 |
+| M1 (prev) | React StrictMode double-setState | ⏭️ Skipped — no user impact | — |
+| M2 (prev) | Contacts nameError persistence | ✅ Fixed | 2026-04-12 |
+| M3 (prev) | noscript text not Indonesian | ✅ Fixed | 2026-04-12 |
+| M4 (prev) | Meta description missing | ✅ Fixed | 2026-04-12 |
+| M5 (prev) | CRA inline source maps in production | ⏭️ Skipped — CRA limitation | — |
+| M6 (prev) | Import items[] element validation | ✅ Fixed | 2026-04-13 |
+| M7 (prev) | useEffect deps array omissions | ⏭️ Skipped — no user impact | — |
+| L1 (prev) | PERIODE buttons had no active state | ✅ Fixed | 2026-03-29 |
+| L2 (prev) | CSV export filename "Laporan__sd_" | ✅ Fixed | 2026-04-05 |
+| L3 (prev) | Icon component missing names | ⏭️ Skipped — maintenance risk only | — |
+| L4 (prev) | Presence users not sorted | ✅ Fixed | 2026-04-13 |
+| L5 (prev) | CSP missing font-src | ✅ Fixed in _headers | 2026-04-13 |
+| I1–I7 (prev) | Informational items | ℹ️ Noted — no action | — |
+| Phase 4 audit findings | updateContact cascade, deleteCatalogItem orphans, createContact duplicates, quickExport localStorage | ✅ All fixed | 2026-04-08 |
+| Phase 5 realtime | Double-load, saveItemCategories race, stale dataRef | ✅ All fixed | 2026-04-08 |
+| Phase 6 activity log | login display name, entity ID format, "Lihat" navigation | ✅ All fixed | 2026-04-12 |
+
+No regressions detected in previously fixed items.
+
+---
+
+## Fix Priority Order
+
+1. **[H1]** ✅ Fixed — `deleteContact` and `deleteCatalogItem` supabaseOperation now checks `nd` before calling Supabase delete.
+2. **[M1]** ✅ Fixed — `getNextTxnSerial` now uses `T00:00:00Z` + `getUTCFullYear`/`getUTCMonth`.
+3. **[M2]** ✅ Fixed (docs corrected) — CLAUDE.md entry updated to reflect that thousand-separator formatting was reverted.
+4. **[M3]** ✅ Fixed — `console.log` gated behind `process.env.NODE_ENV === 'development'`.
+5. **[L3]** ✅ Fixed — `fmtTimestamp` now uses consistent local-time date extraction.
+6. **[L1]** ✅ Fixed — `handleExport` wrapped in `try/finally`.
+7. **[L2]** ⏭️ Skipped — ReportModal simplified "Belum Lunas" (without Piutang/Utang qualifier) is intentional for print format. Added comment in source noting this.
+
+---
+
+## Fourth Audit Resolution Status (2026-04-14)
+
+| ID | Title | Status | Date |
+|----|-------|--------|------|
+| H1 (new) | deleteContact/deleteCatalogItem supabaseOperation guard | ✅ Fixed | 2026-04-14 |
+| M1 (new) | getNextTxnSerial UTC parsing | ✅ Fixed | 2026-04-14 |
+| M2 (new) | CSV thousand separators docs inaccuracy | ✅ Fixed (docs corrected) | 2026-04-14 |
+| M3 (new) | console.log in realtimeManager.js | ✅ Fixed | 2026-04-14 |
+| L1 (new) | handleExport try/finally | ✅ Fixed | 2026-04-14 |
+| L2 (new) | ReportModal raw status strings | ⏭️ Skipped — intentional print simplification | — |
+| L3 (new) | fmtTimestamp local/UTC mix | ✅ Fixed | 2026-04-14 |
+| I1–I4 (new) | Informational items | ℹ️ Noted — no action | — |

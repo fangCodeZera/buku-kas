@@ -63,7 +63,9 @@ export function subscribeToChanges(onUpdate) {
       )
     )
     .subscribe((status) => {
-      console.log('Realtime subscription status:', status);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Realtime subscription status:', status);
+      }
     });
 
   return () => {
