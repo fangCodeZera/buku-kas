@@ -42,7 +42,7 @@ src/
     textFormatter.js               387  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText)
     AuthContext.js                ~130  AuthProvider, useAuth — session state, signIn (with login audit log), signOut, 15-min idle timeout
     supabaseClient.js               19  Creates Supabase client (anon key only, env var validated)
-    supabaseStorage.js             ~600  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog
+    supabaseStorage.js             ~630  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog, getNextTxnSerial
     storageConfig.js                ~30  USE_SUPABASE flag
     realtimeManager.js             ~100  subscribeToChanges, subscribeToPresence (Phase 5)
     conflictDetector.js             ~86  ConflictError class, checkVersion (Phase 5)
@@ -825,7 +825,7 @@ Key patterns to never reintroduce:
 - `setData()` outside App.js: never call it directly
 - `.push()` on state arrays: never mutate state in place
 - `generateTxnId` with expense transactions: filter to income only (function handles this internally)
-- `generateTxnId` collision (short-term fix in place): post-save collision detection in `addTransaction` fires a toast warning when a duplicate txnId is detected in local state after save. This fires only for income transactions and never blocks the save. Long-term fix requires a Supabase DB sequence: `txn_counters` table with a SERIAL column per `YY-MM` key, using `SELECT nextval(...)` or `INSERT ... ON CONFLICT DO UPDATE ... RETURNING serial` — this guarantees atomic, globally unique invoice numbers. **Keep both checks when the DB sequence is implemented — defense-in-depth.**
+- `generateTxnId` collision: **FIXED** via atomic DB sequence. `addTransaction` now calls `getNextTxnSerial(date)` (Supabase RPC) before `update()` in Supabase mode. Falls back to local `generateTxnId()` on RPC error. Short-term collision detection toast kept as defense-in-depth — **never remove it**.
 - `editLog[].prev` as full copy: only store the 11-field slim snapshot
 - `deleteInventoryItem` checking only `t.itemName`: must check all `items[]` entries
 - `setSubmitting(true)` after validation: always set it as the first line of `handleSubmit` to block rapid double-clicks
@@ -858,7 +858,7 @@ Key patterns to never reintroduce:
 - `M9` (`contactBalance` in TransactionForm recomputed on every render) is still present — acceptable for current data sizes.
 - `autoDetectCategories` in `categoryUtils.js` is O(n²) worst case — acceptable for <200 items. Performance comment in source.
 - `SuratJalanModal` uses transaction-level `t.stockUnit` for all item rows — per-item unit field doesn't exist on `items[]` (known design limitation).
-- **H2 long-term:** `generateTxnId` needs a Supabase DB sequence for atomic invoice numbering. Short-term collision detection toast is in place (`addTransaction` in `App.js`). Implementation plan: create `txn_counters` table with `yy_mm TEXT PRIMARY KEY` and `last_serial INT DEFAULT 0`; use `INSERT INTO txn_counters (yy_mm, last_serial) VALUES ($1, 1) ON CONFLICT (yy_mm) DO UPDATE SET last_serial = txn_counters.last_serial + 1 RETURNING last_serial` to atomically claim the next serial; format as `YY-MM-NNNNN`. See AUDIT.md H2 for full rationale.
+- **H2:** Resolved — see `txn_counters` table and `next_txn_serial()` RPC. Short-term collision toast remains as defense-in-depth.
 - Netlify subdomain URL (`frabjous-gecko-a0ad5c.netlify.app`) is not user-friendly. Custom domain purchase will improve this and enable Cloudflare protection.
 - Family member account creation is manual (Supabase Dashboard). No self-registration flow exists — intentional for a private family business app.
 
@@ -885,7 +885,7 @@ Key patterns to never reintroduce:
 - **Realtime:** Enabled on transactions, contacts, stock_adjustments, item_catalog
 
 ### Security in Production
-- RLS enabled on all 8 tables (role-aware policies)
+- RLS enabled on all 9 tables (role-aware policies)
 - Session idle timeout: 15 minutes (auto sign-out)
 - HTTP security headers via public/_headers and netlify.toml (CSP, X-Frame-Options, etc.)
 - Supabase anon key is public by design — RLS enforces all access control

@@ -403,3 +403,24 @@ export async function loadActivityLog(filters = {}) {
   if (error) throw new Error(`Gagal memuat log aktivitas: ${error.message}`);
   return data || [];
 }
+
+/**
+ * H2 LONG-TERM FIX: Atomically get the next invoice serial from the Supabase
+ * txn_counters table via the next_txn_serial() Postgres function.
+ * Uses INSERT ... ON CONFLICT DO UPDATE ... RETURNING — safe under concurrent writes.
+ *
+ * @param {string} dateStr - Transaction date "YYYY-MM-DD"
+ * @returns {Promise<string>} txnId in format "YY-MM-NNNNN"
+ */
+export async function getNextTxnSerial(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const yy = String(d.getFullYear()).slice(-2);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const prefix = `${yy}-${mm}`;
+
+  const { data, error } = await supabase.rpc("next_txn_serial", { p_prefix: prefix });
+  if (error) throw new Error(`Gagal mendapatkan nomor faktur: ${error.message}`);
+
+  const serial = String(data).padStart(5, "0");
+  return `${prefix}-${serial}`;
+}

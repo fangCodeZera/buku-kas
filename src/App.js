@@ -60,13 +60,14 @@ import {
   mapContact,
   mapStockAdjustment,
   mapCatalogItem,
+  getNextTxnSerial,
 } from "./utils/supabaseStorage";
 import SaveErrorModal from "./components/SaveErrorModal";
 import ConflictModal from "./components/ConflictModal";
 import { subscribeToChanges, subscribeToPresence } from "./utils/realtimeManager";
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
-import { loadData, saveData, STORAGE_KEY } from "./utils/storage";
+import { loadData, saveData } from "./utils/storage";
 import { computeStockMap }         from "./utils/stockUtils";
 import { computeARandAP }          from "./utils/balanceUtils";
 import { generateId, generateTxnId, fmtIDR, normItem, normalizeTitleCase, addDays, today, nowTime } from "./utils/idGenerators";
@@ -561,7 +562,7 @@ export default function App() {
   });
 
   // ── CRUD handlers ─────────────────────────────────────────────────────────
-  const addTransaction = (t) => {
+  const addTransaction = async (t) => {
     const out = Number(t.outstanding) || 0;
     const dueDate = out > 0 ? (addDays(t.date, t.customDueDays) ?? null) : null;
     const nt = { ...normTx(t), createdAt: new Date().toISOString(), dueDate };
@@ -582,12 +583,29 @@ export default function App() {
         : "Belum ada pembayaran saat transaksi dibuat",
       method: null,
     };
+
+    // H2 LONG-TERM FIX: In Supabase mode, get an atomic serial from the DB before
+    // touching local state. This prevents duplicate txnIds under concurrent writes.
+    // In localStorage mode, generateTxnId() inside update() is still correct (single user).
+    if (USE_SUPABASE && nt.type === "income") {
+      try {
+        nt.txnId = await getNextTxnSerial(nt.date);
+      } catch (err) {
+        // If the RPC fails (e.g. network blip), fall back to local generation so the
+        // user isn't blocked. The short-term collision toast below will catch any
+        // resulting duplicate.
+        console.error("getNextTxnSerial failed, falling back to local generateTxnId:", err);
+      }
+    }
+
     // C2 fix: state mutation only — no supabaseOperation passed, so update() does not set a retry.
     // We call persistToSupabase directly below with a retry that only re-runs the Supabase write,
     // not the state mutation. This prevents duplicate transactions on SaveErrorModal retry.
     update((d) => {
       const txnId = nt.type === "income"
-        ? generateTxnId(d.transactions, nt.date)
+        // Supabase mode: nt.txnId already set atomically above (or fell back on error).
+        // localStorage mode: generate from local state as before.
+        ? (nt.txnId || generateTxnId(d.transactions, nt.date))
         : (nt.txnId || null);
       const newTx = { ...nt, txnId, paymentHistory: [initialPayment] };
       return {
@@ -613,11 +631,9 @@ export default function App() {
       ]);
       const retryFn = () => persistToSupabase(supabaseSave, retryFn);
       persistToSupabase(supabaseSave, retryFn);
-      // H2 SHORT-TERM FIX: Post-save collision detection for txnId.
-      // This catches duplicate invoice numbers when two users create income transactions simultaneously.
-      // LONG-TERM FIX NEEDED: Replace with Supabase DB sequence (txn_counters table with SERIAL column
-      // per YY-MM key, using SELECT nextval(...) or INSERT ... ON CONFLICT DO UPDATE ... RETURNING serial).
-      // See AUDIT.md H2 for full details.
+      // H2 SHORT-TERM FIX (kept as defense-in-depth alongside DB sequence):
+      // Post-save collision detection for txnId. Catches any duplicate that slips
+      // through (e.g. RPC fallback path above, or stale Realtime state).
       if (nt.type === "income" && newTx?.txnId) {
         const collision = nd.transactions.some(
           (x) => x.id !== newTx.id && x.txnId === newTx.txnId
@@ -1274,60 +1290,7 @@ export default function App() {
   const daysSinceExport = lastExport
     ? (new Date().getTime() - new Date(lastExport).getTime()) / (1000 * 3600 * 24)
     : Infinity;
-  const showBackupWarning = !USE_SUPABASE && daysSinceExport > 7;
-
-  /** Quick export from backup banner — same format as Settings.js exportAll */
-  const quickExport = useCallback(() => {
-    if (USE_SUPABASE) {
-      try {
-        const exportPayload = {
-          ...data,
-          _exportedAt: new Date().toISOString(),
-          _normVersion: 18,
-        };
-        const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `BukuKas_Backup_${today()}.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        const now = new Date().toISOString();
-        update(
-          (d) => ({ ...d, settings: { ...d.settings, lastExportDate: now } }),
-          (nd) => Promise.all([
-            sbSaveSettings(nd.settings, user.id),
-            logActivity('export', 'settings', 'singleton', { format: 'json' }),
-          ])
-        );
-      } catch (err) {
-        console.error("Export failed:", err);
-      }
-      return;
-    }
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY) || "{}";
-      const blob = new Blob([raw], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `BukuKas_Backup_${today()}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      const now = new Date().toISOString();
-      update(
-        (d) => ({ ...d, settings: { ...d.settings, lastExportDate: now } }),
-        (nd) => sbSaveSettings(nd.settings, user.id)
-      );
-    } catch (err) {
-      console.error("Export failed:", err);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, user]);
+  const showBackupWarning = profile?.role === "owner" && daysSinceExport > 7;
 
   // ── Auth gate (after all hooks) ───────────────────────────────────────────
   if (authLoading) {
@@ -1495,12 +1458,12 @@ export default function App() {
         {showBackupWarning && !backupBannerDismissed && (
           <div role="alert" className="backup-banner">
             <span className="backup-banner__text">
-              ⚠️ Belum backup lebih dari 7 hari.
+              ⚠️ Anda belum melakukan backup lebih dari 7 hari. Silakan ekspor data Anda di halaman Pengaturan.
               <span
                 role="button"
                 tabIndex={0}
-                onClick={quickExport}
-                onKeyDown={(e) => e.key === "Enter" && quickExport()}
+                onClick={() => setPage("settings")}
+                onKeyDown={(e) => e.key === "Enter" && setPage("settings")}
                 style={{ marginLeft: 4, color: "#007bff", fontWeight: 700, textDecoration: "underline", cursor: "pointer", whiteSpace: "nowrap" }}
               >
                 Ekspor Sekarang
