@@ -825,6 +825,8 @@ Key patterns to never reintroduce:
 - Invoice date from `today()`: always use `transactions[0]?.date` for invoice date
 - `logActivity` with `nt.txnId` for income: `txnId` is generated inside `update()` state fn — always use `newTx?.txnId` (for create) or `updated?.txnId || nt.txnId` (for edit) so the generated ID is captured correctly
 - ActivityLog entity_id for transactions: use `isTxnId()` pattern check before displaying — old entries have internal IDs, new entries have `YY-MM-NNNNN` format
+- Cloudflare DDoS/rate limiting: deferred until custom domain is purchased. See Section 14 for setup steps.
+- Supabase free tier auto-pause: database pauses after 1 week of no activity. See Section 14 for mitigation options.
 
 ---
 
@@ -844,3 +846,57 @@ Key patterns to never reintroduce:
 - `autoDetectCategories` in `categoryUtils.js` is O(n²) worst case — acceptable for <200 items. Performance comment in source.
 - `SuratJalanModal` uses transaction-level `t.stockUnit` for all item rows — per-item unit field doesn't exist on `items[]` (known design limitation).
 - **H2 long-term:** `generateTxnId` needs a Supabase DB sequence for atomic invoice numbering. Short-term collision detection toast is in place (`addTransaction` in `App.js`). Implementation plan: create `txn_counters` table with `yy_mm TEXT PRIMARY KEY` and `last_serial INT DEFAULT 0`; use `INSERT INTO txn_counters (yy_mm, last_serial) VALUES ($1, 1) ON CONFLICT (yy_mm) DO UPDATE SET last_serial = txn_counters.last_serial + 1 RETURNING last_serial` to atomically claim the next serial; format as `YY-MM-NNNNN`. See AUDIT.md H2 for full rationale.
+- Netlify subdomain URL (`frabjous-gecko-a0ad5c.netlify.app`) is not user-friendly. Custom domain purchase will improve this and enable Cloudflare protection.
+- Family member account creation is manual (Supabase Dashboard). No self-registration flow exists — intentional for a private family business app.
+
+---
+
+## 14. Deployment
+
+### Production
+- **URL:** https://frabjous-gecko-a0ad5c.netlify.app
+- **Host:** Netlify (free tier)
+- **Repo:** github.com/fangCodeZera/buku-kas (also mirrored under PT-CHANG-JAYA org)
+- **Branch:** main (auto-deploys on push)
+- **Build command:** `npm run build`
+- **Publish directory:** `build`
+- **Environment variables (Netlify):** `REACT_APP_SUPABASE_URL`, `REACT_APP_SUPABASE_ANON_KEY`
+
+### Supabase
+- **Project:** PT CHANG JAYA / BukuKas
+- **URL:** https://yjqhgmbgbfjmytgtqtmu.supabase.co
+- **Region:** Singapore (ap-southeast-1)
+- **Plan:** Free tier (auto-pauses after 1 week inactivity)
+- **Auth:** Email + Password only
+- **Site URL:** https://frabjous-gecko-a0ad5c.netlify.app
+- **Realtime:** Enabled on transactions, contacts, stock_adjustments, item_catalog
+
+### Security in Production
+- RLS enabled on all 8 tables (role-aware policies)
+- Session idle timeout: 15 minutes (auto sign-out)
+- HTTP security headers via public/_headers and netlify.toml (CSP, X-Frame-Options, etc.)
+- Supabase anon key is public by design — RLS enforces all access control
+- Service role key exists only in local .claude/claude_mcp_config.json (gitignored)
+
+### Cloudflare (not yet configured)
+Deferred until a custom domain is purchased. Setup steps when ready:
+1. Purchase domain via Cloudflare Registrar (cheapest option, ~$10-15/year)
+2. Add site to Cloudflare, configure DNS to point to Netlify
+3. In Netlify: add custom domain in Domain management
+4. In Supabase: update Site URL and Redirect URLs to new domain
+5. In public/_headers: tighten CSP connect-src from `*.supabase.co` to specific project URL
+6. Enable Cloudflare rate limiting and DDoS rules as needed
+
+### Adding Family Members
+Create accounts via Supabase Dashboard → Authentication → Users → Invite User:
+1. Enter family member's email address
+2. After account is created, go to Table Editor → profiles table
+3. Set `role` to `owner` (Pemilik) or `staff` (Karyawan) for each user
+4. Set `is_active` to `true`
+5. Share the production URL and have them set their password on first login
+
+### Redeploying
+Any push to `main` branch auto-deploys to Netlify. To manually redeploy:
+1. Go to app.netlify.com → select project → Deploys
+2. Click "Trigger deploy" → "Deploy project"
+If environment variables change, redeploy is required for changes to take effect.
