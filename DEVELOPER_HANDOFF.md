@@ -309,7 +309,10 @@ createContact, archiveContact, unarchiveContact, deleteContact, updateContact,
 handleImport, addStockAdjustment, deleteStockAdjustment, updateItemCategories,
 addCatalogItem, updateCatalogItem, deleteCatalogItem,
 archiveCatalogItem, unarchiveCatalogItem, archiveSubtype, unarchiveSubtype,
-renameInventoryItem, deleteInventoryItem, handleViewItem, navigateToOutstanding
+renameInventoryItem, deleteInventoryItem, handleViewItem, navigateToOutstanding,
+quickExport  — useCallback; immediate JSON backup download from backup reminder banner;
+             serializes current React state via Blob+createObjectURL; updates
+             lastExportDate in state and Supabase; logs export via logActivity
 ```
 
 ### JSX render tree
@@ -746,6 +749,16 @@ Blocks UI when a Supabase write fails. Shows error message with Retry and Dismis
 - On timeout: `await signOut()` then `setIdleTimedOut(true)` — order matters so flag outlives cleared state
 - `idleTimedOut` state: NOT cleared in `signOut()` — only `clearIdleTimedOut()` resets it (called after successful re-login in Login.js)
 - All event listeners use `{ passive: true }` for performance
+
+### Role-Based Restrictions (Karyawan vs Pemilik)
+
+**Pemilik (owner) has full access to all features.**
+
+**Karyawan (staff) restrictions:**
+- Cannot access Log Aktivitas page (not shown in sidebar navigation — gated by `profile.role === "owner"` in `navItems` and in JSX render condition)
+- Cannot see Laba/Rugi (net profit) summary card on Laporan page (only sees Total Pemasukan and Total Pengeluaran — controlled by `isOwner = profile?.role === "owner"` in Reports.js)
+- Cannot see the weekly backup reminder banner (controlled by `profile?.role === "owner"` guard in App.js `showBackupWarning` computation)
+- All other features are identical: create/edit/delete transactions, manage contacts, inventory, print invoices, export reports, stock adjustments
 
 ---
 
