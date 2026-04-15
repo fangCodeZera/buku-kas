@@ -30,9 +30,11 @@ src/
 
   utils/
     storage.js                     406  loadData, saveData, defaultData, NORM_VERSION, migrateData
-    idGenerators.js                171  generateId, fmtIDR, today, addDays, diffDays, nowTime,
+    idGenerators.js                190  generateId, fmtIDR, fmtQty, today, addDays, diffDays, nowTime,
                                         fmtDate, normItem, normalizeTitleCase, generateTxnId,
                                         toCommaDisplay, numToDisplay, displayToNum
+                                        fmtQty: formats numeric qty/weight with id-ID locale (dot thousands separator).
+                                        Returns "-" for null/undefined. Use for all read-only stock qty display.
     statusUtils.js                  54  STATUS constants, deriveStatus, isUnpaid, LEGACY_STATUS_MAP
     categoryUtils.js               315  generateCode, generateCodes, autoDetectCategories, getCategoryForItem
     paymentUtils.js                 20  computePaymentProgress
@@ -65,7 +67,7 @@ src/
     TransactionForm.js            1430  Full transaction input form (multi-item, catalog autocomplete)
     PaymentHistoryPanel.js         290  Expandable payment timeline
     PaymentUpdateModal.js          183  Record payment modal
-    DeleteConfirmModal.js          105  Dual-mode (transaction/contact) delete confirm
+    DeleteConfirmModal.js          125  Dual-mode (transaction/contact) delete confirm — requires typing "hapus" to enable confirm button
     InvoiceModal.js                337  Printable A4 invoice
     SuratJalanModal.js             289  Printable A4 delivery note
     DotMatrixPrintModal.js         122  Dot matrix preview + print modal (invoice & surat jalan)
@@ -649,6 +651,7 @@ Pre-fills with full outstanding. Shows live preview. Note resets when transactio
 ### DeleteConfirmModal.js
 **Props:** `transaction?, isContact?, contact?, onConfirm, onCancel`
 Always-mounted — guards Escape key with visibility check.
+**Confirmation input:** User must type `"hapus"` (case-insensitive) into a text input before "Ya, Hapus" button becomes enabled. Input resets to `""` on both Batal and confirm. Applies to both transaction and contact delete modes.
 
 ### InvoiceModal.js
 **Props:** `transactions, settings, onClose`
@@ -756,7 +759,7 @@ Blocks UI when a Supabase write fails. Shows error message with Retry and Dismis
 
 **Karyawan (staff) restrictions:**
 - Cannot access Log Aktivitas page (not shown in sidebar navigation — gated by `profile.role === "owner"` in `navItems` and in JSX render condition)
-- Cannot see Laba/Rugi (net profit) summary card on Laporan page (only sees Total Pemasukan and Total Pengeluaran — controlled by `isOwner = profile?.role === "owner"` in Reports.js)
+- Cannot see any summary cards on Laporan page (Total Pemasukan, Total Pengeluaran, Laba/Rugi are all hidden — controlled by `{isOwner && (...)}` block in Reports.js). Karyawan sees only the transaction list, filters, and export button.
 - Cannot see the weekly backup reminder banner (controlled by `profile?.role === "owner"` guard in App.js `showBackupWarning` computation)
 - All other features are identical: create/edit/delete transactions, manage contacts, inventory, print invoices, export reports, stock adjustments
 

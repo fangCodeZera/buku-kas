@@ -4,6 +4,7 @@
  */
 import React from "react";
 import Icon from "./Icon";
+import { fmtQty } from "../utils/idGenerators";
 
 /**
  * @param {{ qty: number, unit: string, threshold?: number }} props
@@ -17,7 +18,7 @@ const StockChip = ({ qty, unit, threshold = 10 }) => {
   return (
     <span className="stock-chip" style={{ background: bg, color }}>
       {qty <= 0 && <Icon name="warning" size={11} color={color} />}
-      {Number(qty).toFixed(qty % 1 === 0 ? 0 : 2)} {unit}
+      {fmtQty(qty)} {unit}
     </span>
   );
 };

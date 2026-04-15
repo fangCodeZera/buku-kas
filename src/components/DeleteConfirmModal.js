@@ -9,18 +9,23 @@
  *   onConfirm    — called when user confirms
  *   onCancel     — called when user cancels
  */
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Icon from "./Icon";
 import { fmtDate, fmtIDR } from "../utils/idGenerators";
 
 const DeleteConfirmModal = ({ transaction, isContact, contact, onConfirm, onCancel }) => {
+  const [confirmInput, setConfirmInput] = useState("");
+
+  const handleCancel = () => { setConfirmInput(""); onCancel(); };
+  const handleConfirm = () => { setConfirmInput(""); onConfirm(); };
+
   useEffect(() => {
     const visible = isContact ? !!contact : !!transaction;
     if (!visible) return;
-    const handleKeyDown = (e) => { if (e.key === "Escape") onCancel(); };
+    const handleKeyDown = (e) => { if (e.key === "Escape") handleCancel(); };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isContact, contact, transaction, onCancel]);
+  }, [isContact, contact, transaction, onCancel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show modal only when we have something to confirm
   if (isContact ? !contact : !transaction) return null;
@@ -80,18 +85,33 @@ const DeleteConfirmModal = ({ transaction, isContact, contact, onConfirm, onCanc
           )}
         </div>
 
+        {/* Confirmation input */}
+        <div style={{ margin: "12px 0 4px" }}>
+          <input
+            type="text"
+            value={confirmInput}
+            onChange={(e) => setConfirmInput(e.target.value)}
+            placeholder='Ketik "hapus" untuk melanjutkan'
+            className="form-input"
+            style={{ width: "100%", boxSizing: "border-box" }}
+            aria-label='Ketik hapus untuk mengaktifkan tombol hapus'
+          />
+        </div>
+
         {/* Actions */}
         <div className="modal-actions">
           <button
-            onClick={onCancel}
+            onClick={handleCancel}
             className="btn btn-secondary"
             aria-label="Batal"
           >
             Batal
           </button>
           <button
-            onClick={onConfirm}
+            onClick={handleConfirm}
             className="btn btn-danger"
+            disabled={confirmInput.toLowerCase() !== "hapus"}
+            style={confirmInput.toLowerCase() !== "hapus" ? { opacity: 0.5, cursor: "not-allowed" } : {}}
             aria-label={isContact ? "Konfirmasi hapus kontak ini" : "Konfirmasi hapus transaksi ini"}
           >
             🗑 Ya, Hapus

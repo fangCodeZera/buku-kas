@@ -12,7 +12,7 @@ import DueBadge      from "../components/DueBadge";
 import Icon        from "../components/Icon";
 import Toast       from "../components/Toast";
 import MultiSelect from "../components/MultiSelect";
-import { fmtIDR, fmtDate, today, addDays } from "../utils/idGenerators";
+import { fmtIDR, fmtDate, fmtQty, today, addDays } from "../utils/idGenerators";
 
 /**
  * For a multi-item transaction, compute the combined contribution of ALL selected items.
@@ -360,23 +360,25 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         </div>
       )}
 
-      {/* Summary cards */}
-      <div className={`summary-grid summary-grid--${isOwner ? 3 : 2}`} style={{ marginBottom:18 }}>
-        {[
-          { l:"Total Pemasukan",   sub:"Kas diterima",      v:income,          c:"#10b981" },
-          { l:"Total Pengeluaran", sub:"Kas dikeluarkan",   v:expense,         c:"#ef4444" },
-          ...(isOwner ? [{ l:"Laba / Rugi", sub:"Posisi kas bersih", v:income-expense, c:(income-expense)>=0?"#007bff":"#ef4444" }] : []),
-        ].map((x) => (
-          <div key={x.l} className="summary-card" style={{ borderBottom:`4px solid ${x.c}`, textAlign:"center" }}>
-            <div className="summary-card__label">{x.l}</div>
-            <div className="summary-card__value" style={{ color:x.c }}>{fmtIDR(x.v)}</div>
-            <div className="summary-card__sub">{x.sub}</div>
-            {selectedItems.length >= 1 && (
-              <div className="item-filter-note">Nilai dihitung berdasarkan item: {selectedItems.join(", ")}</div>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* Summary cards — Pemilik only */}
+      {isOwner && (
+        <div className="summary-grid summary-grid--3" style={{ marginBottom:18 }}>
+          {[
+            { l:"Total Pemasukan",   sub:"Kas diterima",      v:income,          c:"#10b981" },
+            { l:"Total Pengeluaran", sub:"Kas dikeluarkan",   v:expense,         c:"#ef4444" },
+            { l:"Laba / Rugi",       sub:"Posisi kas bersih", v:income-expense,  c:(income-expense)>=0?"#007bff":"#ef4444" },
+          ].map((x) => (
+            <div key={x.l} className="summary-card" style={{ borderBottom:`4px solid ${x.c}`, textAlign:"center" }}>
+              <div className="summary-card__label">{x.l}</div>
+              <div className="summary-card__value" style={{ color:x.c }}>{fmtIDR(x.v)}</div>
+              <div className="summary-card__sub">{x.sub}</div>
+              {selectedItems.length >= 1 && (
+                <div className="item-filter-note">Nilai dihitung berdasarkan item: {selectedItems.join(", ")}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Transaction table */}
       <div className="table-card">
@@ -445,12 +447,12 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                           <div className="item-list" style={{ alignItems: "center" }}>
                             {contrib.filteredItems.map((item, idx) => (
                               <div key={`m-${idx}`} className="item-list__row item-filter-primary" style={{ justifyContent: "center" }}>
-                                <span style={{ color: stockColor }}>{t.type === "income" ? "-" : "+"}{parseFloat(item.sackQty) || 0} karung</span>
+                                <span style={{ color: stockColor }}>{t.type === "income" ? "-" : "+"}{fmtQty(item.sackQty)} karung</span>
                               </div>
                             ))}
                             {contrib.otherItems.map((item, idx) => (
                               <div key={`o-${idx}`} className="item-list__row item-filter-secondary" style={{ justifyContent: "center" }}>
-                                <span>{t.type === "income" ? "-" : "+"}{parseFloat(item.sackQty) || 0} karung</span>
+                                <span>{t.type === "income" ? "-" : "+"}{fmtQty(item.sackQty)} karung</span>
                               </div>
                             ))}
                           </div>
@@ -458,12 +460,12 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                           <div className="item-list" style={{ alignItems: "center" }}>
                             {t.items.map((item, idx) => (
                               <div key={idx} className="item-list__row" style={{ justifyContent: "center" }}>
-                                <span style={{ color: stockColor }}>{t.type === "income" ? "-" : "+"}{parseFloat(item.sackQty) || 0} karung</span>
+                                <span style={{ color: stockColor }}>{t.type === "income" ? "-" : "+"}{fmtQty(item.sackQty)} karung</span>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <>{t.type === "income" ? "-" : "+"}{parseFloat(t.stockQty) || 0} {t.stockUnit}</>
+                          <>{t.type === "income" ? "-" : "+"}{fmtQty(t.stockQty)} {t.stockUnit}</>
                         )}
                       </td>
 

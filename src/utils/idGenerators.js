@@ -170,3 +170,19 @@ export const displayToNum = (s) => {
   if (!digits) return 0;
   return parseInt(digits.replace(/^0+/, "") || "0", 10);
 };
+
+/**
+ * Format a numeric quantity (stock, weight) for display using Indonesian locale.
+ * Uses "." as thousand separator, consistent with fmtIDR.
+ * E.g. 50000 → "50.000", 10000 → "10.000", 0 → "0".
+ * Returns "-" for null/undefined/empty/"NaN" values.
+ *
+ * @param {number|string|null} n - quantity to format
+ * @returns {string} formatted quantity or "-"
+ */
+export const fmtQty = (n) => {
+  if (n === null || n === undefined || n === "") return "-";
+  const num = Number(n);
+  if (isNaN(num)) return "-";
+  return num.toLocaleString("id-ID");
+};

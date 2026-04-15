@@ -16,7 +16,7 @@ import Icon               from "../components/Icon";
 import StockChip          from "../components/StockChip";
 import Toast              from "../components/Toast";
 import CategoryModal      from "../components/CategoryModal";
-import { fmtDate, generateId, today, addDays, normalizeTitleCase, normItem, nowTime } from "../utils/idGenerators";
+import { fmtDate, fmtQty, generateId, today, addDays, normalizeTitleCase, normItem, nowTime } from "../utils/idGenerators";
 import { computeStockMapForDate } from "../utils/stockUtils";
 import { autoDetectCategories, getCategoryForItem } from "../utils/categoryUtils";
 
@@ -762,7 +762,7 @@ const Inventory = ({
         {isToday && Math.abs((activeStockMap[expandedStockItem]?.qty ?? 0) - ledgerSummary.currentQty) > 0.001 && (
           <div className="alert-banner alert-banner--warning" style={{ margin: "0 0 10px", fontSize: 12 }}>
             <Icon name="warning" size={13} color="#d97706" />
-            Stok di ledger ({ledgerSummary.currentQty}) berbeda dari stok terhitung ({activeStockMap[expandedStockItem]?.qty ?? 0}). Hubungi dukungan.
+            Stok di ledger ({fmtQty(ledgerSummary.currentQty)}) berbeda dari stok terhitung ({fmtQty(activeStockMap[expandedStockItem]?.qty ?? 0)}). Hubungi dukungan.
           </div>
         )}
 

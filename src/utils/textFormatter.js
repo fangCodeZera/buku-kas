@@ -179,7 +179,7 @@ const formatItemsTable = (transactions) => {
     const hargaStr = it.pricePerKg ? fmtNum(it.pricePerKg) : "—";
     const subStr   = fmtNum(it.subtotal || 0);
     const nameLines = wrapText(it.itemName || "—", COL_BARANG);
-    const firstRow = mkRow(String(i + 1), nameLines[0], String(qty), beratStr, hargaStr, subStr);
+    const firstRow = mkRow(String(i + 1), nameLines[0], fmtNum(qty), beratStr, hargaStr, subStr);
     const contRows = nameLines.slice(1).map(line => mkRow("", line, "", "", "", ""));
     return [firstRow, ...contRows];
   });
@@ -301,7 +301,7 @@ const formatSuratJalanItems = (transaction) => {
   const items = getItemsArray(transaction).flatMap((it, i) => {
     const qty = it.sackQty != null ? it.sackQty : 0;
     const nameLines = wrapText(it.itemName || "—", COL_BARANG);
-    const firstRow = mkRow(String(i + 1), nameLines[0], String(qty), unit);
+    const firstRow = mkRow(String(i + 1), nameLines[0], fmtNum(qty), unit);
     const contRows = nameLines.slice(1).map(line => mkRow("", line, "", ""));
     return [firstRow, ...contRows];
   });

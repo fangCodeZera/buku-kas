@@ -18,7 +18,7 @@
  * lazy-loaded or split, migrate printable content to inline styles.
  */
 import { useState, useRef, useEffect } from "react";
-import { fmtDate } from "../utils/idGenerators";
+import { fmtDate, fmtQty } from "../utils/idGenerators";
 import { printWithPortal } from "../utils/printUtils";
 
 /** Extract displayable item rows from any transaction shape */
@@ -222,7 +222,7 @@ const SuratJalanModal = ({ transaction, onClose }) => {
                   <tr key={i}>
                     <td style={{ padding: sc.cellPadding, fontSize: sc.tableFont }}>{i + 1}</td>
                     <td style={{ padding: sc.cellPadding, fontSize: sc.tableFont, textAlign: "left", maxWidth: "250px", wordBreak: "break-word", whiteSpace: "normal", overflowWrap: "break-word" }}>{it.nama}</td>
-                    <td style={{ padding: sc.cellPadding, fontSize: sc.tableFont }}>{it.jumlah} {it.unit}</td>
+                    <td style={{ padding: sc.cellPadding, fontSize: sc.tableFont }}>{fmtQty(it.jumlah)} {it.unit}</td>
                   </tr>
                 ))}
               </tbody>
@@ -230,7 +230,7 @@ const SuratJalanModal = ({ transaction, onClose }) => {
 
             {/* Total */}
             <div className="surat-jalan-doc__total">
-              Total: {totalKarung} karung
+              Total: {fmtQty(totalKarung)} karung
             </div>
 
             {/* Transaction notes */}

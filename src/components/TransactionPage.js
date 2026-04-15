@@ -20,7 +20,7 @@ import { StatusBadge }    from "./Badge";
 import DueBadge           from "./DueBadge";
 import Icon               from "./Icon";
 import SaveIndicator      from "./SaveIndicator";
-import { fmtIDR, fmtDate, today, addDays, diffDays } from "../utils/idGenerators";
+import { fmtIDR, fmtDate, fmtQty, today, addDays, diffDays } from "../utils/idGenerators";
 import { computePaymentProgress } from "../utils/paymentUtils";
 
 /** Full Indonesian date string, e.g. "Senin, 15 Maret 2026" */
@@ -518,7 +518,7 @@ const TransactionPage = ({
                             {t.items.map((item, idx) => (
                               <div key={idx} className="item-list__row" style={{ justifyContent: "center", minHeight: 28, alignItems: "flex-start" }}>
                                 <span className="stock-delta" style={{ color: type === "income" ? "#ef4444" : "#10b981" }}>
-                                  {type === "income" ? "-" : "+"}{parseFloat(item.sackQty) || 0} {t.stockUnit || "karung"}
+                                  {type === "income" ? "-" : "+"}{fmtQty(item.sackQty)} {t.stockUnit || "karung"}
                                 </span>
                               </div>
                             ))}
@@ -528,7 +528,7 @@ const TransactionPage = ({
                             className="stock-delta"
                             style={{ color: type === "income" ? "#ef4444" : "#10b981" }}
                           >
-                            {type === "income" ? "-" : "+"}{parseFloat(t.stockQty) || 0} {t.stockUnit}
+                            {type === "income" ? "-" : "+"}{fmtQty(t.stockQty)} {t.stockUnit}
                           </span>
                         )}
                       </td>
