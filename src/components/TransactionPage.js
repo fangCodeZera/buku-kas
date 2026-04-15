@@ -17,6 +17,7 @@ import PaymentUpdateModal from "./PaymentUpdateModal";
 import PaymentHistoryPanel from "./PaymentHistoryPanel";
 import Toast              from "./Toast";
 import { StatusBadge }    from "./Badge";
+import TransactionDetailModal from "./TransactionDetailModal";
 import DueBadge           from "./DueBadge";
 import Icon               from "./Icon";
 import SaveIndicator      from "./SaveIndicator";
@@ -73,6 +74,7 @@ const TransactionPage = ({
   const [dueSoonDismissed, setDueSoonDismissed] = useState(false);
   const [expandedTxId,      setExpandedTxId]      = useState(null);
   const [flashIds,          setFlashIds]          = useState(new Set());
+  const [detailTx,          setDetailTx]          = useState(null);
 
   const tableRef       = useRef(null);
   const searchInputRef = useRef(null);
@@ -482,7 +484,11 @@ const TransactionPage = ({
                 {filtered.map((t, i) => {
                   return (
                     <React.Fragment key={t.id}>
-                    <tr className={[i % 2 === 0 ? "" : "row-alt", flashIds.has(t.id) ? "tx-row--flash" : ""].filter(Boolean).join(" ")}>
+                    <tr
+                      className={[i % 2 === 0 ? "" : "row-alt", flashIds.has(t.id) ? "tx-row--flash" : ""].filter(Boolean).join(" ")}
+                      style={{ cursor: "pointer" }}
+                      onClick={(e) => { if (!e.target.closest("button, a, input, select, textarea")) setDetailTx(t); }}
+                    >
                       <td className="td-date whitespace-nowrap">
                         {fmtDate(t.date)}<br />
                         <span className="text-muted">{t.time}</span>
@@ -644,6 +650,7 @@ const TransactionPage = ({
       <StockWarningModal  data={stockWarn}  onClose={() => setStockWarn(null)} />
       <DeleteConfirmModal transaction={deleteTx} onConfirm={confirmDelete} onCancel={() => setDeleteTx(null)} />
       <PaymentUpdateModal transaction={paidTx}   onConfirm={confirmPaid}   onCancel={() => setPaidTx(null)} />
+      {detailTx && <TransactionDetailModal transaction={detailTx} onClose={() => setDetailTx(null)} />}
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
   );

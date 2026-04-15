@@ -21,7 +21,7 @@ import { printWithPortal } from "../utils/printUtils";
  * since the portal content renders outside #root.
  * Do not migrate to CSS classes without updating the print approach.
  */
-const InvoiceModal = ({ transactions, settings, onClose }) => {
+const InvoiceModal = ({ transactions, settings, contacts = [], onClose }) => {
   const modalRef = useRef(null);
   const [invoiceNote, setInvoiceNote] = useState("");
 
@@ -76,6 +76,12 @@ const InvoiceModal = ({ transactions, settings, onClose }) => {
 
   // Use the first transaction's txnId as the Invoice No, fallback to timestamp
   const invNumber = transactions[0]?.txnId || `INV-${Date.now().toString().slice(-6)}`;
+
+  // Look up client address from contacts (case-insensitive)
+  const clientName = transactions[0]?.counterparty || "";
+  const clientAddress = contacts.find(
+    (c) => (c.name || "").toLowerCase() === clientName.toLowerCase()
+  )?.address?.trim() || "";
 
   // Use the first transaction's dueDate if available, otherwise today + 14
   const dueDate = transactions[0]?.dueDate || addDays(today(), 14);
@@ -197,6 +203,9 @@ const InvoiceModal = ({ transactions, settings, onClose }) => {
               {transactions[0]?.type === "income" ? "Kepada (Pembeli)" : "Dari (Supplier)"}
             </div>
             <div style={s.kepadaName}>{transactions[0]?.counterparty}</div>
+            {clientAddress && (
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{clientAddress}</div>
+            )}
           </div>
         </div>
 

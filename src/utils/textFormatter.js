@@ -122,8 +122,9 @@ const formatInvoiceHeader = (settings) => {
 /**
  * Invoice meta: two-column layout (left 40 chars, right 40 chars).
  * Uses transactions[0] for invoice#, date, client, and dueDate.
+ * contacts[] is used to look up the client's address.
  */
-const formatInvoiceMeta = (transactions) => {
+const formatInvoiceMeta = (transactions, contacts = []) => {
   const t0  = transactions[0] || {};
   const invNo    = t0.txnId       || "—";
   const dateStr  = fmtDate(t0.date) || "—";
@@ -135,11 +136,28 @@ const formatInvoiceMeta = (transactions) => {
   const row2Left  = "Klien      : " + client;
   const row2Right = "Jatuh Tempo: " + dueStr;
 
-  return [
+  const lines = [
     padRight(row1Left, 40) + padLeft(row1Right, 40),
     padRight(row2Left, 40) + padLeft(row2Right, 40),
-    SEP_MINOR,
   ];
+
+  // Append address lines if found in contacts
+  const clientAddr = contacts.find(
+    (c) => (c.name || "").toLowerCase() === client.toLowerCase()
+  )?.address?.trim();
+  if (clientAddr) {
+    const addrPrefix = "  Alamat   : ";
+    const contPrefix = "             ";
+    const addrWidth  = LINE_WIDTH - addrPrefix.length;
+    const addrLines  = wrapText(clientAddr, addrWidth);
+    lines.push(padRight(addrPrefix + (addrLines[0] || ""), LINE_WIDTH));
+    for (let i = 1; i < addrLines.length; i++) {
+      lines.push(padRight(contPrefix + addrLines[i], LINE_WIDTH));
+    }
+  }
+
+  lines.push(SEP_MINOR);
+  return lines;
 };
 
 /**
@@ -260,8 +278,9 @@ const formatSuratJalanHeader = (settings) => {
 
 /**
  * Surat jalan meta: two-column (No / Tanggal), then Kepada full-width.
+ * contacts[] is used to look up the recipient's address.
  */
-const formatSuratJalanMeta = (transaction, platNomor = "") => {
+const formatSuratJalanMeta = (transaction, platNomor = "", contacts = []) => {
   const noStr  = "No     : " + (transaction.txnId        || "—");
   const tglStr = "Tanggal: " + (fmtDate(transaction.date) || "—");
   const kepada = "Kepada : " + (transaction.counterparty  || "—");
@@ -269,6 +288,23 @@ const formatSuratJalanMeta = (transaction, platNomor = "") => {
     padRight(noStr, 40) + padLeft(tglStr, 40),
     padRight(kepada, LINE_WIDTH),
   ];
+
+  // Append address lines if found in contacts
+  const clientName = (transaction.counterparty || "").toLowerCase();
+  const clientAddr = contacts.find(
+    (c) => (c.name || "").toLowerCase() === clientName
+  )?.address?.trim();
+  if (clientAddr) {
+    const addrPrefix = "Alamat : ";
+    const contPrefix = "         ";
+    const addrWidth  = LINE_WIDTH - addrPrefix.length;
+    const addrLines  = wrapText(clientAddr, addrWidth);
+    lines.push(padRight(addrPrefix + (addrLines[0] || ""), LINE_WIDTH));
+    for (let i = 1; i < addrLines.length; i++) {
+      lines.push(padRight(contPrefix + addrLines[i], LINE_WIDTH));
+    }
+  }
+
   if (platNomor.trim()) {
     lines.push(padRight("Plat Mobil : " + platNomor.trim(), LINE_WIDTH));
   }
@@ -349,14 +385,14 @@ const formatSuratJalanFooter = (catatanPengiriman = "") => {
  * @param {Object}   settings     - app settings (businessName, bankAccounts, etc.)
  * @returns {string} formatted invoice text, lines joined by "\n"
  */
-export const formatInvoice = (transactions, settings, options = {}) => {
+export const formatInvoice = (transactions, settings, options = {}, contacts = []) => {
   const txs        = Array.isArray(transactions) ? transactions : [transactions];
   const s          = settings || {};
   const { note = "" } = options;
 
   const lines = [
     ...formatInvoiceHeader(s),
-    ...formatInvoiceMeta(txs),
+    ...formatInvoiceMeta(txs, contacts),
     ...formatItemsTable(txs),
     ...formatInvoiceFooter(txs, s, note),
   ];
@@ -371,14 +407,14 @@ export const formatInvoice = (transactions, settings, options = {}) => {
  * @param {Object} settings    - app settings (businessName, etc.)
  * @returns {string} formatted surat jalan text, lines joined by "\n"
  */
-export const formatSuratJalan = (transaction, settings, options = {}) => {
+export const formatSuratJalan = (transaction, settings, options = {}, contacts = []) => {
   const t = transaction || {};
   const s = settings    || {};
   const { platNomor = "", catatanPengiriman = "" } = options;
 
   const lines = [
     ...formatSuratJalanHeader(s),
-    ...formatSuratJalanMeta(t, platNomor),
+    ...formatSuratJalanMeta(t, platNomor, contacts),
     ...formatSuratJalanItems(t),
     ...formatSuratJalanFooter(catatanPengiriman),
   ];

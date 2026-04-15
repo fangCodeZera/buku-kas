@@ -54,7 +54,7 @@ function getScale(itemCount) {
 /**
  * @param {{ transaction: Object, onClose: function }} props
  */
-const SuratJalanModal = ({ transaction, onClose }) => {
+const SuratJalanModal = ({ transaction, contacts = [], onClose }) => {
   const [platMobil,    setPlatMobil]    = useState("");
   const [deliveryNote, setDeliveryNote] = useState("");
   const [isPrinting,   setIsPrinting]   = useState(false);
@@ -67,6 +67,11 @@ const SuratJalanModal = ({ transaction, onClose }) => {
   }, [onClose]);
 
   if (!transaction) return null;
+
+  // Look up client address from contacts (case-insensitive)
+  const clientAddress = contacts.find(
+    (c) => (c.name || "").toLowerCase() === (transaction.counterparty || "").toLowerCase()
+  )?.address?.trim() || "";
 
   const items       = getSuratJalanItems(transaction);
   const totalKarung = items.reduce((s, it) => s + it.jumlah, 0);
@@ -183,6 +188,11 @@ const SuratJalanModal = ({ transaction, onClose }) => {
                     {transaction.counterparty || "—"}
                   </span>
                 </div>
+                {clientAddress && (
+                  <div style={{ fontSize: sc.bodyFont - 1, color: "#64748b", paddingLeft: 8, marginTop: 2 }}>
+                    {clientAddress}
+                  </div>
+                )}
               </div>
 
               <div className="surat-jalan-doc__info-block">

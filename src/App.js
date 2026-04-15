@@ -1796,6 +1796,7 @@ export default function App() {
         <InvoiceModal
           transactions={invoiceTxs}
           settings={data.settings}
+          contacts={data.contacts}
           onClose={() => setInvoiceTxs(null)}
         />
       )}
@@ -1803,6 +1804,7 @@ export default function App() {
         <SuratJalanModal
           transaction={suratJalanTx}
           settings={data.settings}
+          contacts={data.contacts}
           onClose={() => setSuratJalanTx(null)}
         />
       )}
@@ -1830,6 +1832,7 @@ export default function App() {
           transaction={dotMatrixData.transaction}
           mode={dotMatrixData.mode}
           settings={data.settings}
+          contacts={data.contacts}
           onClose={() => setDotMatrixData(null)}
         />
       )}

@@ -15,7 +15,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { formatInvoice, formatSuratJalan } from "../utils/textFormatter";
 import { printWithPortal } from "../utils/printUtils";
 
-const DotMatrixPrintModal = ({ transaction, mode, settings, onClose }) => {
+const DotMatrixPrintModal = ({ transaction, mode, settings, contacts = [], onClose }) => {
   // Escape key closes modal (conditionally mounted — no guard needed)
   useEffect(() => {
     const handleKeyDown = (e) => { if (e.key === "Escape") onClose(); };
@@ -29,10 +29,10 @@ const DotMatrixPrintModal = ({ transaction, mode, settings, onClose }) => {
 
   const formattedText = useMemo(() => {
     if (mode === "invoice") {
-      return formatInvoice(transaction, settings, { note: invoiceNote });
+      return formatInvoice(transaction, settings, { note: invoiceNote }, contacts);
     }
-    return formatSuratJalan(transaction, settings, { platNomor, catatanPengiriman });
-  }, [transaction, mode, settings, invoiceNote, platNomor, catatanPengiriman]);
+    return formatSuratJalan(transaction, settings, { platNomor, catatanPengiriman }, contacts);
+  }, [transaction, mode, settings, contacts, invoiceNote, platNomor, catatanPengiriman]);
 
   const handlePrint = () => {
     // Escape HTML special chars to prevent injection; pre-tag uses inline styles

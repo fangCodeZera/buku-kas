@@ -13,6 +13,7 @@ import Icon        from "../components/Icon";
 import Toast       from "../components/Toast";
 import MultiSelect from "../components/MultiSelect";
 import { fmtIDR, fmtDate, fmtQty, today, addDays } from "../utils/idGenerators";
+import TransactionDetailModal from "../components/TransactionDetailModal";
 
 /**
  * For a multi-item transaction, compute the combined contribution of ALL selected items.
@@ -79,6 +80,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
   const [toast,           setToast]           = useState(null);
   const [confirmCount,    setConfirmCount]    = useState(null);
   const [exportFormat,    setExportFormat]    = useState("csv");
+  const [detailTx,        setDetailTx]        = useState(null);
 
   const applyPeriod = (p) => {
     // "all-time" period option: clears date filters to show all transactions
@@ -403,7 +405,12 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                   const isMulti = Array.isArray(t.items) && t.items.length > 1;
                   const stockColor = t.type === "income" ? "#ef4444" : "#10b981";
                   return (
-                    <tr key={t.id} className={i%2===0?"":"row-alt"}>
+                    <tr
+                      key={t.id}
+                      className={i%2===0?"":"row-alt"}
+                      style={{ cursor: "pointer" }}
+                      onClick={(e) => { if (!e.target.closest("button, a, input, select, textarea")) setDetailTx(t); }}
+                    >
                       <td className="text-muted td-date">{fmtDate(t.date)}</td>
                       <td style={{ fontSize: 11, fontWeight: 600, color: t.type === "income" ? "#6366f1" : "#374151", fontFamily: "monospace", whiteSpace: "nowrap" }}>
                         {t.txnId || <span style={{ color: "#d1d5db" }}>—</span>}
@@ -503,6 +510,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         )}
       </div>
 
+      {detailTx && <TransactionDetailModal transaction={detailTx} onClose={() => setDetailTx(null)} />}
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
   );

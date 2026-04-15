@@ -14,9 +14,10 @@ import { StatusBadge, TypeBadge } from "../components/Badge";
 import DueBadge            from "../components/DueBadge";
 import Icon                from "../components/Icon";
 import Toast               from "../components/Toast";
-import DeleteConfirmModal  from "../components/DeleteConfirmModal";
-import PaymentUpdateModal  from "../components/PaymentUpdateModal";
-import PaymentHistoryPanel from "../components/PaymentHistoryPanel";
+import DeleteConfirmModal       from "../components/DeleteConfirmModal";
+import PaymentUpdateModal       from "../components/PaymentUpdateModal";
+import PaymentHistoryPanel      from "../components/PaymentHistoryPanel";
+import TransactionDetailModal   from "../components/TransactionDetailModal";
 import { fmtIDR, fmtDate, today, diffDays } from "../utils/idGenerators";
 import { computePaymentProgress } from "../utils/paymentUtils";
 
@@ -64,6 +65,7 @@ function OutstandingTable({ txs, emptyMsg, onEdit, onMarkPaid, onDelete, onInvoi
   const [toast,        setToast]        = useState(null);
   const [page,         setPage]         = useState(0);
   const [expandedTxId, setExpandedTxId] = useState(null);
+  const [detailTx,     setDetailTx]     = useState(null);
 
   const todayStr = today();
 
@@ -127,6 +129,8 @@ function OutstandingTable({ txs, emptyMsg, onEdit, onMarkPaid, onDelete, onInvoi
                   permanentClass,
                   isFlash ? "outstanding-row--flash" : "",
                 ].filter(Boolean).join(" ")}
+                style={{ cursor: "pointer" }}
+                onClick={(e) => { if (!e.target.closest("button, a, input, select, textarea")) setDetailTx(t); }}
               >
                 <td className="td-date whitespace-nowrap">
                   {fmtDate(t.date)}
@@ -291,6 +295,7 @@ function OutstandingTable({ txs, emptyMsg, onEdit, onMarkPaid, onDelete, onInvoi
         }}
         onCancel={() => setPaidTx(null)}
       />
+      {detailTx && <TransactionDetailModal transaction={detailTx} onClose={() => setDetailTx(null)} />}
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </>
   );
