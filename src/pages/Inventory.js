@@ -13,6 +13,7 @@
  */
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import Icon               from "../components/Icon";
+import QtyInput           from "../components/QtyInput";
 import StockChip          from "../components/StockChip";
 import Toast              from "../components/Toast";
 import CategoryModal      from "../components/CategoryModal";
@@ -154,9 +155,10 @@ const Inventory = ({
   }, [inventoryDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-focus qty input when adjustment modal opens
+  // adjQtyRef is on a wrapper div (QtyInput doesn't forward refs)
   useEffect(() => {
     if (adjTarget && adjQtyRef.current) {
-      setTimeout(() => adjQtyRef.current?.focus(), 50);
+      setTimeout(() => adjQtyRef.current?.querySelector("input")?.focus(), 50);
     }
   }, [adjTarget]);
 
@@ -1137,26 +1139,15 @@ const Inventory = ({
 
             <div style={{ marginBottom: 12 }}>
               <label className="field-label">Jumlah ({adjTarget.unit})</label>
-              <input
-                ref={adjQtyRef}
-                type="text"
-                inputMode="decimal"
-                value={adjQtyStr}
-                onChange={(e) => {
-                  setAdjQtyStr(e.target.value.replace(/[^0-9.]/g, "").replace(/^(\d*\.?\d*).*/, "$1"));
-                  setAdjQtyError("");
-                  setAdjError("");
-                }}
-                onBlur={() => {
-                  const n = parseFloat(adjQtyStr);
-                  if (!isNaN(n) && n > 0) setAdjQtyStr(String(n));
-                }}
-                placeholder="0"
-                className={adjQtyError ? "form-input--error" : ""}
-                style={{ width: "100%", padding: "8px 11px", border: `1.5px solid ${adjQtyError ? "#ef4444" : "#c7ddf7"}`, borderRadius: 8, fontSize: 14, boxSizing: "border-box" }}
-                aria-label="Jumlah penyesuaian"
-                aria-invalid={!!adjQtyError}
-              />
+              <div ref={adjQtyRef}>
+                <QtyInput
+                  value={Number(adjQtyStr) || 0}
+                  onChange={(n) => { setAdjQtyStr(n); setAdjQtyError(""); setAdjError(""); }}
+                  hasError={!!adjQtyError}
+                  placeholder="0"
+                  style={{ width: "100%", padding: "8px 11px", border: `1.5px solid ${adjQtyError ? "#ef4444" : "#c7ddf7"}`, borderRadius: 8, fontSize: 14, boxSizing: "border-box" }}
+                />
+              </div>
               {adjQtyError && <span className="field-error">{adjQtyError}</span>}
             </div>
 

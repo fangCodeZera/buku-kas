@@ -80,6 +80,7 @@ src/
     ErrorBoundary.js                89  React class error boundary — catches unhandled render errors, shows Indonesian fallback UI with "Muat Ulang" reload button
     MultiSelect.js                 151  Zero-dep multi-select dropdown
     RupiahInput.js                 107  Comma-formatted Rupiah currency input
+    QtyInput.js                     78  Decimal quantity input — id-ID locale formatting on blur, accepts . or , as decimal separator
     SaveIndicator.js                41  "Tersimpan ✓ · HH:MM" / "Menyimpan..." indicator
     StockChip.js                    25  Coloured stock qty pill
     Toast.js                        50  Auto-dismissing 3-second notification
@@ -511,6 +512,8 @@ onNavigateToArchive?
 
 **Ledger:** Expandable per-item panel with transaction history, running totals, date filter, type filter, PERIODE quick-select (Hari Ini / Minggu Ini / Bulan Ini / Semua) with active state.
 
+**Adjustment qty input:** Uses `QtyInput` (not plain `<input>`). `adjQtyRef` is on a wrapper `<div>` (QtyInput doesn't forward refs). Auto-focus on modal open uses `adjQtyRef.current?.querySelector("input")?.focus()`. `adjQtyStr` state holds a number (0 when empty) after first QtyInput onChange; validation `!adjQtyStr` catches 0 as falsy.
+
 ### pages/Contacts.js
 **Props:** `contacts, transactions, balanceMap, onAddContact, onUpdateContact, onDeleteContact, onArchiveContact?, onUnarchiveContact?, onNavigateToArchive?, onDeleteTransaction?, onEditTransaction?, onMarkPaid?`
 
@@ -637,6 +640,8 @@ Full transaction input form. Uses smart text inputs (NOT `<select>`) for item se
 
 **Key state:** `form` (all field values), `items[]` (per-row state with `duplicateConfirmed`), `cpOpen`/`cpQuery` (counterparty dropdown), `itemNameOpen`/`itemTypeOpen` (per-row dropdowns), `errors` (per-field), `submitting`, `newItemConfirm`, `duplicateItemConfirm`, `txnIdInput` (expense only), `skipNextFocusOpen` ref.
 
+**Quantity inputs:** Jumlah Karung and Berat (Kg) use `QtyInput` (not plain `<input>`). `onChange` receives a number and calls `setItem(idx, "sackQty"/"weightKg", n)`. Item state for these fields is a number after first interaction (starts as `""` until QtyInput fires onChange).
+
 **Multi-item stock warning:** Collects ALL items that would go negative into `negItems[]`, calls `onStockWarning({ items: negItems, item, current, selling, onConfirm, onCancel: () => setSubmitting(false) })`.
 
 ### PaymentHistoryPanel.js
@@ -658,8 +663,16 @@ Always-mounted — guards Escape key with visibility check.
 Prints via `printWithPortal()`. Bank accounts filtered by `showOnInvoice` + limited by `maxBankAccountsOnInvoice`. Invoice notes (`invoiceNote` state) NOT saved — session-only. Used only when `printerType === "A4"`.
 
 ### SuratJalanModal.js
+**Props:** `transaction, contacts, onClose`
+Uses `t.stockUnit` (transaction-level). Inline styles throughout for print portal compatibility. Used only when `printerType === "A4"`. Client address looked up from `contacts[]` by case-insensitive name match and displayed below client name, indented with `marginLeft: 98` (90px label min-width + 8px flex gap) to align with the value column.
+
+### TransactionDetailModal.js
 **Props:** `transaction, onClose`
-Uses `t.stockUnit` (transaction-level). Inline styles throughout for print portal compatibility. Used only when `printerType === "A4"`.
+Read-only popup shown when the user clicks a transaction row (outside action buttons). Conditionally mounted — no Escape guard needed.
+
+Displays: type/status badges, txnId, date/time, counterparty, items table (sackQty × weightKg × pricePerKg = subtotal), total, outstanding, dueDate, notes, payment history.
+
+**Payment history section:** Shows `computePaymentProgress` summary bar (progress bar + % + Dibayar / Sisa amounts) above the per-entry list. Each entry: amount bold navy `#1e3a5f`, date/time muted `#6b7280`, note `#374151`, "Sisa setelah" `#6b7280`. System notes shown as-is; user notes prefixed "Catatan:". History displayed most-recent-first (`[...history].reverse()`).
 
 ### DotMatrixPrintModal.js (NEW — v18)
 **Props:** `transaction, mode, settings, onClose`
@@ -702,6 +715,10 @@ Zero-dependency multi-select with search + select-all. Used by Reports.js for cl
 ### RupiahInput.js
 **Props:** `value, onChange(numericValue), hasError?, placeholder?`
 Displays comma-formatted input, stores integer. Does NOT forward refs — use ref on a wrapping div.
+
+### QtyInput.js
+**Props:** `value, onChange(numericValue), hasError?, placeholder?, style?, className?, onBlur?`
+Decimal-aware quantity input with id-ID locale formatting on blur. Accepts `.` or `,` as decimal separator during typing (normalizes to `.` for `parseFloat`). Uses `isFocusedRef` to suppress prop-sync while the user is actively typing — prevents mid-decimal-entry resets (e.g. "10." does not get rewritten to "10" before user finishes). Does NOT forward refs — use a wrapping div ref for auto-focus (see `adjQtyRef` in Inventory.js).
 
 ### SaveIndicator.js
 **Props:** `saved: boolean`

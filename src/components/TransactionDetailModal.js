@@ -12,6 +12,7 @@
  */
 import { useEffect } from "react";
 import { fmtQty, fmtIDR, fmtDate } from "../utils/idGenerators";
+import { computePaymentProgress } from "../utils/paymentUtils";
 import { StatusBadge, TypeBadge } from "./Badge";
 
 const TransactionDetailModal = ({ transaction, onClose }) => {
@@ -175,22 +176,48 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
               <div style={{ borderTop: "1px solid #f1f5f9", marginBottom: 12 }} />
               <div>
                 <div style={{ ...labelStyle, marginBottom: 8 }}>Riwayat Pembayaran ({history.length})</div>
+
+                {/* Payment summary bar */}
+                {(() => {
+                  const prog = computePaymentProgress(t.value, t.outstanding);
+                  if (!prog) return null;
+                  const paid = (t.value || 0) - (t.outstanding || 0);
+                  return (
+                    <div style={{ marginBottom: 12 }}>
+                      <div className="payment-progress-wrap" style={{ marginBottom: 6 }}>
+                        <div className="payment-progress-bar">
+                          <div className="payment-progress-bar__fill" style={{ width: `${prog.percent}%` }} />
+                        </div>
+                        <span className="payment-progress-pct">{prog.percent}%</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                        <span style={{ color: "#10b981", fontWeight: 600 }}>Dibayar: {fmtIDR(paid)}</span>
+                        <span style={{ color: (t.outstanding || 0) > 0 ? "#f59e0b" : "#10b981", fontWeight: 600 }}>
+                          Sisa: {fmtIDR(t.outstanding || 0)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {history.map((ph, i) => {
                   const isSystem = SYSTEM_NOTES.has(ph.note);
-                  const isPending = !ph.amount && i === 0 && (t.outstanding || 0) > 0;
+                  const isPending = !ph.amount && i === history.length - 1 && (t.outstanding || 0) > 0;
                   return (
                     <div key={ph.id || i} style={{ display: "flex", gap: 10, marginBottom: 10, alignItems: "flex-start" }}>
-                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: isPending ? "#f59e0b" : "#10b981", flexShrink: 0, marginTop: 4 }} />
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: isPending ? "#f59e0b" : "#10b981", flexShrink: 0, marginTop: 5 }} />
                       <div style={{ flex: 1, fontSize: 12, color: "#374151" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-                          <span style={{ fontWeight: 600 }}>{fmtIDR(ph.amount || 0)}</span>
-                          <span style={{ color: "#9ca3af", fontSize: 11, flexShrink: 0 }}>{fmtDate(ph.date)} {ph.time}</span>
+                          <span style={{ fontWeight: 700, fontSize: 13, color: "#1e3a5f" }}>{fmtIDR(ph.amount || 0)}</span>
+                          <span style={{ color: "#6b7280", fontSize: 11, flexShrink: 0 }}>{fmtDate(ph.date)} {ph.time}</span>
                         </div>
-                        <div style={{ color: "#9ca3af", fontSize: 11, marginTop: 1 }}>
-                          {isSystem ? ph.note : `Catatan: ${ph.note}`}
-                        </div>
+                        {ph.note && (
+                          <div style={{ color: "#374151", fontSize: 11, marginTop: 2 }}>
+                            {isSystem ? ph.note : `Catatan: ${ph.note}`}
+                          </div>
+                        )}
                         {ph.outstandingAfter != null && (
-                          <div style={{ color: "#d1d5db", fontSize: 10, marginTop: 1 }}>
+                          <div style={{ color: "#6b7280", fontSize: 11, marginTop: 1 }}>
                             Sisa setelah: {fmtIDR(ph.outstandingAfter)}
                           </div>
                         )}

@@ -4,6 +4,7 @@
  */
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import RupiahInput from "./RupiahInput";
+import QtyInput    from "./QtyInput";
 import Icon        from "./Icon";
 import { generateId, today, nowTime, normItem, normalizeTitleCase, fmtIDR, fmtDate, addDays } from "../utils/idGenerators";
 import { STATUS, deriveStatus } from "../utils/statusUtils";
@@ -1089,21 +1090,11 @@ const TransactionForm = ({
                 <div className="item-fields-row">
                   <div>
                     <label className="item-field-label">Jumlah Karung</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={item.sackQty}
-                      onChange={(e) => {
-                        const v = e.target.value.replace(/[^0-9.]/g, "").replace(/^(\d*\.?\d*).*/, "$1");
-                        setItem(idx, "sackQty", v);
-                      }}
-                      onBlur={() => {
-                        const n = parseFloat(item.sackQty);
-                        setItem(idx, "sackQty", isNaN(n) || n < 0 ? "" : String(n));
-                      }}
-                      placeholder="0"
+                    <QtyInput
+                      value={Number(item.sackQty) || 0}
+                      onChange={(n) => setItem(idx, "sackQty", n)}
                       style={iStyle("", !!ie.sackQty)}
-                      aria-label={`Jumlah karung item ${idx + 1}`}
+                      placeholder="0"
                     />
                     {ie.sackQty && <span className="field-error">{ie.sackQty}</span>}
                     <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>satuan: karung</div>
@@ -1124,21 +1115,11 @@ const TransactionForm = ({
 
                   <div>
                     <label className="item-field-label">Berat (Kg)</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={item.weightKg}
-                      onChange={(e) => {
-                        const v = e.target.value.replace(/[^0-9.]/g, "").replace(/^(\d*\.?\d*).*/, "$1");
-                        setItem(idx, "weightKg", v);
-                      }}
-                      onBlur={() => {
-                        const n = parseFloat(item.weightKg);
-                        setItem(idx, "weightKg", isNaN(n) || n < 0 ? "" : String(n));
-                      }}
-                      placeholder="0"
+                    <QtyInput
+                      value={Number(item.weightKg) || 0}
+                      onChange={(n) => setItem(idx, "weightKg", n)}
                       style={iStyle("", !!ie.weightKg)}
-                      aria-label={`Berat item ${idx + 1}`}
+                      placeholder="0"
                     />
                     {ie.weightKg && <span className="field-error">{ie.weightKg}</span>}
                   </div>

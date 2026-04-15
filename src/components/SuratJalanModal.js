@@ -189,7 +189,7 @@ const SuratJalanModal = ({ transaction, contacts = [], onClose }) => {
                   </span>
                 </div>
                 {clientAddress && (
-                  <div style={{ fontSize: sc.bodyFont - 1, color: "#64748b", paddingLeft: 8, marginTop: 2 }}>
+                  <div style={{ fontSize: sc.bodyFont, marginLeft: 98, marginTop: 2 }}>
                     {clientAddress}
                   </div>
                 )}
