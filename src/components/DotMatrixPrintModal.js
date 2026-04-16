@@ -85,7 +85,6 @@ const DotMatrixPrintModal = ({ transaction, mode, settings, contacts = [], onClo
                 type="text"
                 value={platNomor}
                 onChange={(e) => setPlatNomor(e.target.value)}
-                placeholder="Contoh: BG 8868 ID"
                 maxLength={20}
                 style={inputStyle}
               />
@@ -95,7 +94,6 @@ const DotMatrixPrintModal = ({ transaction, mode, settings, contacts = [], onClo
               <textarea
                 value={catatanPengiriman}
                 onChange={(e) => setCatatanPengiriman(e.target.value)}
-                placeholder="Contoh: Barang dikirim dengan truk, harap hati-hati"
                 rows={2}
                 maxLength={500}
                 style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}

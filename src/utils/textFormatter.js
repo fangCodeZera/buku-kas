@@ -266,79 +266,81 @@ const formatInvoiceFooter = (transactions, settings, note = "") => {
 
 /**
  * Surat jalan header block.
- * Skips blank businessName; always shows "SURAT JALAN" centered.
+ * Shows only "SURAT JALAN" centered — no company name.
  */
-const formatSuratJalanHeader = (settings) => {
-  const lines = [];
-  if (settings.businessName?.trim()) lines.push(centerText(settings.businessName.trim()));
-  lines.push(centerText("SURAT JALAN"));
-  lines.push(SEP_MAJOR);
-  return lines;
+const formatSuratJalanHeader = () => {
+  return [centerText("SURAT JALAN"), SEP_MAJOR];
 };
 
 /**
- * Surat jalan meta: two-column (No / Tanggal), then Kepada full-width.
+ * Surat jalan meta: two-column layout.
+ * Row 1: "KEPADA YTH :" (left) + "TANGGAL : [date]" (right)
+ * Row 2: client name full-width (no label)
+ * Row 3: client address left-half + "PLAT MOBIL : [plat]" right-half (same line)
+ *         Continuation address lines appear full-width below.
  * contacts[] is used to look up the recipient's address.
  */
 const formatSuratJalanMeta = (transaction, platNomor = "", contacts = []) => {
-  const noStr  = "No     : " + (transaction.txnId        || "—");
-  const tglStr = "Tanggal: " + (fmtDate(transaction.date) || "—");
-  const kepada = "Kepada : " + (transaction.counterparty  || "—");
-  const lines = [
-    padRight(noStr, 40) + padLeft(tglStr, 40),
-    padRight(kepada, LINE_WIDTH),
-  ];
+  const tglStr   = "TANGGAL : " + (fmtDate(transaction.date) || "—");
+  const clientNm = transaction.counterparty || "—";
+  const platStr  = "PLAT MOBIL : " + platNomor.trim();
 
-  // Append address lines if found in contacts
-  const clientName = (transaction.counterparty || "").toLowerCase();
+  // Row 1: KEPADA YTH left + TANGGAL right
+  const row1 = padRight("KEPADA YTH :", 40) + padLeft(tglStr, 40);
+  // Row 2: client name (no label)
+  const row2 = padRight(clientNm, LINE_WIDTH);
+
+  // Look up client address
   const clientAddr = contacts.find(
-    (c) => (c.name || "").toLowerCase() === clientName
+    (c) => (c.name || "").toLowerCase() === clientNm.toLowerCase()
   )?.address?.trim();
+
+  const lines = [row1, row2];
+
   if (clientAddr) {
-    const addrPrefix = "Alamat : ";
-    const contPrefix = "         ";
-    const addrWidth  = LINE_WIDTH - addrPrefix.length;
-    const addrLines  = wrapText(clientAddr, addrWidth);
-    lines.push(padRight(addrPrefix + (addrLines[0] || ""), LINE_WIDTH));
+    // Wrap address to 40 chars for left half of row 3
+    const addrLines = wrapText(clientAddr, 40);
+    // First address line left + plat right on same row
+    lines.push(padRight(addrLines[0] || "", 40) + padLeft(platStr, 40));
+    // Continuation address lines (no plat beside them)
     for (let i = 1; i < addrLines.length; i++) {
-      lines.push(padRight(contPrefix + addrLines[i], LINE_WIDTH));
+      lines.push(padRight(addrLines[i], LINE_WIDTH));
     }
+  } else {
+    // No address: blank left + plat right
+    lines.push(padRight("", 40) + padLeft(platStr, 40));
   }
 
-  if (platNomor.trim()) {
-    lines.push(padRight("Plat Mobil : " + platNomor.trim(), LINE_WIDTH));
-  }
   lines.push(SEP_MINOR);
   return lines;
 };
 
 /**
- * Surat jalan items table.
- * Columns (total 80): No(3) | Barang(50) | Jumlah(8) | Satuan(10)
- * Separators: " | " (3 chars) × 3 = 9 chars
+ * Surat jalan items table — 3-column layout.
+ * Columns (total 80): NO.(3) | JENIS BARANG(50) | JUMLAH BARANG(21)
+ * Separators: " | " (3 chars) × 2 = 6 chars → 3 + 6 + 50 + 21 = 80
  */
 const formatSuratJalanItems = (transaction) => {
   const COL_NO     = 3;
   const COL_BARANG = 50;
-  const COL_JML    = 8;
-  const COL_SATUAN = 10;
+  const COL_JML    = 21;
   const SEP        = " | ";
 
-  const mkRow = (no, barang, jml, satuan) =>
+  const mkRow = (no, barang, jml) =>
     padLeft(no, COL_NO) +
     SEP + padRight(barang, COL_BARANG) +
-    SEP + padLeft(jml, COL_JML) +
-    SEP + padRight(satuan, COL_SATUAN);
+    SEP + padRight(jml, COL_JML);
 
-  const header  = mkRow("No", "Nama Barang", "Jumlah", "Satuan");
+  const header  = mkRow("NO.", "JENIS BARANG", "JUMLAH BARANG");
   const divider = SEP_MINOR;
 
   const unit = transaction.stockUnit || "karung";
   const items = getItemsArray(transaction).flatMap((it, i) => {
     const qty = it.sackQty != null ? it.sackQty : 0;
+    const jmlStr = fmtNum(qty) + " " + unit;
     const nameLines = wrapText(it.itemName || "—", COL_BARANG);
-    const firstRow = mkRow(String(i + 1), nameLines[0], fmtNum(qty), unit);
-    const contRows = nameLines.slice(1).map(line => mkRow("", line, "", ""));
+    const firstRow = mkRow(String(i + 1), nameLines[0], jmlStr);
+    const contRows = nameLines.slice(1).map(line => mkRow("", line, ""));
     return [firstRow, ...contRows];
   });
 
@@ -346,16 +348,16 @@ const formatSuratJalanItems = (transaction) => {
 };
 
 /**
- * Surat jalan footer: signature blocks for Pengirim and Penerima.
+ * Surat jalan footer: signature blocks for Tanda Terima and Hormat Kami.
  * Each side gets 2 blank lines for signature space.
  */
 const formatSuratJalanFooter = (catatanPengiriman = "") => {
-  const leftLabel  = padRight("Pengirim,", 40);
-  const rightLabel = padLeft("Penerima,", 40);
+  const leftLabel  = padRight("TANDA TERIMA,", 40);
+  const rightLabel = padLeft("HORMAT KAMI,", 40);
   const blankLine  = " ".repeat(LINE_WIDTH);
   const sigLine    =
-    padRight("( ________________________ )", 40) +
-    padLeft("( ________________________ )", 40);
+    padRight("(" + " ".repeat(26) + ")", 40) +
+    padLeft("(" + " ".repeat(26) + ")", 40);
 
   const lines = [];
 
@@ -407,13 +409,12 @@ export const formatInvoice = (transactions, settings, options = {}, contacts = [
  * @param {Object} settings    - app settings (businessName, etc.)
  * @returns {string} formatted surat jalan text, lines joined by "\n"
  */
-export const formatSuratJalan = (transaction, settings, options = {}, contacts = []) => {
+export const formatSuratJalan = (transaction, _settings, options = {}, contacts = []) => {
   const t = transaction || {};
-  const s = settings    || {};
   const { platNomor = "", catatanPengiriman = "" } = options;
 
   const lines = [
-    ...formatSuratJalanHeader(s),
+    ...formatSuratJalanHeader(),
     ...formatSuratJalanMeta(t, platNomor, contacts),
     ...formatSuratJalanItems(t),
     ...formatSuratJalanFooter(catatanPengiriman),

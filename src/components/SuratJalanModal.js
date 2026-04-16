@@ -182,14 +182,12 @@ const SuratJalanModal = ({ transaction, contacts = [], onClose }) => {
               style={{ marginBottom: sc.headerMargin }}
             >
               <div className="surat-jalan-doc__info-block">
-                <div className="surat-jalan-doc__info-row">
-                  <span className="surat-jalan-doc__info-label">KEPADA YTH</span>
-                  <span className="surat-jalan-doc__info-value">
-                    {transaction.counterparty || "—"}
-                  </span>
+                <span className="surat-jalan-doc__info-label" style={{ display: "block", marginBottom: 2 }}>KEPADA YTH</span>
+                <div style={{ fontSize: sc.bodyFont, fontWeight: 600 }}>
+                  {transaction.counterparty || "—"}
                 </div>
                 {clientAddress && (
-                  <div style={{ fontSize: sc.bodyFont, marginLeft: 98, marginTop: 2 }}>
+                  <div style={{ fontSize: sc.bodyFont, marginTop: 2 }}>
                     {clientAddress}
                   </div>
                 )}

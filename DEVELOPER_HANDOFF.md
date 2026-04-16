@@ -445,7 +445,15 @@ No(3) + `" | "` + Barang(50) + `" | "` + Jumlah(8) + `" | "` + Satuan(10)
 
 **Invoice layout sections:** `formatInvoiceHeader(settings)` → `formatInvoiceMeta(transactions)` → `formatItemsTable(transactions)` → `formatInvoiceFooter(transactions, settings)`
 
-**Surat Jalan layout sections:** `formatSuratJalanHeader(settings)` → `formatSuratJalanMeta(transaction)` → `formatSuratJalanItems(transaction)` → `formatSuratJalanFooter()`
+**Surat Jalan layout sections:** `formatSuratJalanHeader()` (no args — no company name) → `formatSuratJalanMeta(transaction, platNomor, contacts)` → `formatSuratJalanItems(transaction)` → `formatSuratJalanFooter(catatanPengiriman)`
+
+**Dot matrix Surat Jalan format (current):**
+- Header: only `"SURAT JALAN"` centered — no company name
+- Meta row 1: `KEPADA YTH :` (left 40 chars) + `TANGGAL : [date]` (right 40 chars). Row 2: client name full-width. Row 3: client address left-half (wrapped to 40) + `PLAT MOBIL : [plate]` right-half (always shown). Continuation address lines full-width below if needed.
+- Items table: 3 columns — NO.(3) + ` | ` + JENIS BARANG(50) + ` | ` + JUMLAH BARANG(21) = 80. Header ALL CAPS. JUMLAH BARANG value = `"[qty] [unit]"` (e.g. `"500 karung"`) — no separate Satuan column.
+- Catatan line: only if `catatanPengiriman` non-empty
+- Footer: `TANDA TERIMA,` (left) / `HORMAT KAMI,` (right) with `(                          )` sig lines
+- `formatSuratJalan` signature: `(transaction, _settings, options, contacts)` — `_settings` unused, kept for API compatibility with callers
 
 Uses `fmtDate()` from idGenerators for consistent date formatting. Flattens all transactions' items into one invoice (matching InvoiceModal's flatMap behavior).
 
@@ -664,7 +672,9 @@ Prints via `printWithPortal()`. Bank accounts filtered by `showOnInvoice` + limi
 
 ### SuratJalanModal.js
 **Props:** `transaction, contacts, onClose`
-Uses `t.stockUnit` (transaction-level). Inline styles throughout for print portal compatibility. Used only when `printerType === "A4"`. Client address looked up from `contacts[]` by case-insensitive name match and displayed below client name, indented with `marginLeft: 98` (90px label min-width + 8px flex gap) to align with the value column.
+Uses `t.stockUnit` (transaction-level). Inline styles throughout for print portal compatibility. Used only when `printerType === "A4"`. Client address looked up from `contacts[]` by case-insensitive name match.
+
+**KEPADA YTH layout (current):** Stacked — label on its own line (`display: block`), client name on the next line (bold), address on the line below that. Previously label and name were side-by-side in a flex row.
 
 ### TransactionDetailModal.js
 **Props:** `transaction, onClose`
@@ -681,7 +691,7 @@ Displays: type/status badges, txnId, date/time, counterparty, items table (sackQ
 - `mode`: `"invoice"` | `"suratJalan"`
 - `transaction`: array when mode is `"invoice"` (matches `invoiceTxs`), single object when mode is `"suratJalan"`
 
-**Local state:** `invoiceNote`, `platNomor`, `catatanPengiriman` — input fields rendered above the preview, conditional on `mode`.
+**Local state:** `invoiceNote`, `platNomor`, `catatanPengiriman` — input fields rendered above the preview, conditional on `mode`. The `platNomor` input and `catatanPengiriman` textarea have no placeholder text (labels describe each field).
 
 Computes formatted ASCII text via `useMemo` (deps: `transaction, mode, settings, invoiceNote, platNomor, catatanPengiriman`) using `formatInvoice(transaction, settings, { note: invoiceNote })` or `formatSuratJalan(transaction, settings, { platNomor, catatanPengiriman })`. Preview updates live as user types in input fields.
 
