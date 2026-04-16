@@ -657,6 +657,8 @@ Rendered in a `<tr colSpan={...}>` below a transaction row. Vertical timeline.
 
 System notes ("Pelunasan", etc.) shown as display labels only. User notes shown as "Catatan: [text]". Data lama entries show ⚠ icon. 10+ entries: shows first 3 + expand toggle + last 1. Pending node (dashed amber dot) when `outstanding > 0`.
 
+**Edit entries:** Detected when `entry.note === "Transaksi diedit — nilai diperbarui"` (old) OR `entry.note === "Transaksi Diedit"` (new). New entries (written by `editTransaction` after 2026-04-17) include `valueBefore`, `valueAfter`, `paidBefore`, `paidAfter`, `statusBefore`, `statusAfter` fields — displayed as four labeled lines: "Total Nilai: X → Y", "Sudah Dibayar: A → B", "Sisa Tagihan: C → D", "Status: Old → New". `paidBefore`/`paidAfter` are `Math.max(0, value - outstanding)`. Entries from the previous session (with `valueAfter` but without `paidBefore`) use `?? 0` fallback so "Sudah Dibayar" shows Rp 0 safely. Oldest entries (missing `valueAfter`) fall back to single-line "Sebelum: X → Setelah: Y". Both note strings are in `SYSTEM_NOTES` so they are never shown as user notes. `paymentCount` filter excludes both strings.
+
 ### PaymentUpdateModal.js
 **Props:** `transaction, onConfirm(amount, note), onCancel`
 Pre-fills with full outstanding. Shows live preview. Note resets when transaction changes. Auto-focus via setTimeout(50ms) + `querySelector("input")` on ref-div (RupiahInput doesn't forward refs). Always-mounted — guards Escape key with `if (!transaction) return`.
@@ -898,6 +900,7 @@ Key patterns to never reintroduce:
 - Ledger loop breaking on first item match: must accumulate ALL matching item rows in multi-item transactions
 - CSV export without BOM: always prepend `\uFEFF` for Excel compatibility with Indonesian characters
 - Invoice date from `today()`: always use `transactions[0]?.date` for invoice date
+- `applyPayment` / `editTransaction` not incrementing `version`: `saveTransaction()` writes `(tx.version || 0) + 1` to Supabase. Every handler that calls `sbSaveTransaction` must also increment `version` in local state (inside `update()`) to keep local and Supabase versions in sync. Without this, the next `editTransaction` call will see a stale local version and fire a false-positive conflict modal. **FIXED** in both `applyPayment` (`version: (t.version || 0) + 1` using `t` = current tx) and `editTransaction` (`version: (x.version || 0) + 1` using `x` = pre-edit tx). Always use the pre-mutation transaction's version as the base. Pattern must be followed by any future handler that upserts a transaction.
 - `logActivity` with `nt.txnId` for income: `txnId` is generated inside `update()` state fn — always use `newTx?.txnId` (for create) or `updated?.txnId || nt.txnId` (for edit) so the generated ID is captured correctly
 - ActivityLog entity_id for transactions: use `isTxnId()` pattern check before displaying — old entries have internal IDs, new entries have `YY-MM-NNNNN` format
 - Cloudflare DDoS/rate limiting: deferred until custom domain is purchased. See Section 14 for setup steps.

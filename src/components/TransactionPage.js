@@ -555,7 +555,6 @@ const TransactionPage = ({
                           if (!prog) return null;
                           const { percent: pct } = prog;
                           if (pct >= 100) return <div style={{ fontSize: 10, color: "#10b981", marginTop: 2 }}>✓ 100% terbayar</div>;
-                          if (pct <= 0) return <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 2 }}>0% terbayar</div>;
                           return (
                             <div className="payment-progress-wrap">
                               <div className="payment-progress-bar">

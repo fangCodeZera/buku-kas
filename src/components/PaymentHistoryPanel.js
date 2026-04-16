@@ -13,6 +13,7 @@ const SYSTEM_NOTES = [
   "Pelunasan",
   "Pembayaran sebagian",
   "Transaksi diedit — nilai diperbarui",
+  "Transaksi Diedit",
 ];
 
 function getEntryLabel(entry) {
@@ -28,7 +29,7 @@ function getEntryLabel(entry) {
   if (note === "Belum ada pembayaran saat transaksi dibuat") return "Belum Ada Pembayaran";
   if (note === "Pelunasan") return "Pelunasan";
   if (note === "Pembayaran sebagian") return "Pembayaran Sebagian";
-  if (note === "Transaksi diedit — nilai diperbarui") return "Transaksi Diedit";
+  if (note === "Transaksi diedit — nilai diperbarui" || note === "Transaksi Diedit") return "Transaksi Diedit";
   // User note — infer label from entry data
   if (entry.outstandingAfter === 0) return "Pelunasan";
   if ((entry.amount || 0) > 0) return "Pembayaran Sebagian";
@@ -56,7 +57,7 @@ const PaymentHistoryPanel = ({ transaction: t, onClose }) => {
   const hasPending   = out > 0;
 
   const paymentCount = history.filter(
-    (e) => (e.amount || 0) > 0 && e.note !== "Transaksi diedit — nilai diperbarui"
+    (e) => (e.amount || 0) > 0 && e.note !== "Transaksi diedit — nilai diperbarui" && e.note !== "Transaksi Diedit"
   ).length;
 
   const historyHeader = t.txnId
@@ -77,7 +78,7 @@ const PaymentHistoryPanel = ({ transaction: t, onClose }) => {
   const renderNode = (entry, originalIdx, hasLineAfter) => {
     const isDataLama = (entry.note || "").includes("data lama");
     const isLunas    = entry.outstandingAfter === 0;
-    const isEdit     = entry.note === "Transaksi diedit — nilai diperbarui";
+    const isEdit     = entry.note === "Transaksi diedit — nilai diperbarui" || entry.note === "Transaksi Diedit";
     const isEmpty    = (entry.amount || 0) === 0 && !isEdit;
     const userNote   = getUserNote(entry);
     const label      = getEntryLabel(entry);
@@ -128,7 +129,15 @@ const PaymentHistoryPanel = ({ transaction: t, onClose }) => {
           </div>
         )}
 
-        {isEdit && (
+        {isEdit && entry.valueAfter != null && (
+          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1, lineHeight: 1.6 }}>
+            <div>Total Nilai: {fmtIDR(entry.valueBefore)} → {fmtIDR(entry.valueAfter)}</div>
+            <div>Sudah Dibayar: {fmtIDR(entry.paidBefore ?? 0)} → {fmtIDR(entry.paidAfter ?? 0)}</div>
+            <div>Sisa Tagihan: {fmtIDR(entry.outstandingBefore)} → {fmtIDR(entry.outstandingAfter)}</div>
+            <div>Status: {entry.statusBefore} → {entry.statusAfter}</div>
+          </div>
+        )}
+        {isEdit && entry.valueAfter == null && (
           <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>
             Sebelum: {fmtIDR(entry.outstandingBefore)} → Setelah: {fmtIDR(entry.outstandingAfter)}
           </div>

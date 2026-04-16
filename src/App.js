@@ -784,13 +784,20 @@ export default function App() {
           amount:            0,
           outstandingBefore: Number(x.outstanding) || 0,
           outstandingAfter:  Number(nt.outstanding) || 0,
-          note:              "Transaksi diedit — nilai diperbarui",
+          valueBefore:       Number(x.value)        || 0,
+          valueAfter:        Number(nt.value)        || 0,
+          paidBefore:        Math.max(0, (Number(x.value) || 0) - (Number(x.outstanding) || 0)),
+          paidAfter:         Math.max(0, (Number(nt.value) || 0) - (Number(nt.outstanding) || 0)),
+          statusBefore:      x.status               || "",
+          statusAfter:       nt.status              || "",
+          note:              "Transaksi Diedit",
           method:            null,
         } : null;
         return {
           ...nt,
           txnId,
           dueDate,
+          version:        (x.version || 0) + 1,
           createdAt:      x.createdAt || nt.createdAt || new Date().toISOString(),
           paymentHistory: editPaymentEntry
             ? [...(x.paymentHistory || []), editPaymentEntry]
@@ -864,6 +871,10 @@ export default function App() {
           status:         deriveStatus(t.type, !isFullyPaid),
           dueDate:        isFullyPaid ? null : (t.dueDate ?? null),
           paymentHistory: [...(t.paymentHistory || []), newPaymentEntry],
+          // Mirror the version increment that saveTransaction() writes to Supabase:
+          // (tx.version || 0) + 1. Without this, checkVersion() on the next edit
+          // sees a stale local version and fires a false-positive conflict modal.
+          version:        (t.version || 0) + 1,
           editLog:        [...(t.editLog || []), { at: new Date().toISOString(), prev: {
             date:         t.date,
             time:         t.time,

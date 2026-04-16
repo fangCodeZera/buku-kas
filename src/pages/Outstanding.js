@@ -170,7 +170,7 @@ function OutstandingTable({ txs, emptyMsg, onEdit, onMarkPaid, onDelete, onInvoi
                     const prog = computePaymentProgress(t.value, t.outstanding);
                     if (!prog) return null;
                     const { percent: pct } = prog;
-                    if (pct <= 0 || pct >= 100) return null;
+                    if (pct >= 100) return null;
                     return (
                       <div className="payment-progress-wrap" style={{ justifyContent: "flex-end" }}>
                         <div className="payment-progress-bar">
