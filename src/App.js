@@ -722,8 +722,26 @@ export default function App() {
     }
   };
 
-  const editTransaction = (t) => {
+  const editTransaction = async (t) => {
     const nt = normTx(t);
+
+    // Fix: In Supabase mode, pre-compute the new txnId atomically via RPC when the
+    // YY-MM prefix will change. Mirrors the same pattern used in addTransaction.
+    // Falls back to local generateTxnId() if the RPC fails or in localStorage mode.
+    let precomputedTxnId = null;
+    if (USE_SUPABASE && nt.type === "income") {
+      const existing = dataRef.current.transactions.find((x) => x.id === nt.id);
+      const oldPrefix = (existing?.date || "").slice(2, 7);
+      const newPrefix = (nt.date || "").slice(2, 7);
+      if (oldPrefix && newPrefix && oldPrefix !== newPrefix) {
+        try {
+          precomputedTxnId = await getNextTxnSerial(nt.date);
+        } catch (err) {
+          console.error("getNextTxnSerial failed on edit, falling back to local generateTxnId:", err);
+        }
+      }
+    }
+
     update((d) => ({
       ...d,
       transactions: d.transactions.map((x) => {
@@ -750,7 +768,7 @@ export default function App() {
           const oldPrefix = (x.date || "").slice(2, 7);
           const newPrefix = (nt.date || "").slice(2, 7);
           txnId = (oldPrefix && newPrefix && oldPrefix !== newPrefix)
-            ? generateTxnId(d.transactions, nt.date)
+            ? (precomputedTxnId || generateTxnId(d.transactions, nt.date))
             : x.txnId;
         } else {
           txnId = nt.txnId || null;
@@ -1085,10 +1103,12 @@ export default function App() {
         catalogItemName = existing.name;
       } else {
         newCatalog = [...catalog, {
-          id:          generateId(),
-          name:        normalizedName,
-          defaultUnit: item.defaultUnit || "karung",
-          subtypes:    item.subtypes    || [],
+          id:              generateId(),
+          name:            normalizedName,
+          defaultUnit:     item.defaultUnit || "karung",
+          subtypes:        item.subtypes    || [],
+          archived:        false,
+          archivedSubtypes: [],
         }];
         catalogItemName = normalizedName;
       }
@@ -1695,7 +1715,12 @@ export default function App() {
                 },
                 (nd) => {
                   const wasAdded = nd.contacts.some((x) => x.id === newC.id);
-                  return wasAdded ? sbSaveContact(newC, user.id) : Promise.resolve();
+                  return wasAdded
+                    ? Promise.all([
+                        sbSaveContact(newC, user.id),
+                        logActivity('create', 'contact', newC.id, { name: newC.name }),
+                      ])
+                    : Promise.resolve();
                 }
               );
             }}

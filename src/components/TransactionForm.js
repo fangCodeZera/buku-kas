@@ -476,6 +476,8 @@ const TransactionForm = ({
       }
       if (it.sackQty === "" || it.sackQty == null || isNaN(it.sackQty) || Number(it.sackQty) < 0)
         ie.sackQty = "Masukkan angka valid";
+      else if (Number(it.sackQty) === 0)
+        ie.sackQty = "Jumlah karung harus lebih dari 0";
       if (Number(it.pricePerKg) > 0 && (!it.weightKg || Number(it.weightKg) <= 0))
         ie.weightKg = "Isi berat untuk menghitung total otomatis";
       if (!it.subtotal || Number(it.subtotal) <= 0)

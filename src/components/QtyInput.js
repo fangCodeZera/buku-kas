@@ -28,9 +28,9 @@ const QtyInput = ({ value, onChange, hasError, placeholder = "0", style, classNa
   const isFocusedRef = useRef(false);
 
   const fmtNum = (n) => {
+    if (n == null) return "";
     const num = Number(n);
-    if (!n && n !== 0) return "";
-    if (isNaN(num) || num === 0) return "";
+    if (isNaN(num)) return "";
     return num.toLocaleString("id-ID");
   };
 

@@ -737,6 +737,7 @@ Decimal-aware quantity input with live id-ID locale formatting on every keystrok
 - **`onBlur`:** Cleans up trailing comma/incomplete decimal by reformatting from `value` prop. Clears `isFocusedRef`.
 - **Prop sync:** Suppressed while focused (`isFocusedRef`) to prevent live display from being overwritten during mid-decimal typing.
 - **`onChange`:** Always receives a JavaScript number (`parseFloat` result, or `0` for empty/invalid).
+- **`fmtNum(n)`:** `null`/`undefined` → `""` (empty placeholder); all other values including `0` → `toLocaleString("id-ID")`. So `fmtNum(0)` → `"0"`, not blank.
 - Does NOT forward refs — use a wrapping div ref for auto-focus (see `adjQtyRef` in Inventory.js).
 
 ### SaveIndicator.js
@@ -886,7 +887,7 @@ Key patterns to never reintroduce:
 - `setData()` outside App.js: never call it directly
 - `.push()` on state arrays: never mutate state in place
 - `generateTxnId` with expense transactions: filter to income only (function handles this internally)
-- `generateTxnId` collision: **FIXED** via atomic DB sequence. `addTransaction` now calls `getNextTxnSerial(date)` (Supabase RPC) before `update()` in Supabase mode. Falls back to local `generateTxnId()` on RPC error. Short-term collision detection toast kept as defense-in-depth — **never remove it**.
+- `generateTxnId` collision: **FIXED** via atomic DB sequence. `addTransaction` and `editTransaction` (when YY-MM prefix changes) are both now `async` and call `getNextTxnSerial(date)` (Supabase RPC) before `update()` in Supabase mode. Fall back to local `generateTxnId()` on RPC error. Short-term collision detection toast kept as defense-in-depth — **never remove it**.
 - `editLog[].prev` as full copy: only store the 11-field slim snapshot
 - `deleteInventoryItem` checking only `t.itemName`: must check all `items[]` entries
 - `setSubmitting(true)` after validation: always set it as the first line of `handleSubmit` to block rapid double-clicks

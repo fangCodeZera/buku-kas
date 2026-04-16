@@ -190,8 +190,10 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     const a = document.createElement("a");
     a.href = url;
     const filename = !dateFrom && !dateTo
-      ? 'Laporan_semua_waktu'
-      : `Laporan_${dateFrom || 'semua'}_sd_${dateTo || 'semua'}`;
+      ? 'Laporan_semua'
+      : dateFrom && !dateTo
+      ? `Laporan_mulai_${dateFrom}`
+      : `Laporan_${dateFrom}_sd_${dateTo}`;
     a.download = `${filename}.csv`;
     a.click();
     URL.revokeObjectURL(url);
