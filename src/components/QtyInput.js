@@ -3,9 +3,11 @@
  * Controlled text input for decimal quantities (karung, kg, etc.).
  *
  * Features:
- *  - Accepts decimal entry (dot or comma as separator)
- *  - Displays id-ID locale formatting on blur (thousands dots, comma decimal)
+ *  - Formats live on every keystroke using id-ID locale (dot thousands, comma decimal)
+ *  - Accepts comma (,) as the decimal separator — id-ID convention
+ *  - Preserves trailing comma so the user can finish typing the decimal part
  *  - Suppresses prop-sync while the user is actively typing (isFocusedRef)
+ *  - Selects all text on focus for easy replacement
  *  - Returns a number via onChange (0 when empty/invalid)
  */
 import React, { useState, useRef } from "react";
@@ -25,43 +27,58 @@ const QtyInput = ({ value, onChange, hasError, placeholder = "0", style, classNa
   const prevValRef   = useRef(value);
   const isFocusedRef = useRef(false);
 
-  const fmt = (n) => {
+  const fmtNum = (n) => {
     const num = Number(n);
     if (!n && n !== 0) return "";
     if (isNaN(num) || num === 0) return "";
     return num.toLocaleString("id-ID");
   };
 
-  const [display, setDisplay] = useState(() => fmt(value));
+  const [display, setDisplay] = useState(() => fmtNum(value));
 
   // Sync display when value prop changes externally (e.g. edit modal pre-fill)
   if (!isFocusedRef.current && prevValRef.current !== value) {
     prevValRef.current = value;
-    const expected = fmt(value);
+    const expected = fmtNum(value);
     if (expected !== display) setDisplay(expected);
   }
 
-  const handleFocus = () => {
+  const handleFocus = (e) => {
     isFocusedRef.current = true;
-    // While editing, show the plain number without thousand separators
-    const num = Number(value);
-    setDisplay(!isNaN(num) && num !== 0 ? String(num) : "");
+    // Select all so the user can easily replace the current value
+    e.target.select();
   };
 
   const handleChange = (e) => {
-    let raw = e.target.value;
-    // Keep only digits and the first decimal separator (. or ,)
-    raw = raw.replace(/[^\d.,]/g, "");
-    raw = raw.replace(",", ".");                          // normalize comma → dot
-    const match = raw.match(/^(\d*)(\.\d*)?/);
-    const cleaned = match ? (match[1] || "") + (match[2] || "") : "";
-    setDisplay(cleaned);
-    const n = parseFloat(cleaned);
+    const raw = e.target.value;
+
+    // Strip all non-digit, non-comma characters (dots are thousand separators — remove them)
+    const stripped = raw.replace(/[^\d,]/g, "");
+
+    // Split on the first comma (id-ID decimal separator)
+    const commaIdx = stripped.indexOf(",");
+    const hasComma = commaIdx !== -1;
+    const intPart  = hasComma ? stripped.slice(0, commaIdx) : stripped;
+    // Remove any extra commas in the decimal part
+    const decPart  = hasComma ? stripped.slice(commaIdx + 1).replace(/,/g, "") : "";
+
+    // Format integer part with id-ID dot thousand separators
+    const intNum = parseInt(intPart || "0", 10);
+    const fmtInt = intPart.length > 0 ? intNum.toLocaleString("id-ID") : "";
+
+    // Preserve trailing comma so user can continue typing the decimal part
+    const newDisplay = hasComma ? fmtInt + "," + decPart : fmtInt;
+    setDisplay(newDisplay);
+
+    // Parse to number (parseFloat requires dot as decimal — normalize comma → dot)
+    const numStr = intPart + (hasComma && decPart ? "." + decPart : "");
+    const n = parseFloat(numStr);
     onChange(isNaN(n) ? 0 : n);
   };
 
   const handleBlur = () => {
     isFocusedRef.current = false;
+    // Clean up trailing comma or incomplete decimal on blur
     const num = Number(value);
     setDisplay(!isNaN(num) && num > 0 ? num.toLocaleString("id-ID") : "");
     if (onBlurProp) onBlurProp();

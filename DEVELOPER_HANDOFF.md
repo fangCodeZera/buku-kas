@@ -80,7 +80,7 @@ src/
     ErrorBoundary.js                89  React class error boundary — catches unhandled render errors, shows Indonesian fallback UI with "Muat Ulang" reload button
     MultiSelect.js                 151  Zero-dep multi-select dropdown
     RupiahInput.js                 107  Comma-formatted Rupiah currency input
-    QtyInput.js                     78  Decimal quantity input — id-ID locale formatting on blur, accepts . or , as decimal separator
+    QtyInput.js                     87  Decimal quantity input — live id-ID locale formatting on keystroke, dot thousands, comma decimal, trailing comma preserved
     SaveIndicator.js                41  "Tersimpan ✓ · HH:MM" / "Menyimpan..." indicator
     StockChip.js                    25  Coloured stock qty pill
     Toast.js                        50  Auto-dismissing 3-second notification
@@ -672,7 +672,9 @@ Read-only popup shown when the user clicks a transaction row (outside action but
 
 Displays: type/status badges, txnId, date/time, counterparty, items table (sackQty × weightKg × pricePerKg = subtotal), total, outstanding, dueDate, notes, payment history.
 
-**Payment history section:** Shows `computePaymentProgress` summary bar (progress bar + % + Dibayar / Sisa amounts) above the per-entry list. Each entry: amount bold navy `#1e3a5f`, date/time muted `#6b7280`, note `#374151`, "Sisa setelah" `#6b7280`. System notes shown as-is; user notes prefixed "Catatan:". History displayed most-recent-first (`[...history].reverse()`).
+**Section 4 — Unified payment block:** "Total Nilai" row (bold `#1e3a5f` label, income/expense colored value) → thin divider (`1px solid #e5e7eb`) → "Sudah Dibayar" in green `#10b981` (value = `t.value - t.outstanding`, guarded with `|| 0`) → "Sisa Tagihan" in amber `#f59e0b` with value when `outstanding > 0`, or "Lunas ✓" in green with no value when `outstanding === 0` → `computePaymentProgress` bar with %. No standalone Sisa Tagihan anywhere else.
+
+**Section 6 — Payment history entries:** Label "Riwayat Pembayaran (N)". Each entry: green/amber dot, amount bold navy `#1e3a5f` (13px 700), date/time `#6b7280`, note `#374151` (system notes shown as-is; user notes prefixed "Catatan:"), "Sisa setelah" `#6b7280`. History displayed most-recent-first (`[...history].reverse()`). No duplicate summary bar in this section.
 
 ### DotMatrixPrintModal.js (NEW — v18)
 **Props:** `transaction, mode, settings, onClose`
@@ -718,7 +720,14 @@ Displays comma-formatted input, stores integer. Does NOT forward refs — use re
 
 ### QtyInput.js
 **Props:** `value, onChange(numericValue), hasError?, placeholder?, style?, className?, onBlur?`
-Decimal-aware quantity input with id-ID locale formatting on blur. Accepts `.` or `,` as decimal separator during typing (normalizes to `.` for `parseFloat`). Uses `isFocusedRef` to suppress prop-sync while the user is actively typing — prevents mid-decimal-entry resets (e.g. "10." does not get rewritten to "10" before user finishes). Does NOT forward refs — use a wrapping div ref for auto-focus (see `adjQtyRef` in Inventory.js).
+Decimal-aware quantity input with live id-ID locale formatting on every keystroke (dot thousands, comma decimal). Key behaviors:
+- **Live formatting:** `handleChange` strips non-digit/non-comma chars, formats the integer part with `toLocaleString("id-ID")`, appends `,decPart` for decimals. Display updates on every keystroke.
+- **Trailing comma:** Preserved in display when user types `1.500,` — lets user finish typing the decimal without the comma being stripped.
+- **`onFocus`:** Sets `isFocusedRef = true`, selects all text (`e.target.select()`) for easy replacement.
+- **`onBlur`:** Cleans up trailing comma/incomplete decimal by reformatting from `value` prop. Clears `isFocusedRef`.
+- **Prop sync:** Suppressed while focused (`isFocusedRef`) to prevent live display from being overwritten during mid-decimal typing.
+- **`onChange`:** Always receives a JavaScript number (`parseFloat` result, or `0` for empty/invalid).
+- Does NOT forward refs — use a wrapping div ref for auto-focus (see `adjQtyRef` in Inventory.js).
 
 ### SaveIndicator.js
 **Props:** `saved: boolean`

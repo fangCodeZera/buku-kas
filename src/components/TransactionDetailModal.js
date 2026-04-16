@@ -143,19 +143,43 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
             </div>
           </div>
 
-          {/* ── Section 4: Totals ── */}
+          {/* ── Section 4: Unified totals + payment summary ── */}
           <div style={{ marginTop: 8, marginBottom: 16 }}>
+            {/* Total Nilai */}
             <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 8px", fontSize: 13, borderTop: "2px solid #1e3a5f" }}>
               <span style={{ fontWeight: 700, color: "#1e3a5f" }}>Total Nilai</span>
               <span style={{ fontWeight: 800, color: t.type === "income" ? "#10b981" : "#ef4444" }}>{fmtIDR(t.value || 0)}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 8px", fontSize: 12 }}>
-              <span style={{ color: "#6b7280" }}>
-                {(t.outstanding || 0) > 0 ? "Sisa Tagihan" : "✅ Lunas"}
-              </span>
-              <span style={{ fontWeight: 700, color: (t.outstanding || 0) > 0 ? "#f59e0b" : "#10b981" }}>
-                {(t.outstanding || 0) > 0 ? fmtIDR(t.outstanding) : fmtIDR(t.value || 0)}
-              </span>
+
+            {/* Payment breakdown — divider + Sudah Dibayar + Sisa Tagihan + progress bar */}
+            <div style={{ borderTop: "1px solid #e5e7eb", padding: "8px 8px 6px" }}>
+              {/* Sudah Dibayar */}
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                <span style={{ color: "#10b981", fontWeight: 600 }}>Sudah Dibayar</span>
+                <span style={{ color: "#10b981", fontWeight: 700 }}>{fmtIDR((t.value || 0) - (t.outstanding || 0))}</span>
+              </div>
+              {/* Sisa Tagihan */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, marginBottom: 8 }}>
+                <span style={{ color: (t.outstanding || 0) > 0 ? "#f59e0b" : "#10b981", fontWeight: 600 }}>
+                  {(t.outstanding || 0) > 0 ? "Sisa Tagihan" : "Lunas ✓"}
+                </span>
+                {(t.outstanding || 0) > 0 && (
+                  <span style={{ color: "#f59e0b", fontWeight: 700 }}>{fmtIDR(t.outstanding)}</span>
+                )}
+              </div>
+              {/* Progress bar */}
+              {(() => {
+                const prog = computePaymentProgress(t.value, t.outstanding);
+                if (!prog) return null;
+                return (
+                  <div className="payment-progress-wrap">
+                    <div className="payment-progress-bar">
+                      <div className="payment-progress-bar__fill" style={{ width: `${prog.percent}%` }} />
+                    </div>
+                    <span className="payment-progress-pct">{prog.percent}%</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -176,29 +200,6 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
               <div style={{ borderTop: "1px solid #f1f5f9", marginBottom: 12 }} />
               <div>
                 <div style={{ ...labelStyle, marginBottom: 8 }}>Riwayat Pembayaran ({history.length})</div>
-
-                {/* Payment summary bar */}
-                {(() => {
-                  const prog = computePaymentProgress(t.value, t.outstanding);
-                  if (!prog) return null;
-                  const paid = (t.value || 0) - (t.outstanding || 0);
-                  return (
-                    <div style={{ marginBottom: 12 }}>
-                      <div className="payment-progress-wrap" style={{ marginBottom: 6 }}>
-                        <div className="payment-progress-bar">
-                          <div className="payment-progress-bar__fill" style={{ width: `${prog.percent}%` }} />
-                        </div>
-                        <span className="payment-progress-pct">{prog.percent}%</span>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                        <span style={{ color: "#10b981", fontWeight: 600 }}>Dibayar: {fmtIDR(paid)}</span>
-                        <span style={{ color: (t.outstanding || 0) > 0 ? "#f59e0b" : "#10b981", fontWeight: 600 }}>
-                          Sisa: {fmtIDR(t.outstanding || 0)}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()}
 
                 {history.map((ph, i) => {
                   const isSystem = SYSTEM_NOTES.has(ph.note);
