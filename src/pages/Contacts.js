@@ -430,6 +430,7 @@ const Contacts = ({
                 <colgroup>
                   <col style={{ width: 90 }} />
                   <col style={{ width: 110 }} />
+                  <col style={{ width: 95 }} />
                   <col style={{ width: 130 }} />
                   <col style={{ width: 80 }} />
                   <col style={{ width: 90 }} />
@@ -441,6 +442,7 @@ const Contacts = ({
                   <tr>
                     <th>Tanggal</th>
                     <th>No. Invoice</th>
+                    <th className="th-center">Jenis</th>
                     <th>Item</th>
                     <th className="th-center">Stok</th>
                     <th className="th-center">Status</th>
@@ -456,6 +458,17 @@ const Contacts = ({
                       <td className="text-muted td-date">{fmtDate(t.date)}</td>
                       <td style={{ fontSize: 11, fontWeight: 600, color: t.type === "income" ? "#6366f1" : "#374151", fontFamily: "monospace", whiteSpace: "nowrap" }}>
                         {t.txnId || <span style={{ color: "#d1d5db" }}>—</span>}
+                      </td>
+                      <td className="th-center">
+                        {t.type === "income" ? (
+                          <span style={{ background: "#d1fae5", color: "#065f46", borderRadius: 6, padding: "2px 7px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
+                            🛒 Penjualan
+                          </span>
+                        ) : (
+                          <span style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 6, padding: "2px 7px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
+                            📦 Pembelian
+                          </span>
+                        )}
                       </td>
                       <td className="td-name" style={Array.isArray(t.items) && t.items.length > 1 ? { verticalAlign: "top" } : {}}>
                         {Array.isArray(t.items) && t.items.length > 1 ? (

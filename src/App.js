@@ -774,24 +774,72 @@ export default function App() {
           txnId = nt.txnId || null;
         }
 
-        const valueChanged = Number(x.value) !== Number(nt.value) ||
+        // Compute change flags
+        const counterpartyChanged = x.counterparty !== nt.counterparty;
+        const dateChanged         = x.date !== nt.date;
+        const financialChanged    = Number(x.value) !== Number(nt.value) ||
           Number(x.outstanding) !== Number(nt.outstanding);
-        const editPaymentEntry = valueChanged ? {
-          id:                generateId(),
-          paidAt:            new Date().toISOString(),
-          date:              today(),
-          time:              nowTime(),
-          amount:            0,
-          outstandingBefore: Number(x.outstanding) || 0,
-          outstandingAfter:  Number(nt.outstanding) || 0,
-          valueBefore:       Number(x.value)        || 0,
-          valueAfter:        Number(nt.value)        || 0,
-          paidBefore:        Math.max(0, (Number(x.value) || 0) - (Number(x.outstanding) || 0)),
-          paidAfter:         Math.max(0, (Number(nt.value) || 0) - (Number(nt.outstanding) || 0)),
-          statusBefore:      x.status               || "",
-          statusAfter:       nt.status              || "",
-          note:              "Transaksi Diedit",
-          method:            null,
+        const statusChanged       = x.status !== nt.status;
+        const dueDateChanged      = x.dueDate !== nt.dueDate;
+        const notesChanged        = (x.notes || "") !== (nt.notes || "");
+
+        // Items diff — with legacy fallback for single-item transactions
+        const _xItems  = Array.isArray(x.items)  && x.items.length  > 0 ? x.items
+          : [{ itemName: x.itemName  || "", sackQty: x.sackQty  ?? (x.stockQty  || 0), weightKg: x.weightKg  || 0, pricePerKg: x.pricePerKg  || 0 }];
+        const _ntItems = Array.isArray(nt.items) && nt.items.length > 0 ? nt.items
+          : [{ itemName: nt.itemName || "", sackQty: nt.sackQty ?? (nt.stockQty || 0), weightKg: nt.weightKg || 0, pricePerKg: nt.pricePerKg || 0 }];
+        const _xMap  = Object.fromEntries(_xItems.map((it)  => [(it.itemName || "").toLowerCase(), it]));
+        const _ntMap = Object.fromEntries(_ntItems.map((it) => [(it.itemName || "").toLowerCase(), it]));
+        const addedItems   = _ntItems
+          .filter((it) => !_xMap[(it.itemName || "").toLowerCase()])
+          .map((it) => ({ itemName: it.itemName, sackQty: it.sackQty, weightKg: it.weightKg, pricePerKg: it.pricePerKg }));
+        const removedItems = _xItems
+          .filter((it) => !_ntMap[(it.itemName || "").toLowerCase()])
+          .map((it) => ({ itemName: it.itemName, sackQty: it.sackQty, weightKg: it.weightKg, pricePerKg: it.pricePerKg }));
+        const changedItems = _ntItems
+          .filter((it) => {
+            const key = (it.itemName || "").toLowerCase();
+            const old = _xMap[key];
+            if (!old) return false;
+            return Number(it.sackQty)    !== Number(old.sackQty)    ||
+                   Number(it.weightKg)   !== Number(old.weightKg)   ||
+                   Number(it.pricePerKg) !== Number(old.pricePerKg);
+          })
+          .map((it) => {
+            const old = _xMap[(it.itemName || "").toLowerCase()];
+            const before = {};
+            const after  = {};
+            if (Number(it.sackQty)    !== Number(old.sackQty))    { before.sackQty    = Number(old.sackQty);    after.sackQty    = Number(it.sackQty); }
+            if (Number(it.weightKg)   !== Number(old.weightKg))   { before.weightKg   = Number(old.weightKg);   after.weightKg   = Number(it.weightKg); }
+            if (Number(it.pricePerKg) !== Number(old.pricePerKg)) { before.pricePerKg = Number(old.pricePerKg); after.pricePerKg = Number(it.pricePerKg); }
+            return { itemName: it.itemName, before, after };
+          });
+        const itemsChanged = addedItems.length > 0 || removedItems.length > 0 || changedItems.length > 0;
+
+        const anyChanged = counterpartyChanged || dateChanged || financialChanged ||
+          statusChanged || dueDateChanged || notesChanged || itemsChanged;
+        const editPaymentEntry = anyChanged ? {
+          id:     generateId(),
+          paidAt: new Date().toISOString(),
+          date:   today(),
+          time:   nowTime(),
+          amount: 0,
+          note:   "Detail Perubahan",
+          method: null,
+          ...(counterpartyChanged && { counterpartyBefore: x.counterparty,    counterpartyAfter: nt.counterparty }),
+          ...(dateChanged         && { dateBefore: x.date,                    dateAfter: nt.date }),
+          ...(financialChanged    && {
+            valueBefore:       Number(x.value)       || 0,
+            valueAfter:        Number(nt.value)       || 0,
+            paidBefore:        Math.max(0, (Number(x.value) || 0) - (Number(x.outstanding) || 0)),
+            paidAfter:         Math.max(0, (Number(nt.value) || 0) - (Number(nt.outstanding) || 0)),
+            outstandingBefore: Number(x.outstanding) || 0,
+            outstandingAfter:  Number(nt.outstanding) || 0,
+          }),
+          ...(statusChanged  && { statusBefore:  x.status  || "",   statusAfter:  nt.status  || "" }),
+          ...(dueDateChanged && { dueDateBefore: x.dueDate || null, dueDateAfter: nt.dueDate || null }),
+          ...(notesChanged   && { notesBefore:   x.notes   || "",   notesAfter:   nt.notes   || "" }),
+          ...(itemsChanged   && { itemsAdded: addedItems, itemsRemoved: removedItems, itemsChanged: changedItems }),
         } : null;
         return {
           ...nt,

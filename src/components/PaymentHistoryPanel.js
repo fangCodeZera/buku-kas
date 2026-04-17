@@ -13,7 +13,7 @@ const SYSTEM_NOTES = [
   "Pelunasan",
   "Pembayaran sebagian",
   "Transaksi diedit — nilai diperbarui",
-  "Transaksi Diedit",
+  "Detail Perubahan",
 ];
 
 function getEntryLabel(entry) {
@@ -29,7 +29,7 @@ function getEntryLabel(entry) {
   if (note === "Belum ada pembayaran saat transaksi dibuat") return "Belum Ada Pembayaran";
   if (note === "Pelunasan") return "Pelunasan";
   if (note === "Pembayaran sebagian") return "Pembayaran Sebagian";
-  if (note === "Transaksi diedit — nilai diperbarui" || note === "Transaksi Diedit") return "Transaksi Diedit";
+  if (note === "Transaksi diedit — nilai diperbarui" || note === "Detail Perubahan") return "Detail Perubahan";
   // User note — infer label from entry data
   if (entry.outstandingAfter === 0) return "Pelunasan";
   if ((entry.amount || 0) > 0) return "Pembayaran Sebagian";
@@ -57,7 +57,7 @@ const PaymentHistoryPanel = ({ transaction: t, onClose }) => {
   const hasPending   = out > 0;
 
   const paymentCount = history.filter(
-    (e) => (e.amount || 0) > 0 && e.note !== "Transaksi diedit — nilai diperbarui" && e.note !== "Transaksi Diedit"
+    (e) => (e.amount || 0) > 0 && e.note !== "Transaksi diedit — nilai diperbarui" && e.note !== "Detail Perubahan"
   ).length;
 
   const historyHeader = t.txnId
@@ -78,7 +78,7 @@ const PaymentHistoryPanel = ({ transaction: t, onClose }) => {
   const renderNode = (entry, originalIdx, hasLineAfter) => {
     const isDataLama = (entry.note || "").includes("data lama");
     const isLunas    = entry.outstandingAfter === 0;
-    const isEdit     = entry.note === "Transaksi diedit — nilai diperbarui" || entry.note === "Transaksi Diedit";
+    const isEdit     = entry.note === "Transaksi diedit — nilai diperbarui" || entry.note === "Detail Perubahan";
     const isEmpty    = (entry.amount || 0) === 0 && !isEdit;
     const userNote   = getUserNote(entry);
     const label      = getEntryLabel(entry);
@@ -129,19 +129,54 @@ const PaymentHistoryPanel = ({ transaction: t, onClose }) => {
           </div>
         )}
 
-        {isEdit && entry.valueAfter != null && (
-          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1, lineHeight: 1.6 }}>
-            <div>Total Nilai: {fmtIDR(entry.valueBefore)} → {fmtIDR(entry.valueAfter)}</div>
-            <div>Sudah Dibayar: {fmtIDR(entry.paidBefore ?? 0)} → {fmtIDR(entry.paidAfter ?? 0)}</div>
-            <div>Sisa Tagihan: {fmtIDR(entry.outstandingBefore)} → {fmtIDR(entry.outstandingAfter)}</div>
-            <div>Status: {entry.statusBefore} → {entry.statusAfter}</div>
-          </div>
-        )}
-        {isEdit && entry.valueAfter == null && (
-          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>
-            Sebelum: {fmtIDR(entry.outstandingBefore)} → Setelah: {fmtIDR(entry.outstandingAfter)}
-          </div>
-        )}
+        {isEdit && (() => {
+          const isNew = entry.counterpartyBefore !== undefined ||
+            entry.dateBefore !== undefined || entry.itemsAdded !== undefined ||
+            entry.notesBefore !== undefined || entry.dueDateBefore !== undefined;
+          const s = { fontSize: 11, color: "#6b7280", marginTop: 1, lineHeight: 1.6 };
+          if (isNew) return (
+            <div style={s}>
+              {entry.counterpartyBefore !== undefined && <div>Klien: {entry.counterpartyBefore} → {entry.counterpartyAfter}</div>}
+              {entry.dateBefore !== undefined && <div>Tanggal: {fmtDate(entry.dateBefore)} → {fmtDate(entry.dateAfter)}</div>}
+              {entry.valueBefore != null && <>
+                <div>Total Nilai: {fmtIDR(entry.valueBefore)} → {fmtIDR(entry.valueAfter)}</div>
+                <div>Sudah Dibayar: {fmtIDR(entry.paidBefore ?? 0)} → {fmtIDR(entry.paidAfter ?? 0)}</div>
+                <div>Sisa Tagihan: {fmtIDR(entry.outstandingBefore)} → {fmtIDR(entry.outstandingAfter)}</div>
+              </>}
+              {entry.statusBefore !== undefined && <div>Status: {entry.statusBefore} → {entry.statusAfter}</div>}
+              {entry.dueDateBefore !== undefined && <div>Jatuh Tempo: {fmtDate(entry.dueDateBefore)} → {fmtDate(entry.dueDateAfter)}</div>}
+              {entry.notesBefore !== undefined && <div>Catatan: {entry.notesBefore || "(kosong)"} → {entry.notesAfter || "(kosong)"}</div>}
+              {entry.itemsAdded?.length > 0 && entry.itemsAdded.map((it, idx) => (
+                <div key={idx}>Barang Ditambah: {it.itemName} ({it.sackQty} krg, {it.weightKg} kg, {fmtIDR(it.pricePerKg)}/kg)</div>
+              ))}
+              {entry.itemsRemoved?.length > 0 && entry.itemsRemoved.map((it, idx) => (
+                <div key={idx}>Barang Dihapus: {it.itemName}</div>
+              ))}
+              {entry.itemsChanged?.length > 0 && entry.itemsChanged.map((it, idx) => (
+                <div key={idx}>
+                  <div>Barang Diubah: {it.itemName}</div>
+                  {it.before.sackQty !== undefined && <div style={{ paddingLeft: 8 }}>Krg: {it.before.sackQty} → {it.after.sackQty}</div>}
+                  {it.before.weightKg !== undefined && <div style={{ paddingLeft: 8 }}>Berat: {it.before.weightKg} kg → {it.after.weightKg} kg</div>}
+                  {it.before.pricePerKg !== undefined && <div style={{ paddingLeft: 8 }}>Harga: {fmtIDR(it.before.pricePerKg)} → {fmtIDR(it.after.pricePerKg)}</div>}
+                </div>
+              ))}
+            </div>
+          );
+          if (entry.valueAfter != null) return (
+            <div style={s}>
+              <div>Total Nilai: {fmtIDR(entry.valueBefore)} → {fmtIDR(entry.valueAfter)}</div>
+              <div>Sudah Dibayar: {fmtIDR(entry.paidBefore ?? 0)} → {fmtIDR(entry.paidAfter ?? 0)}</div>
+              <div>Sisa Tagihan: {fmtIDR(entry.outstandingBefore)} → {fmtIDR(entry.outstandingAfter)}</div>
+              <div>Status: {entry.statusBefore} → {entry.statusAfter}</div>
+            </div>
+          );
+          if (entry.outstandingAfter != null) return (
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 1 }}>
+              Sebelum: {fmtIDR(entry.outstandingBefore)} → Setelah: {fmtIDR(entry.outstandingAfter)}
+            </div>
+          );
+          return null;
+        })()}
 
         {isLunas && !isDataLama && (
           <div style={{ fontSize: 11, color: "#10b981", fontWeight: 700, marginTop: 2 }}>✅ LUNAS</div>

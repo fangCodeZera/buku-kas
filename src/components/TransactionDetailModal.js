@@ -202,7 +202,7 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
                 <div style={{ ...labelStyle, marginBottom: 8 }}>Riwayat Pembayaran ({history.length})</div>
 
                 {history.map((ph, i) => {
-                  const isEdit = ph.note === "Transaksi Diedit" || ph.note === "Transaksi diedit — nilai diperbarui";
+                  const isEdit = ph.note === "Detail Perubahan" || ph.note === "Transaksi diedit — nilai diperbarui";
                   const isSystem = SYSTEM_NOTES.has(ph.note);
                   const isPending = !ph.amount && i === history.length - 1 && (t.outstanding || 0) > 0;
                   return (
@@ -211,24 +211,59 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
                       <div style={{ flex: 1, fontSize: 12, color: "#374151" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
                           {isEdit
-                            ? <span style={{ fontWeight: 700, fontSize: 13, color: "#1e3a5f" }}>Transaksi Diedit</span>
+                            ? <span style={{ fontWeight: 700, fontSize: 13, color: "#1e3a5f" }}>Detail Perubahan</span>
                             : <span style={{ fontWeight: 700, fontSize: 13, color: "#1e3a5f" }}>{fmtIDR(ph.amount || 0)}</span>
                           }
                           <span style={{ color: "#6b7280", fontSize: 11, flexShrink: 0 }}>{fmtDate(ph.date)} {ph.time}</span>
                         </div>
-                        {isEdit && ph.valueAfter != null && (
-                          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2, lineHeight: 1.6 }}>
-                            <div>Total Nilai: {fmtIDR(ph.valueBefore)} → {fmtIDR(ph.valueAfter)}</div>
-                            <div>Sudah Dibayar: {fmtIDR(ph.paidBefore ?? 0)} → {fmtIDR(ph.paidAfter ?? 0)}</div>
-                            <div>Sisa Tagihan: {fmtIDR(ph.outstandingBefore)} → {fmtIDR(ph.outstandingAfter)}</div>
-                            <div>Status: {ph.statusBefore} → {ph.statusAfter}</div>
-                          </div>
-                        )}
-                        {isEdit && ph.valueAfter == null && ph.outstandingAfter != null && (
-                          <div style={{ color: "#6b7280", fontSize: 11, marginTop: 1 }}>
-                            Sisa setelah: {fmtIDR(ph.outstandingAfter)}
-                          </div>
-                        )}
+                        {isEdit && (() => {
+                          const isNew = ph.counterpartyBefore !== undefined ||
+                            ph.dateBefore !== undefined || ph.itemsAdded !== undefined ||
+                            ph.notesBefore !== undefined || ph.dueDateBefore !== undefined;
+                          const s = { fontSize: 11, color: "#6b7280", marginTop: 2, lineHeight: 1.6 };
+                          if (isNew) return (
+                            <div style={s}>
+                              {ph.counterpartyBefore !== undefined && <div>Klien: {ph.counterpartyBefore} → {ph.counterpartyAfter}</div>}
+                              {ph.dateBefore !== undefined && <div>Tanggal: {fmtDate(ph.dateBefore)} → {fmtDate(ph.dateAfter)}</div>}
+                              {ph.valueBefore != null && <>
+                                <div>Total Nilai: {fmtIDR(ph.valueBefore)} → {fmtIDR(ph.valueAfter)}</div>
+                                <div>Sudah Dibayar: {fmtIDR(ph.paidBefore ?? 0)} → {fmtIDR(ph.paidAfter ?? 0)}</div>
+                                <div>Sisa Tagihan: {fmtIDR(ph.outstandingBefore)} → {fmtIDR(ph.outstandingAfter)}</div>
+                              </>}
+                              {ph.statusBefore !== undefined && <div>Status: {ph.statusBefore} → {ph.statusAfter}</div>}
+                              {ph.dueDateBefore !== undefined && <div>Jatuh Tempo: {fmtDate(ph.dueDateBefore)} → {fmtDate(ph.dueDateAfter)}</div>}
+                              {ph.notesBefore !== undefined && <div>Catatan: {ph.notesBefore || "(kosong)"} → {ph.notesAfter || "(kosong)"}</div>}
+                              {ph.itemsAdded?.length > 0 && ph.itemsAdded.map((it, idx) => (
+                                <div key={idx}>Barang Ditambah: {it.itemName} ({it.sackQty} krg, {it.weightKg} kg, {fmtIDR(it.pricePerKg)}/kg)</div>
+                              ))}
+                              {ph.itemsRemoved?.length > 0 && ph.itemsRemoved.map((it, idx) => (
+                                <div key={idx}>Barang Dihapus: {it.itemName}</div>
+                              ))}
+                              {ph.itemsChanged?.length > 0 && ph.itemsChanged.map((it, idx) => (
+                                <div key={idx}>
+                                  <div>Barang Diubah: {it.itemName}</div>
+                                  {it.before.sackQty !== undefined && <div style={{ paddingLeft: 8 }}>Krg: {it.before.sackQty} → {it.after.sackQty}</div>}
+                                  {it.before.weightKg !== undefined && <div style={{ paddingLeft: 8 }}>Berat: {it.before.weightKg} kg → {it.after.weightKg} kg</div>}
+                                  {it.before.pricePerKg !== undefined && <div style={{ paddingLeft: 8 }}>Harga: {fmtIDR(it.before.pricePerKg)} → {fmtIDR(it.after.pricePerKg)}</div>}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                          if (ph.valueAfter != null) return (
+                            <div style={s}>
+                              <div>Total Nilai: {fmtIDR(ph.valueBefore)} → {fmtIDR(ph.valueAfter)}</div>
+                              <div>Sudah Dibayar: {fmtIDR(ph.paidBefore ?? 0)} → {fmtIDR(ph.paidAfter ?? 0)}</div>
+                              <div>Sisa Tagihan: {fmtIDR(ph.outstandingBefore)} → {fmtIDR(ph.outstandingAfter)}</div>
+                              <div>Status: {ph.statusBefore} → {ph.statusAfter}</div>
+                            </div>
+                          );
+                          if (ph.outstandingAfter != null) return (
+                            <div style={{ color: "#6b7280", fontSize: 11, marginTop: 1 }}>
+                              Sisa setelah: {fmtIDR(ph.outstandingAfter)}
+                            </div>
+                          );
+                          return null;
+                        })()}
                         {!isEdit && ph.note && (
                           <div style={{ color: "#374151", fontSize: 11, marginTop: 2 }}>
                             {isSystem ? ph.note : `Catatan: ${ph.note}`}
