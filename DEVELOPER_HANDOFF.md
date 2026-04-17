@@ -686,7 +686,9 @@ Displays: type/status badges, txnId, date/time, counterparty, items table (sackQ
 
 **Section 4 — Unified payment block:** "Total Nilai" row (bold `#1e3a5f` label, income/expense colored value) → thin divider (`1px solid #e5e7eb`) → "Sudah Dibayar" in green `#10b981` (value = `t.value - t.outstanding`, guarded with `|| 0`) → "Sisa Tagihan" in amber `#f59e0b` with value when `outstanding > 0`, or "Lunas ✓" in green with no value when `outstanding === 0` → `computePaymentProgress` bar with %. No standalone Sisa Tagihan anywhere else.
 
-**Section 6 — Payment history entries:** Label "Riwayat Pembayaran (N)". Each entry: green/amber dot, amount bold navy `#1e3a5f` (13px 700), date/time `#6b7280`, note `#374151` (system notes shown as-is; user notes prefixed "Catatan:"), "Sisa setelah" `#6b7280`. History displayed most-recent-first (`[...history].reverse()`). No duplicate summary bar in this section.
+**Section 6 — Payment history entries:** Label "Riwayat Pembayaran (N)". History displayed most-recent-first (`[...history].reverse()`). No duplicate summary bar in this section.
+
+Edit entries (`note === "Transaksi Diedit"` or `"Transaksi diedit — nilai diperbarui"`): show label "Transaksi Diedit" (no amount). New-format entries (with `valueAfter`) display four labeled lines: "Total Nilai: X → Y", "Sudah Dibayar: A → B", "Sisa Tagihan: C → D", "Status: Old → New" (using `paidBefore ?? 0` / `paidAfter ?? 0` fallback). Old-format entries (without `valueAfter`) show "Sisa setelah: Rp X". Regular entries: green/amber dot, amount bold navy `#1e3a5f` (13px 700), date/time `#6b7280`, note `#374151` (system notes as-is; user notes prefixed "Catatan:"), "Sisa setelah" `#6b7280`.
 
 ### DotMatrixPrintModal.js (NEW — v18)
 **Props:** `transaction, mode, settings, onClose`
