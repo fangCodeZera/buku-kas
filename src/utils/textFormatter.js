@@ -107,53 +107,48 @@ const getItemsArray = (t) => {
 // ─── Invoice sub-formatters ──────────────────────────────────────────────────
 
 /**
- * Business header block.
- * Skips blank lines — no centered empty businessName.
+ * Invoice header: "I N V O I C E" centered (left 69 chars) + "Page 1 of 1" right (11 chars).
+ * No business name, address, or phone.
  */
-const formatInvoiceHeader = (settings) => {
-  const lines = [];
-  if (settings.businessName?.trim()) lines.push(centerText(settings.businessName.trim()));
-  if (settings.address?.trim())      lines.push(centerText(settings.address.trim()));
-  if (settings.phone?.trim())        lines.push(centerText("Telp: " + settings.phone.trim()));
-  lines.push(SEP_MAJOR);
-  return lines;
+const formatInvoiceHeader = () => {
+  const title   = "I N V O I C E";
+  const pageNum = "Page 1 of 1";
+  return [centerText(title, LINE_WIDTH - pageNum.length) + pageNum];
 };
 
 /**
- * Invoice meta: two-column layout (left 40 chars, right 40 chars).
- * Uses transactions[0] for invoice#, date, client, and dueDate.
- * contacts[] is used to look up the client's address.
+ * Invoice meta: two-column layout (left 40 / right 40).
+ * Lines 1–2: blank left + Invoice No / Date right-aligned.
+ * Line 3: "Kepada :" left + "Note       : [note]" right.
+ * Line 4: client name (no label), left-aligned.
+ * Line 5+: client address (no label), left-aligned, if found in contacts.
+ * Minor separator after meta.
+ *
+ * @param {Object[]} transactions
+ * @param {Object[]} contacts
+ * @param {string}   note — session-only invoice note (from DotMatrixPrintModal)
  */
-const formatInvoiceMeta = (transactions, contacts = []) => {
-  const t0  = transactions[0] || {};
-  const invNo    = t0.txnId       || "—";
-  const dateStr  = fmtDate(t0.date) || "—";
-  const client   = t0.counterparty  || "—";
-  const dueStr   = t0.dueDate ? fmtDate(t0.dueDate) : "—";
-
-  const row1Left  = "No. Invoice: " + invNo;
-  const row1Right = "Tanggal    : " + dateStr;
-  const row2Left  = "Klien      : " + client;
-  const row2Right = "Jatuh Tempo: " + dueStr;
+const formatInvoiceMeta = (transactions, contacts = [], note = "") => {
+  const t0      = transactions[0] || {};
+  const invNo   = t0.txnId        || "—";
+  const dateStr = fmtDate(t0.date) || "—";
+  const client  = t0.counterparty  || "—";
 
   const lines = [
-    padRight(row1Left, 40) + padLeft(row1Right, 40),
-    padRight(row2Left, 40) + padLeft(row2Right, 40),
+    padRight("", 40) + padLeft("Invoice No: " + invNo,              40),
+    padRight("", 40) + padLeft("Date       : " + dateStr,           40),
+    padRight("Kepada :", 40) + padLeft("Note       : " + note.trim(), 40),
+    padRight(client, LINE_WIDTH),
   ];
 
-  // Append address lines if found in contacts
+  // Client address — left-aligned, no label, wrapped to full width
   const clientAddr = contacts.find(
     (c) => (c.name || "").toLowerCase() === client.toLowerCase()
   )?.address?.trim();
   if (clientAddr) {
-    const addrPrefix = "  Alamat   : ";
-    const contPrefix = "             ";
-    const addrWidth  = LINE_WIDTH - addrPrefix.length;
-    const addrLines  = wrapText(clientAddr, addrWidth);
-    lines.push(padRight(addrPrefix + (addrLines[0] || ""), LINE_WIDTH));
-    for (let i = 1; i < addrLines.length; i++) {
-      lines.push(padRight(contPrefix + addrLines[i], LINE_WIDTH));
-    }
+    wrapText(clientAddr, LINE_WIDTH).forEach((line) =>
+      lines.push(padRight(line, LINE_WIDTH))
+    );
   }
 
   lines.push(SEP_MINOR);
@@ -161,29 +156,27 @@ const formatInvoiceMeta = (transactions, contacts = []) => {
 };
 
 /**
- * Items table.
- * Columns (total 80): No(3) | Barang(24) | Krg(6) | Berat(9) | Harga/Kg(10) | Subtotal(13)
- * Separators: " | " (3 chars) × 5 = 15 chars
- * Flattens all items across all transactions (same as InvoiceModal.js flatMap).
+ * Items table — 5 columns, no Krg column.
+ * Columns (total 80): No(6) + Jenis Barang(32) + Berat(14) + Harga(14) + Total(14)
+ * No trailing separator — formatInvoiceFooter adds SEP_MAJOR after total row.
+ * Flattens all items across all transactions.
  */
 const formatItemsTable = (transactions) => {
-  const COL_NO       = 3;
-  const COL_BARANG   = 24;
-  const COL_KRG      = 6;
-  const COL_BERAT    = 9;
-  const COL_HARGA    = 10;
-  const COL_SUBTOTAL = 13;
-  const SEP          = " | ";
+  const COL_NO     = 6;
+  const COL_BARANG = 32;
+  const COL_BERAT  = 14;
+  const COL_HARGA  = 14;
+  const COL_TOTAL  = 14;
+  // 6 + 32 + 14 + 14 + 14 = 80
 
-  const mkRow = (no, barang, krg, berat, harga, subtotal) =>
-    padLeft(no, COL_NO) +
-    SEP + padRight(barang, COL_BARANG) +
-    SEP + padLeft(krg, COL_KRG) +
-    SEP + padLeft(berat, COL_BERAT) +
-    SEP + padLeft(harga, COL_HARGA) +
-    SEP + padLeft(subtotal, COL_SUBTOTAL);
+  const mkRow = (no, barang, berat, harga, total) =>
+    padRight(no,    COL_NO)    +
+    padRight(barang, COL_BARANG) +
+    padLeft(berat,  COL_BERAT) +
+    padLeft(harga,  COL_HARGA) +
+    padLeft(total,  COL_TOTAL);
 
-  const header = mkRow("No", "Barang", "Krg", "Berat", "Harga/Kg", "Subtotal");
+  const header  = mkRow("No", "Jenis Barang", "Berat (Kg)", "Harga", "Total");
   const divider = SEP_MINOR;
 
   // Flatten all items across all transactions
@@ -192,35 +185,30 @@ const formatItemsTable = (transactions) => {
   );
 
   const rows = lineItems.flatMap((it, i) => {
-    const qty      = it.sackQty != null ? it.sackQty : 0;
-    const beratStr = it.weightKg ? fmtNum(it.weightKg) + " Kg" : "—";
-    const hargaStr = it.pricePerKg ? fmtNum(it.pricePerKg) : "—";
-    const subStr   = fmtNum(it.subtotal || 0);
+    const beratStr = it.weightKg   ? fmtNum(it.weightKg)   + " kg" : "—";
+    const hargaStr = it.pricePerKg ? "Rp " + fmtNum(it.pricePerKg) : "—";
+    const totalStr = "Rp " + fmtNum(it.subtotal || 0);
     const nameLines = wrapText(it.itemName || "—", COL_BARANG);
-    const firstRow = mkRow(String(i + 1), nameLines[0], fmtNum(qty), beratStr, hargaStr, subStr);
-    const contRows = nameLines.slice(1).map(line => mkRow("", line, "", "", "", ""));
+    const firstRow  = mkRow(String(i + 1), nameLines[0], beratStr, hargaStr, totalStr);
+    const contRows  = nameLines.slice(1).map((line) => mkRow("", line, "", "", ""));
     return [firstRow, ...contRows];
   });
 
-  return [header, divider, ...rows, SEP_MAJOR];
+  return [header, divider, ...rows];
 };
 
 /**
- * Invoice footer: totals (right-aligned), bank accounts, notes.
- * Totals are summed across all transactions.
+ * Invoice footer: total row + major separator + bank accounts + signature block.
+ * No LUNAS/SISA TAGIHAN — removed per new format.
+ * No notes — note is now shown in formatInvoiceMeta.
  */
-const formatInvoiceFooter = (transactions, settings, note = "") => {
-  const total      = transactions.reduce((a, t) => a + (Number(t.value)       || 0), 0);
-  const outstanding = transactions.reduce((a, t) => a + (Number(t.outstanding) || 0), 0);
+const formatInvoiceFooter = (transactions, settings) => {
+  const total = transactions.reduce((a, t) => a + (Number(t.value) || 0), 0);
   const lines = [];
 
-  lines.push(padLeft("TOTAL: " + fmtRp(total), LINE_WIDTH));
-
-  if (outstanding > 0) {
-    lines.push(padLeft("SISA TAGIHAN: " + fmtRp(outstanding), LINE_WIDTH));
-  } else {
-    lines.push(padLeft("LUNAS", LINE_WIDTH));
-  }
+  // Total row right-aligned, then major separator
+  lines.push(padLeft("TOTAL    : " + fmtRp(total), LINE_WIDTH));
+  lines.push(SEP_MAJOR);
 
   // Bank accounts
   const bankAccounts = (settings.bankAccounts || []).filter((a) => a.showOnInvoice);
@@ -228,36 +216,27 @@ const formatInvoiceFooter = (transactions, settings, note = "") => {
   const shown   = maxShow > 0 ? bankAccounts.slice(0, maxShow) : [];
 
   if (shown.length > 0) {
-    lines.push("");
-    lines.push("Pembayaran ke:");
-    shown.forEach((acct) => {
-      const parts = [
-        acct.bankName        || "",
-        acct.accountNumber   ? "- " + acct.accountNumber : "",
-        acct.accountName     ? "a.n. " + acct.accountName : "",
-      ].filter(Boolean);
-      lines.push(padRight("  " + parts.join(" "), LINE_WIDTH));
+    shown.forEach((acct, idx) => {
+      if (idx > 0) lines.push("");
+      if (acct.bankName)      lines.push(padRight("NAME BANK        : " + acct.bankName,      LINE_WIDTH));
+      if (acct.accountNumber) lines.push(padRight("ACCOUNT NUMBER   : " + acct.accountNumber, LINE_WIDTH));
+      if (acct.accountName)   lines.push(padRight("ACCOUNT NAME     : " + acct.accountName,   LINE_WIDTH));
     });
+    lines.push("");
   }
 
-  // Notes from first transaction
-  const notes = (transactions[0] || {}).notes;
-  if (notes?.trim()) {
-    lines.push("");
-    lines.push("Catatan: " + notes.trim());
-  }
+  // Signature block
+  const sigLine =
+    padRight("(" + " ".repeat(26) + ")", 40) +
+    padLeft("(" + " ".repeat(26) + ")", 40);
 
-  // Session-only invoice note (entered at print time, not saved to data)
-  if (note.trim()) {
-    lines.push("");
-    const prefix = "Catatan Invoice: ";
-    const firstLineWidth = LINE_WIDTH - prefix.length;
-    const noteLines = wrapText(note.trim(), firstLineWidth);
-    lines.push(padRight(prefix + (noteLines[0] || ""), LINE_WIDTH));
-    for (let i = 1; i < noteLines.length; i++) {
-      lines.push(padRight("  " + noteLines[i], LINE_WIDTH));
-    }
-  }
+  lines.push(
+    padRight("      Tanda terima", 40) + padLeft("Hormat kami,", 40),
+    "",
+    "",
+    "",
+    sigLine,
+  );
 
   return lines;
 };
@@ -393,10 +372,10 @@ export const formatInvoice = (transactions, settings, options = {}, contacts = [
   const { note = "" } = options;
 
   const lines = [
-    ...formatInvoiceHeader(s),
-    ...formatInvoiceMeta(txs, contacts),
+    ...formatInvoiceHeader(),
+    ...formatInvoiceMeta(txs, contacts, note),
     ...formatItemsTable(txs),
-    ...formatInvoiceFooter(txs, s, note),
+    ...formatInvoiceFooter(txs, s),
   ];
 
   return lines.join("\n");

@@ -430,7 +430,7 @@ ASCII layout engine for dot matrix printing. Pure functions, no React, no DOM.
 | `formatSuratJalan(transaction, settings, options)` | `(Object, Object, Object?)` | `string` — full 80-column ASCII surat jalan |
 
 **Options objects:**
-- `formatInvoice` options: `{ note: string }` — appended as "Catatan Invoice:" in footer
+- `formatInvoice` options: `{ note: string }` — shown as "Note       : [note]" in meta section (right-aligned, line 3)
 - `formatSuratJalan` options: `{ platNomor: string, catatanPengiriman: string }` — plate number in meta, delivery note in footer
 
 **Internal helpers:** `padRight`, `padLeft`, `centerText`, `fmtNum`, `fmtRp`, `getItemsArray`, `wrapText`
@@ -438,12 +438,18 @@ ASCII layout engine for dot matrix printing. Pure functions, no React, no DOM.
 **`wrapText(str, width)`:** Word-boundary wrapping that returns an array of strings each ≤ width chars. Hard-truncates a single word that alone exceeds the width. Used by `formatItemsTable` and `formatSuratJalanItems` for long item names via `flatMap`.
 
 **Invoice column widths (total = 80):**
-No(3) + `" | "` + Barang(24) + `" | "` + Krg(6) + `" | "` + Berat(9) + `" | "` + Harga/Kg(10) + `" | "` + Subtotal(13)
+No(6) + Jenis Barang(32) + Berat(14) + Harga(14) + Total(14) = 80. No `|` separators. No Krg column.
 
 **Surat Jalan column widths (total = 80):**
-No(3) + `" | "` + Barang(50) + `" | "` + Jumlah(8) + `" | "` + Satuan(10)
+No(3) + `" | "` + Barang(50) + `" | "` + Jumlah(21) = 80
 
-**Invoice layout sections:** `formatInvoiceHeader(settings)` → `formatInvoiceMeta(transactions)` → `formatItemsTable(transactions)` → `formatInvoiceFooter(transactions, settings)`
+**Invoice layout sections:** `formatInvoiceHeader()` (no args) → `formatInvoiceMeta(transactions, contacts, note)` → `formatItemsTable(transactions)` → `formatInvoiceFooter(transactions, settings)`
+
+**Invoice format (current):**
+- Header: `"I N V O I C E"` centered in left 69 chars + `"Page 1 of 1"` right-aligned in last 11 chars. No business name/address/phone.
+- Meta: Row 1 blank left + `"Invoice No: [txnId]"` right. Row 2 blank left + `"Date       : [date]"` right. Row 3 `"Kepada :"` left + `"Note       : [invoiceNote]"` right. Row 4: client name left-aligned, no label. Row 5+: client address left-aligned, no label (if found in contacts). SEP_MINOR after.
+- Items: header row (No/Jenis Barang/Berat (Kg)/Harga/Total), SEP_MINOR, item rows. Berat shows `"[n] kg"`, Harga shows `"Rp [n]"`, Total shows `"Rp [n]"`. No trailing separator (footer adds SEP_MAJOR after total row).
+- Footer: `"TOTAL    : Rp [amount]"` right-aligned → SEP_MAJOR → bank accounts (`NAME BANK : / ACCOUNT NUMBER : / ACCOUNT NAME :` format, one block per account) → blank line → `"      Tanda terima"` left / `"Hormat kami,"` right → 3 blank lines → `"(                          )"` left + `"(                          )"` right. No LUNAS/SISA TAGIHAN. No transaction notes.
 
 **Surat Jalan layout sections:** `formatSuratJalanHeader()` (no args — no company name) → `formatSuratJalanMeta(transaction, platNomor, contacts)` → `formatSuratJalanItems(transaction)` → `formatSuratJalanFooter(catatanPengiriman)`
 
@@ -548,6 +554,8 @@ Note: `onInvoice` prop is not used in the current code (was removed). `onReport`
 **Props:** `transactions, onEdit, onMarkPaid, onDelete, onInvoice, highlightTxIds?, onClearHighlight?`
 
 **Layout:** Two `OutstandingTable` sections (Piutang / Hutang). Each section paginated 50/page.
+
+**Contact search:** `contactSearch` state (string, default `""`). Input rendered above the sort control — full-width up to 320px, `.search-input` class, placeholder "Cari kontak...". Filters both `piutangTxs` and `hutangTxs` in their `useMemo` by `t.counterparty.toLowerCase().includes(search)`. Both `OutstandingTable` keys include `contactSearch` so changing the search resets pagination to page 0 (same mechanism as sort change). When `contactSearch` is non-empty and both arrays are empty, the empty state shows 🔍 "Tidak ada hasil untuk '[term]'" + subtext instead of the 🎉 "Semua bersih!" message.
 
 **Highlight behavior:** `OutstandingTable` receives `flashIds` (Set — derived from parent's `highlightTxIds` array). Each row also computes a permanent class from `dueDate`: `.outstanding-row--overdue` (past due) or `.outstanding-row--near-due` (≤3 days). Flash rows additionally get `.outstanding-row--flash` (blue). Flash is cleared on first user interaction (click/keydown/scroll) after a 500ms debounce. First flash row is scrolled into view (50ms setTimeout after render).
 

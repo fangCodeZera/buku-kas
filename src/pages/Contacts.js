@@ -14,8 +14,9 @@ import DueBadge            from "../components/DueBadge";
 import Icon                from "../components/Icon";
 import DeleteConfirmModal  from "../components/DeleteConfirmModal";
 import PaymentUpdateModal  from "../components/PaymentUpdateModal";
-import PaymentHistoryPanel from "../components/PaymentHistoryPanel";
-import Toast               from "../components/Toast";
+import PaymentHistoryPanel    from "../components/PaymentHistoryPanel";
+import TransactionDetailModal from "../components/TransactionDetailModal";
+import Toast                  from "../components/Toast";
 import { fmtIDR, fmtDate, generateId, normalizeTitleCase } from "../utils/idGenerators";
 import { computePaymentProgress } from "../utils/paymentUtils";
 
@@ -53,6 +54,7 @@ const Contacts = ({
   const [contactAction,   setContactAction]   = useState(null); // { type: "archive"|"delete", contact }
   const [expandedTxId,    setExpandedTxId]    = useState(null);
   const [nameError,       setNameError]       = useState("");
+  const [selectedTxDetail, setSelectedTxDetail] = useState(null);
   const nameInputRef = useRef(null);
 
 
@@ -450,7 +452,7 @@ const Contacts = ({
                 <tbody>
                   {sel.txs.map((t, i) => (
                     <React.Fragment key={t.id}>
-                    <tr className={i % 2 === 0 ? "" : "row-alt"}>
+                    <tr className={i % 2 === 0 ? "" : "row-alt"} style={{ cursor: "pointer" }} onClick={() => setSelectedTxDetail(t)}>
                       <td className="text-muted td-date">{fmtDate(t.date)}</td>
                       <td style={{ fontSize: 11, fontWeight: 600, color: t.type === "income" ? "#6366f1" : "#374151", fontFamily: "monospace", whiteSpace: "nowrap" }}>
                         {t.txnId || <span style={{ color: "#d1d5db" }}>—</span>}
@@ -517,7 +519,7 @@ const Contacts = ({
                       <td className="td-center">
                         <div className="action-btns" style={{ justifyContent: "center" }}>
                           <button
-                            onClick={() => onEditTransaction && onEditTransaction(t)}
+                            onClick={(e) => { e.stopPropagation(); onEditTransaction && onEditTransaction(t); }}
                             className="action-btn action-btn--edit"
                             title="Edit transaksi"
                             aria-label={`Edit transaksi ${t.itemName}`}
@@ -526,7 +528,7 @@ const Contacts = ({
                           </button>
                           {(t.outstanding || 0) > 0 && (
                             <button
-                              onClick={() => setPaidTx(t)}
+                              onClick={(e) => { e.stopPropagation(); setPaidTx(t); }}
                               className="action-btn action-btn--paid"
                               title="Tandai Lunas"
                               aria-label={`Tandai lunas transaksi ${t.itemName}`}
@@ -535,7 +537,7 @@ const Contacts = ({
                             </button>
                           )}
                           <button
-                            onClick={() => setExpandedTxId((id) => id === t.id ? null : t.id)}
+                            onClick={(e) => { e.stopPropagation(); setExpandedTxId((id) => id === t.id ? null : t.id); }}
                             className="action-btn action-btn--history"
                             title="Lihat riwayat pembayaran"
                             aria-label={`Riwayat pembayaran ${t.itemName || (t.items?.[0]?.itemName ?? '')}`}
@@ -546,7 +548,7 @@ const Contacts = ({
                             )}
                           </button>
                           <button
-                            onClick={() => handleDeleteTx(t)}
+                            onClick={(e) => { e.stopPropagation(); handleDeleteTx(t); }}
                             className="action-btn action-btn--delete"
                             title="Hapus transaksi"
                             aria-label={`Hapus transaksi ${t.itemName}`}
@@ -641,6 +643,12 @@ const Contacts = ({
         onConfirm={confirmPaidTx}
         onCancel={() => setPaidTx(null)}
       />
+      {selectedTxDetail && (
+        <TransactionDetailModal
+          transaction={selectedTxDetail}
+          onClose={() => setSelectedTxDetail(null)}
+        />
+      )}
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
   );

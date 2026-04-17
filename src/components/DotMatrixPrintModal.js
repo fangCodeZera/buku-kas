@@ -70,7 +70,6 @@ const DotMatrixPrintModal = ({ transaction, mode, settings, contacts = [], onClo
             <textarea
               value={invoiceNote}
               onChange={(e) => setInvoiceNote(e.target.value)}
-              placeholder="Tulis catatan untuk invoice ini (opsional)"
               rows={2}
               maxLength={500}
               style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}

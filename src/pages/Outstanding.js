@@ -353,24 +353,29 @@ const Outstanding = ({
   highlightTxIds,
   onClearHighlight,
 }) => {
-  const [sortBy,   setSortBy]   = useState("nearestDue");
+  const [sortBy,        setSortBy]        = useState("nearestDue");
+  const [contactSearch, setContactSearch] = useState("");
   const [flashIds, setFlashIds] = useState(new Set());
   const clearFlashRef = useRef(null);
 
   // ── Filter and sort — no mutation of original array ─────────────────────────
   const piutangTxs = useMemo(() => {
+    const search = contactSearch.toLowerCase().trim();
     const filtered = transactions.filter(
-      (t) => t.type === "income" && (Number(t.outstanding) || 0) > 0
+      (t) => t.type === "income" && (Number(t.outstanding) || 0) > 0 &&
+        (!search || (t.counterparty || "").toLowerCase().includes(search))
     );
     return sortTxs(filtered, sortBy);
-  }, [transactions, sortBy]);
+  }, [transactions, sortBy, contactSearch]);
 
   const hutangTxs = useMemo(() => {
+    const search = contactSearch.toLowerCase().trim();
     const filtered = transactions.filter(
-      (t) => t.type === "expense" && (Number(t.outstanding) || 0) > 0
+      (t) => t.type === "expense" && (Number(t.outstanding) || 0) > 0 &&
+        (!search || (t.counterparty || "").toLowerCase().includes(search))
     );
     return sortTxs(filtered, sortBy);
-  }, [transactions, sortBy]);
+  }, [transactions, sortBy, contactSearch]);
 
   const totalPiutang = useMemo(
     () => piutangTxs.reduce((s, t) => s + (Number(t.outstanding) || 0), 0),
@@ -478,6 +483,19 @@ const Outstanding = ({
         </div>
       </div>
 
+      {/* ── Contact search ── */}
+      <div style={{ marginBottom: 12 }}>
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Cari kontak..."
+          value={contactSearch}
+          onChange={(e) => setContactSearch(e.target.value)}
+          style={{ width: "100%", maxWidth: 320 }}
+          aria-label="Cari kontak"
+        />
+      </div>
+
       {/* ── Sort control ── */}
       {hasAny && (
         <div className="filter-bar" style={{ marginBottom: 16 }}>
@@ -503,13 +521,27 @@ const Outstanding = ({
       {/* ── Empty state ── */}
       {!hasAny && (
         <div className="empty-state" style={{ padding: "48px 0" }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
-            Semua bersih!
-          </div>
-          <div style={{ color: "#9ca3af", fontSize: 13 }}>
-            Tidak ada piutang maupun hutang yang belum dilunasi.
-          </div>
+          {contactSearch.trim() ? (
+            <>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>🔍</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
+                Tidak ada hasil untuk "{contactSearch.trim()}"
+              </div>
+              <div style={{ color: "#9ca3af", fontSize: 13 }}>
+                Coba kata kunci lain atau kosongkan pencarian.
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
+                Semua bersih!
+              </div>
+              <div style={{ color: "#9ca3af", fontSize: 13 }}>
+                Tidak ada piutang maupun hutang yang belum dilunasi.
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -523,7 +555,7 @@ const Outstanding = ({
           bgColor="#f0fdf4"
         >
           <OutstandingTable
-            key={sortBy}
+            key={`${sortBy}-${contactSearch}`}
             txs={piutangTxs}
             emptyMsg="Tidak ada piutang saat ini."
             onEdit={onEdit}
@@ -545,7 +577,7 @@ const Outstanding = ({
           bgColor="#fef2f2"
         >
           <OutstandingTable
-            key={sortBy}
+            key={`${sortBy}-${contactSearch}`}
             txs={hutangTxs}
             emptyMsg="Tidak ada hutang saat ini."
             onEdit={onEdit}
