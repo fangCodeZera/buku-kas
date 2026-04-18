@@ -572,6 +572,8 @@ The `form` state includes `printerType` (initialized from `settings.printerType 
 
 **CSV export:** 14-column format: Tanggal, Waktu, No. Invoice, Klien, Jenis, Barang, Karung, Berat (Kg), Harga/Kg, Subtotal, Nilai Total, Status, Sisa Tagihan, Jatuh Tempo. Expands `items[]` into separate rows. Includes BOM (`\uFEFF`) for Excel compatibility.
 
+**"Impor Backup" button** is only rendered when `exportFormat === "json"` — hidden when CSV is selected, since import only supports JSON format.
+
 ### pages/ActivityLog.js (Pemilik-only)
 **Props:** `currentUser, profile, onLoadLog, onBack, onViewTransaction?`
 
@@ -987,7 +989,7 @@ Called by `getNextTxnSerial(dateStr)` in `supabaseStorage.js`. Returns `"YY-MM-N
 
 ### Security in Production
 - RLS enabled on all 9 tables (role-aware policies; txn_counters is function-level access only)
-- Session idle timeout: 15 minutes (auto sign-out)
+- Session idle timeout: 15 minutes (auto sign-out via setTimeout + visibilitychange timestamp check — survives device sleep/shutdown)
 - HTTP security headers via public/_headers (CSP, X-Frame-Options, etc.) — served by Cloudflare Pages
 - Supabase anon key is public by design — RLS enforces all access control
 - Service role key exists only in local .claude/claude_mcp_config.json (gitignored)

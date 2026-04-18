@@ -99,6 +99,7 @@ export function AuthProvider({ children }) {
     setSession(null);
     setUser(null);
     setProfile(null);
+    localStorage.removeItem('buku-kas-last-activity');
     await supabase.auth.signOut();
     // NOTE: idleTimedOut is intentionally NOT cleared here.
     // It survives sign-out so Login.js can show the "session expired" message.
@@ -116,15 +117,27 @@ export function AuthProvider({ children }) {
 
     const resetTimer = () => {
       clearTimeout(timerId);
+      localStorage.setItem('buku-kas-last-activity', Date.now().toString());
       timerId = setTimeout(async () => {
         await signOut();
         setIdleTimedOut(true);
       }, IDLE_TIMEOUT_MS);
     };
 
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        const last = parseInt(localStorage.getItem('buku-kas-last-activity') || '0', 10);
+        if (last > 0 && Date.now() - last > IDLE_TIMEOUT_MS) {
+          await signOut();
+          setIdleTimedOut(true);
+        }
+      }
+    };
+
     ACTIVITY_EVENTS.forEach((ev) =>
       window.addEventListener(ev, resetTimer, { passive: true })
     );
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     resetTimer(); // start the initial 15-minute countdown
 
     return () => {
@@ -132,6 +145,7 @@ export function AuthProvider({ children }) {
       ACTIVITY_EVENTS.forEach((ev) =>
         window.removeEventListener(ev, resetTimer)
       );
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
     // signOut and setIdleTimedOut are stable (React setters + same-scope function);
     // omitting from deps is intentional — effect must only re-run on user change.

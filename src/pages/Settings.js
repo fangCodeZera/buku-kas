@@ -551,15 +551,17 @@ const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
           >
             <Icon name="download" size={14} color="#007bff" /> Ekspor Backup
           </button>
-          <button
-            onClick={() => fileRef.current && fileRef.current.click()}
-            className="btn btn-outline"
-            style={{ borderColor: "#10b981", color: "#10b981" }}
-            aria-label="Impor data dari file JSON"
-            disabled={importMsg === "Mengimpor data..."}
-          >
-            <Icon name="upload" size={14} color="#10b981" /> Impor Backup
-          </button>
+          {exportFormat === "json" && (
+            <button
+              onClick={() => fileRef.current && fileRef.current.click()}
+              className="btn btn-outline"
+              style={{ borderColor: "#10b981", color: "#10b981" }}
+              aria-label="Impor data dari file JSON"
+              disabled={importMsg === "Mengimpor data..."}
+            >
+              <Icon name="upload" size={14} color="#10b981" /> Impor Backup
+            </button>
+          )}
 
           {/* Hidden file input */}
           <input
