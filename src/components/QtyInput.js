@@ -45,8 +45,12 @@ const QtyInput = ({ value, onChange, hasError, placeholder = "0", style, classNa
 
   const handleFocus = (e) => {
     isFocusedRef.current = true;
-    // Select all so the user can easily replace the current value
-    e.target.select();
+    // Clear display when value is 0 so typing replaces it; otherwise select all
+    if (Number(value) === 0) {
+      setDisplay("");
+    } else {
+      e.target.select();
+    }
   };
 
   const handleChange = (e) => {
@@ -80,7 +84,7 @@ const QtyInput = ({ value, onChange, hasError, placeholder = "0", style, classNa
     isFocusedRef.current = false;
     // Clean up trailing comma or incomplete decimal on blur
     const num = Number(value);
-    setDisplay(!isNaN(num) && num > 0 ? num.toLocaleString("id-ID") : "");
+    setDisplay(!isNaN(num) && num > 0 ? num.toLocaleString("id-ID") : display.trim() === "" ? "0" : "");
     if (onBlurProp) onBlurProp();
   };
 

@@ -745,8 +745,8 @@ Displays comma-formatted input, stores integer. Does NOT forward refs — use re
 Decimal-aware quantity input with live id-ID locale formatting on every keystroke (dot thousands, comma decimal). Key behaviors:
 - **Live formatting:** `handleChange` strips non-digit/non-comma chars, formats the integer part with `toLocaleString("id-ID")`, appends `,decPart` for decimals. Display updates on every keystroke.
 - **Trailing comma:** Preserved in display when user types `1.500,` — lets user finish typing the decimal without the comma being stripped.
-- **`onFocus`:** Sets `isFocusedRef = true`, selects all text (`e.target.select()`) for easy replacement.
-- **`onBlur`:** Cleans up trailing comma/incomplete decimal by reformatting from `value` prop. Clears `isFocusedRef`.
+- **`onFocus`:** Sets `isFocusedRef = true`. If `value === 0`, clears `display` to `""` so typing replaces the zero cleanly. Otherwise selects all text for easy replacement.
+- **`onBlur`:** Clears `isFocusedRef`. Cleans up trailing comma/incomplete decimal by reformatting from `value` prop. If display is left empty (user deleted everything or focused+blurred a zero field), restores display to `"0"`.
 - **Prop sync:** Suppressed while focused (`isFocusedRef`) to prevent live display from being overwritten during mid-decimal typing.
 - **`onChange`:** Always receives a JavaScript number (`parseFloat` result, or `0` for empty/invalid).
 - **`fmtNum(n)`:** `null`/`undefined` → `""` (empty placeholder); all other values including `0` → `toLocaleString("id-ID")`. So `fmtNum(0)` → `"0"`, not blank.
@@ -935,7 +935,7 @@ Key patterns to never reintroduce:
 - `autoDetectCategories` in `categoryUtils.js` is O(n²) worst case — acceptable for <200 items. Performance comment in source.
 - `SuratJalanModal` uses transaction-level `t.stockUnit` for all item rows — per-item unit field doesn't exist on `items[]` (known design limitation).
 - **H2:** Resolved — see `txn_counters` table and `next_txn_serial()` RPC. Short-term collision toast remains as defense-in-depth.
-- Netlify subdomain URL (`frabjous-gecko-a0ad5c.netlify.app`) is not user-friendly. Custom domain purchase will improve this and enable Cloudflare protection.
+- Custom domain purchase will further improve the URL (currently `buku-kas.pages.dev`) and enable custom Cloudflare rate limiting rules.
 - Family member account creation is manual (Supabase Dashboard). No self-registration flow exists — intentional for a private family business app.
 
 ---
@@ -943,13 +943,13 @@ Key patterns to never reintroduce:
 ## 14. Deployment
 
 ### Production
-- **URL:** https://frabjous-gecko-a0ad5c.netlify.app
-- **Host:** Netlify (free tier)
+- **URL:** https://buku-kas.pages.dev
+- **Host:** Cloudflare Pages (free tier — 500 builds/month, no build minute limits)
 - **Repo:** github.com/fangCodeZera/buku-kas (also mirrored under PT-CHANG-JAYA org)
 - **Branch:** main (auto-deploys on push)
 - **Build command:** `npm run build`
 - **Publish directory:** `build`
-- **Environment variables (Netlify):** `REACT_APP_SUPABASE_URL`, `REACT_APP_SUPABASE_ANON_KEY`
+- **Environment variables (Cloudflare Pages):** `REACT_APP_SUPABASE_URL`, `REACT_APP_SUPABASE_ANON_KEY`
 
 ### Supabase
 - **Project:** PT CHANG JAYA / BukuKas
@@ -957,7 +957,7 @@ Key patterns to never reintroduce:
 - **Region:** Singapore (ap-southeast-1)
 - **Plan:** Free tier (auto-pauses after 1 week inactivity)
 - **Auth:** Email + Password only
-- **Site URL:** https://frabjous-gecko-a0ad5c.netlify.app
+- **Site URL:** https://buku-kas.pages.dev
 - **Realtime:** Enabled on transactions, contacts, stock_adjustments, item_catalog
 
 ### Supabase Tables (9 total)
@@ -988,18 +988,18 @@ Called by `getNextTxnSerial(dateStr)` in `supabaseStorage.js`. Returns `"YY-MM-N
 ### Security in Production
 - RLS enabled on all 9 tables (role-aware policies; txn_counters is function-level access only)
 - Session idle timeout: 15 minutes (auto sign-out)
-- HTTP security headers via public/_headers and netlify.toml (CSP, X-Frame-Options, etc.)
+- HTTP security headers via public/_headers (CSP, X-Frame-Options, etc.) — served by Cloudflare Pages
 - Supabase anon key is public by design — RLS enforces all access control
 - Service role key exists only in local .claude/claude_mcp_config.json (gitignored)
 
-### Cloudflare (not yet configured)
-Deferred until a custom domain is purchased. Setup steps when ready:
-1. Purchase domain via Cloudflare Registrar (cheapest option, ~$10-15/year)
-2. Add site to Cloudflare, configure DNS to point to Netlify
-3. In Netlify: add custom domain in Domain management
-4. In Supabase: update Site URL and Redirect URLs to new domain
-5. In public/_headers: tighten CSP connect-src from `*.supabase.co` to specific project URL
-6. Enable Cloudflare rate limiting and DDoS rules as needed
+### Cloudflare Pages (active)
+App is hosted on Cloudflare Pages — Cloudflare edge DDoS protection and CDN are active by default.
+Custom domain setup (when a domain is purchased, ~$10-15/year):
+1. Purchase domain via Cloudflare Registrar (cheapest option)
+2. In Cloudflare Pages: add custom domain in project settings
+3. In Supabase: update Site URL and Redirect URLs to new domain
+4. In public/_headers: tighten CSP connect-src from `*.supabase.co` to specific project URL
+5. Enable custom Cloudflare rate limiting rules as needed
 
 ### Keep-Alive (prevents Supabase free tier pause)
 An external cron job pings the Supabase REST API every 5 days to prevent auto-pause:
@@ -1019,7 +1019,7 @@ Create accounts via Supabase Dashboard → Authentication → Users → Invite U
 6. Users can reset their own password at any time via the "Lupa Password?" link on the login page — no admin action required
 
 ### Redeploying
-Any push to `main` branch auto-deploys to Netlify. To manually redeploy:
-1. Go to app.netlify.com → select project → Deploys
-2. Click "Trigger deploy" → "Deploy project"
+Any push to `main` branch auto-deploys to Cloudflare Pages. To manually redeploy:
+1. Go to dash.cloudflare.com → Pages → buku-kas → Deployments
+2. Click "Retry deployment" on the latest deployment
 If environment variables change, redeploy is required for changes to take effect.
