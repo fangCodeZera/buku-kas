@@ -172,7 +172,7 @@ export async function loadDataFromSupabase(userId) {
  */
 export async function saveTransaction(tx, userId, isEdit = false) {
   if (isEdit) {
-    const result = await checkVersion('transactions', tx.id, tx.version);
+    const result = await checkVersion('transactions', tx.id, (tx.version || 1) - 1);
     if (result.conflict) throw new ConflictError(result.updatedBy);
   }
   const { error } = await supabase.from('transactions').upsert({
@@ -220,7 +220,7 @@ export async function deleteTransaction(id) {
  */
 export async function saveContact(contact, userId, isEdit = false) {
   if (isEdit) {
-    const result = await checkVersion('contacts', contact.id, contact.version);
+    const result = await checkVersion('contacts', contact.id, (contact.version || 1) - 1);
     if (result.conflict) throw new ConflictError(result.updatedBy);
   }
   const { error } = await supabase.from('contacts').upsert({
