@@ -548,7 +548,7 @@ Note: `onInvoice` prop is not used in the current code (was removed). `onReport`
 
 **Role-based visibility:** `isOwner = profile?.role === "owner"`. Summary cards (Total Pemasukan, Total Pengeluaran, Laba/Rugi) hidden from Karyawan (`{isOwner && (...)}` block). All optional table columns (including financial cols) visible to all authenticated users — no role restriction on the table.
 
-**Export:** Can export JSON or CSV. CSV format has 15 columns (per-item rows). JSON export. Both use Blob+createObjectURL. CSV export is unaffected by column toggle state — always exports full data.
+**Export:** Can export JSON or CSV. Both use Blob+createObjectURL. CSV export is unaffected by column toggle state — always exports full data. CSV format has 15 columns: No | No. Invoice | Tanggal | Klien | Barang | Berat Kg @ Harga | Krg | Subtotal | Sudah Dibayar | Total Nilai | Sisa Tagihan | Jenis | Status | Jatuh Tempo | Tipe Baris. Transaction rows: one per item (multi-item first row fills all tx fields; subsequent rows fill only Barang/Berat@Harga/Krg/Subtotal). Payment rows: inline (from `filtered`) then orphan (from `transactions` not in `filtered`), Sudah Dibayar signed (+income/−expense). Grand total row at bottom: Sudah Dibayar = `grandTotalPaid`, Tipe Baris = "Grand Total". BOM preserved for Excel UTF-8. `getMultiItemContribution` not used in CSV export but retained for other callers.
 
 **Transaction table structure (redesigned 2026-04-19):**
 - Fixed columns: No | No.Invoice | Tanggal | Klien | Barang | Krg | Berat (Kg) | Harga/Kg | Subtotal

@@ -186,45 +186,90 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
 
   const exportCSV = () => {
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = [["Tanggal","Waktu","No. Invoice","Klien","Barang","Stok","Karung","Berat (Kg)","Harga/Kg","Jenis","Status","Jatuh Tempo","Total Transaksi","Sisa Tagihan","Sudah Dibayar"]];
-    filtered.forEach((t) => {
-      const contrib = getMultiItemContribution(t, selectedItems);
+    const pmtFilter = (ph) =>
+      Number(ph.amount) > 0 &&
+      !EDIT_NOTES.has(ph.note) &&
+      (!dateFrom || (ph.date || "") >= dateFrom) &&
+      (!dateTo   || (ph.date || "") <= dateTo);
+
+    const rows = [[
+      "No", "No. Invoice", "Tanggal", "Klien", "Barang",
+      "Berat Kg @ Harga", "Krg", "Subtotal",
+      "Sudah Dibayar", "Total Nilai", "Sisa Tagihan",
+      "Jenis", "Status", "Jatuh Tempo", "Tipe Baris",
+    ]];
+
+    // Transaction rows — one row per item
+    filtered.forEach((t, txIdx) => {
+      const items = Array.isArray(t.items) && t.items.length > 0
+        ? t.items
+        : [{ itemName: t.itemName || "", sackQty: t.stockQty ?? "", weightKg: t.weightKg || 0, pricePerKg: t.pricePerKg || 0, subtotal: t.value || 0 }];
       const jenisLabel = t.type === "income" ? "Penjualan" : "Pembelian";
-      const sign = t.type === "income" ? "-" : "+";
-      const txUnit = t.stockUnit || "karung";
-      if (contrib) {
-        // Item filter active and this row has mixed items: export only matching items
-        const totalValue = Number(t.value) || 0;
-        contrib.filteredItems.forEach((it) => {
-          const itSubtotal = Number(it.subtotal) || 0;
-          const itOutstanding = totalValue > 0
-            ? Math.round((itSubtotal / totalValue) * (Number(t.outstanding) || 0))
-            : 0;
-          const qty = it.sackQty != null ? it.sackQty : (it.stockQty != null ? it.stockQty : null);
-          const stok = qty != null ? `${sign}${qty} ${txUnit}` : "—";
-          rows.push([
-            t.date, t.time, t.txnId || "", t.counterparty,
-            it.itemName, stok, it.sackQty, it.weightKg || "", it.pricePerKg || "",
-            jenisLabel, t.status, t.dueDate || "",
-            itSubtotal, itOutstanding, itSubtotal - itOutstanding,
-          ]);
-        });
-      } else {
-        const items = Array.isArray(t.items) && t.items.length > 0
-          ? t.items
-          : [{ itemName: t.itemName, sackQty: t.stockQty, weightKg: t.weightKg || 0, pricePerKg: t.pricePerKg || 0 }];
-        items.forEach((it) => {
-          const qty = it.sackQty != null ? it.sackQty : (it.stockQty != null ? it.stockQty : null);
-          const stok = qty != null ? `${sign}${qty} ${txUnit}` : "—";
-          rows.push([
-            t.date, t.time, t.txnId || "", t.counterparty,
-            it.itemName, stok, it.sackQty, it.weightKg || "", it.pricePerKg || "",
-            jenisLabel, t.status, t.dueDate || "",
-            t.value, t.outstanding || 0, Number(t.value) - (Number(t.outstanding) || 0),
-          ]);
-        });
-      }
+      const sudahDibayar = Number(t.value) - (Number(t.outstanding) || 0);
+      const txNo = txIdx + 1;
+      items.forEach((it, itIdx) => {
+        const isFirst = itIdx === 0;
+        const berat = it.weightKg ? it.weightKg : "";
+        const harga = it.pricePerKg ? it.pricePerKg : "";
+        const beratHarga = (berat !== "" || harga !== "") ? `${berat} Kg @ ${harga}` : "";
+        rows.push([
+          isFirst ? txNo          : "",
+          isFirst ? (t.txnId || "") : "",
+          isFirst ? t.date        : "",
+          isFirst ? t.counterparty : "",
+          it.itemName || "",
+          beratHarga,
+          it.sackQty != null ? it.sackQty : "",
+          it.subtotal != null ? it.subtotal : "",
+          isFirst ? sudahDibayar          : "",
+          isFirst ? (Number(t.value) || 0) : "",
+          isFirst ? (Number(t.outstanding) || 0) : "",
+          isFirst ? jenisLabel    : "",
+          isFirst ? (t.status || "") : "",
+          isFirst ? (t.dueDate || "") : "",
+          "Transaksi",
+        ]);
+      });
     });
+
+    // Payment rows — inline (from filtered transactions)
+    const filteredPaymentIds = new Set(filtered.map((t) => t.id));
+    filtered.forEach((t) => {
+      if (!Array.isArray(t.paymentHistory)) return;
+      const jenisLabel = t.type === "income" ? "Penjualan" : "Pembelian";
+      t.paymentHistory.filter(pmtFilter).forEach((ph) => {
+        const signedAmount = t.type === "income" ? Number(ph.amount) : -Number(ph.amount);
+        rows.push([
+          "", t.txnId || "", ph.date, t.counterparty,
+          ph.note || "", "", "", "",
+          signedAmount, "", ph.outstandingAfter ?? "",
+          jenisLabel, "", "", "Pembayaran",
+        ]);
+      });
+    });
+
+    // Payment rows — orphan (from transactions outside filtered, payment date in range)
+    transactions.forEach((t) => {
+      if (filteredPaymentIds.has(t.id)) return;
+      if (!Array.isArray(t.paymentHistory)) return;
+      const jenisLabel = t.type === "income" ? "Penjualan" : "Pembelian";
+      t.paymentHistory.filter(pmtFilter).forEach((ph) => {
+        const signedAmount = t.type === "income" ? Number(ph.amount) : -Number(ph.amount);
+        rows.push([
+          "", t.txnId || "", ph.date, t.counterparty,
+          ph.note || "", "", "", "",
+          signedAmount, "", ph.outstandingAfter ?? "",
+          jenisLabel, "", "", "Pembayaran",
+        ]);
+      });
+    });
+
+    // Grand total row
+    rows.push([
+      "", "", "", "", "", "", "", "",
+      grandTotalPaid, "", "", "", "", "", "Grand Total",
+    ]);
+
     const BOM = "\uFEFF";
     const csvContent = BOM + rows.map((r) => r.map(q).join(",")).join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
@@ -232,7 +277,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     const a = document.createElement("a");
     a.href = url;
     const filename = !dateFrom && !dateTo
-      ? 'Laporan_semua'
+      ? "Laporan_semua"
       : dateFrom && !dateTo
       ? `Laporan_mulai_${dateFrom}`
       : `Laporan_${dateFrom}_sd_${dateTo}`;
