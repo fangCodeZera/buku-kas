@@ -24,6 +24,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose }) => {
   );
   const [editingName, setEditingName] = useState(null);   // cat id or null
   const [nameError,   setNameError]   = useState(null);   // duplicate-name error message or null
+  const [codeError,   setCodeError]   = useState(null);   // duplicate-code error message or null
   const [editingCode, setEditingCode] = useState(null);   // cat id or null
   const codeManuallyEdited = useRef(new Set());
   const [dragItem, setDragItem] = useState(null);          // { type, itemName?, sourceGroupId?, groupId? }
@@ -102,8 +103,18 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose }) => {
 
   // ── Inline editing: code ────────────────────────────────────────────────────
   const commitCode = (catId, newCode) => {
-    setEditingCode(null);
     const trimmed = newCode.trim().toUpperCase();
+    // Duplicate check: if another group already uses this code, keep the
+    // input open so the user can fix it (same pattern as commitName).
+    const isDuplicateCode = trimmed && localCats.some(
+      (c) => c.id !== catId && c.code === trimmed
+    );
+    if (isDuplicateCode) {
+      setCodeError("Kode ini sudah dipakai oleh kategori lain");
+      return; // keep editing — do not close, do not save
+    }
+    setCodeError(null);
+    setEditingCode(null);
     codeManuallyEdited.current.add(catId);
     setLocalCats((prev) => {
       // First apply the edit to the target group
@@ -132,7 +143,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose }) => {
 
   const handleCodeKeyDown = (e, catId) => {
     if (e.key === "Enter") commitCode(catId, e.target.value);
-    if (e.key === "Escape") setEditingCode(null);
+    if (e.key === "Escape") { setEditingCode(null); setCodeError(null); }
   };
 
   // ── Drag & Drop: items ──────────────────────────────────────────────────────
@@ -347,15 +358,28 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose }) => {
 
                 {/* Group code */}
                 {editingCode === cat.id ? (
-                  <input
-                    ref={codeInputRef}
-                    className="cat-modal__group-code-input"
-                    defaultValue={cat.code}
-                    onBlur={(e) => commitCode(cat.id, e.target.value)}
-                    onKeyDown={(e) => handleCodeKeyDown(e, cat.id)}
-                    maxLength={6}
-                    placeholder="KODE"
-                  />
+                  <span style={{ position: "relative" }}>
+                    <input
+                      ref={codeInputRef}
+                      className="cat-modal__group-code-input"
+                      defaultValue={cat.code}
+                      onBlur={(e) => commitCode(cat.id, e.target.value)}
+                      onKeyDown={(e) => handleCodeKeyDown(e, cat.id)}
+                      onChange={() => setCodeError(null)}
+                      maxLength={6}
+                      placeholder="KODE"
+                    />
+                    {codeError && (
+                      <span style={{
+                        position: "absolute", top: "100%", left: 0,
+                        fontSize: 11, color: "#ef4444", whiteSpace: "nowrap",
+                        background: "#fff", padding: "2px 4px", borderRadius: 4,
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.12)", zIndex: 10,
+                      }}>
+                        {codeError}
+                      </span>
+                    )}
+                  </span>
                 ) : (
                   <span
                     className="cat-modal__group-code"

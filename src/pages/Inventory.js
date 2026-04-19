@@ -106,7 +106,6 @@ const Inventory = ({
   const [adjError,      setAdjError]      = useState("");
   const [adjQtyError,   setAdjQtyError]   = useState("");
   const [adjReasonError,setAdjReasonError]= useState("");
-  const [adjNewName,    setAdjNewName]    = useState("");
   const [toast,         setToast]         = useState(null);
 
   // Refs for auto-focus
@@ -233,7 +232,7 @@ const Inventory = ({
 
   const handleAdjConfirm = () => {
     if (submitting) return;
-    const finalName = adjTarget.isNew ? adjNewName.trim() : adjTarget.itemName;
+    const finalName = adjTarget.itemName;
     if (!finalName) { setAdjError("Nama item diperlukan."); return; }
     const qty = parseFloat(adjQtyStr);
     let hasError = false;
@@ -1103,22 +1102,9 @@ const Inventory = ({
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="adj-modal-title">
           <div className="modal-box" style={{ maxWidth: 420 }}>
             <h3 className="modal-title" id="adj-modal-title">
-              {adjTarget.isNew ? "Tambah Item Baru" : `Sesuaikan Stok: ${adjTarget.itemName}`}
+              {`Sesuaikan Stok: ${adjTarget.itemName}`}
             </h3>
 
-            {adjTarget.isNew && (
-              <div style={{ marginBottom: 12 }}>
-                <label className="field-label">Nama Item</label>
-                <input
-                  value={adjNewName}
-                  onChange={(e) => { setAdjNewName(e.target.value); setAdjError(""); }}
-                  placeholder="cth. Bawang Putih"
-                  style={{ width: "100%", padding: "8px 11px", border: "1.5px solid #c7ddf7", borderRadius: 8, fontSize: 14, boxSizing: "border-box" }}
-                  aria-label="Nama item baru"
-                  autoFocus
-                />
-              </div>
-            )}
 
             <div style={{ marginBottom: 12 }}>
               <label className="field-label">Jenis Penyesuaian</label>
@@ -1229,6 +1215,8 @@ const Inventory = ({
               <p className="modal-body" style={{ lineHeight: 1.6 }}>
                 Ini akan <strong>menghapus permanen {deleteTarget.txCount} transaksi</strong> yang
                 mengandung item ini. Stok, laporan, dan piutang/hutang terkait akan ikut terhapus.
+                <br />
+                Jika transaksi tersebut juga mengandung barang lain, seluruh transaksi ikut terhapus.
                 <br />
                 <strong style={{ color: "#ef4444" }}>Tidak dapat dibatalkan.</strong>
               </p>
@@ -1564,8 +1552,9 @@ const Inventory = ({
                               >
                                 <Icon name="reports" size={13} color="#6366f1" />
                               </button>
-                              {/* 4. Ubah Nama */}
-                              {isToday && (
+                              {/* 4. Ubah Nama — only for uncatalogued items */}
+                              {/* Catalogued items and subtypes must be renamed via the catalog edit form */}
+                              {isToday && !row.catalogItem && !row.isSubtype && (
                                 <button
                                   onClick={() => openRename(row.displayName, row.unit)}
                                   className="action-btn action-btn--edit"

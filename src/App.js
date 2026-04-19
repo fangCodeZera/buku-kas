@@ -502,7 +502,14 @@ export default function App() {
       })
       .catch(async (err) => {
         console.error("Failed to load data from Supabase:", err);
-        const reachable = await isSupabaseReachable();
+        // Retry up to 3 times with 3s between attempts to tolerate
+        // Supabase free-tier compute cold starts (2–8s wake time).
+        let reachable = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
+          reachable = await isSupabaseReachable();
+          if (reachable) break;
+        }
         if (!reachable) {
           setDatabasePaused(true);
           setAppLoading(false);

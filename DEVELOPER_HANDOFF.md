@@ -42,7 +42,7 @@ src/
     printUtils.js                   47  printWithPortal, escapeHtml
     stockUtils.js                  114  computeStockMap, computeStockMapForDate
     textFormatter.js               387  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText)
-    AuthContext.js                 169  AuthProvider, useAuth — session state, signIn (with login audit log), signOut, 15-min idle timeout
+    AuthContext.js                 173  AuthProvider, useAuth — session state, signIn (with login audit log), signOut, 15-min idle timeout; clears #access_token hash on auth state change to prevent PASSWORD_RECOVERY re-trigger on reload
     supabaseClient.js               19  Creates Supabase client (anon key only, env var validated)
     supabaseStorage.js             445  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog, getNextTxnSerial, isSupabaseReachable
     storageConfig.js                ~30  USE_SUPABASE flag
@@ -52,7 +52,7 @@ src/
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
-    Inventory.js                  1665  Stock inventory with catalog table + ledger
+    Inventory.js                  1655  Stock inventory with catalog table + ledger
     Contacts.js                    639  Contact list + detail panel + transaction history
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
     Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table)

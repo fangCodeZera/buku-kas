@@ -71,6 +71,11 @@ export function AuthProvider({ children }) {
         if (event === "PASSWORD_RECOVERY") {
           setPasswordRecovery(true);
         }
+        // Clear #access_token hash from URL after Supabase has consumed it.
+        // Prevents PASSWORD_RECOVERY re-triggering on manual page reload.
+        if (window.location.hash && window.location.hash.includes("access_token")) {
+          window.history.replaceState(null, "", window.location.pathname);
+        }
         handleSession(session);
       }
     );
