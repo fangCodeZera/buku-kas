@@ -2,7 +2,7 @@
 // Reads from the activity_log Supabase table via onLoadLog prop.
 // Never writes — display only. All text in Indonesian.
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { fmtDate, fmtIDR } from "../utils/idGenerators";
 
 const ACTION_LABELS = {
@@ -97,35 +97,48 @@ function fmtTimestamp(ts) {
  * @param {{ currentUser: object, profile: object, onLoadLog: function, onBack: function, onViewTransaction?: function }} props
  */
 export default function ActivityLog({ currentUser, profile, onLoadLog, onBack, onViewTransaction }) {
-  const [logs,           setLogs]           = useState([]);
-  const [loading,        setLoading]        = useState(true);
-  const [error,          setError]          = useState(null);
+  const [allLogs,      setAllLogs]      = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [loadingMore,  setLoadingMore]  = useState(false);
+  const [error,        setError]        = useState(null);
+  const [page,         setPage]         = useState(0);
+  const [hasMore,      setHasMore]      = useState(false);
   const [filterAction,   setFilterAction]   = useState("");
   const [filterEntity,   setFilterEntity]   = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo,   setFilterDateTo]   = useState("");
 
-  const loadLogs = useCallback(async () => {
-    setLoading(true);
+  const loadLogs = async (pageNum) => {
+    if (pageNum === 0) {
+      setLoading(true);
+      setAllLogs([]);
+    } else {
+      setLoadingMore(true);
+    }
     setError(null);
     try {
-      const filters = {};
+      const filters = { page: pageNum };
       if (filterAction)   filters.action     = filterAction;
       if (filterEntity)   filters.entityType = filterEntity;
       if (filterDateFrom) filters.dateFrom   = filterDateFrom;
       if (filterDateTo)   filters.dateTo     = filterDateTo;
-      const rows = await onLoadLog(filters);
-      setLogs(rows);
+      const { rows, hasMore: more } = await onLoadLog(filters);
+      setAllLogs((prev) => pageNum === 0 ? rows : [...prev, ...rows]);
+      setHasMore(more);
+      setPage(pageNum);
     } catch (err) {
       setError(err.message || "Gagal memuat log aktivitas.");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, [onLoadLog, filterAction, filterEntity, filterDateFrom, filterDateTo]);
+  };
 
+  // Reset to page 0 whenever any filter changes
   useEffect(() => {
-    loadLogs();
-  }, [loadLogs]);
+    loadLogs(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterAction, filterEntity, filterDateFrom, filterDateTo]);
 
   // Guard: only Pemilik may see this page
   if (profile?.role !== "owner") {
@@ -209,13 +222,13 @@ export default function ActivityLog({ currentUser, profile, onLoadLog, onBack, o
         </div>
       )}
 
-      {!loading && !error && logs.length === 0 && (
+      {!loading && !error && allLogs.length === 0 && (
         <div style={{ padding: 32, textAlign: "center", color: "#6b7280" }}>
           Tidak ada log aktivitas yang cocok dengan filter ini.
         </div>
       )}
 
-      {!loading && !error && logs.length > 0 && (
+      {!loading && !error && allLogs.length > 0 && (
         <div className="table-card" style={{ overflowX: "auto" }}>
           <table className="data-table" style={{ width: "100%", tableLayout: "auto" }}>
             <thead>
@@ -229,7 +242,7 @@ export default function ActivityLog({ currentUser, profile, onLoadLog, onBack, o
               </tr>
             </thead>
             <tbody>
-              {logs.map((log, i) => {
+              {allLogs.map((log, i) => {
                 const ac = ACTION_COLORS[log.action] || { bg: "#6b7280", text: "#fff" };
                 const lines = formatChanges(log.changes, log.entity_type);
                 const showLihat = log.entity_type === "transaction"
@@ -308,8 +321,21 @@ export default function ActivityLog({ currentUser, profile, onLoadLog, onBack, o
             </tbody>
           </table>
           <div style={{ padding: "8px 12px", color: "#9ca3af", fontSize: "0.8rem", borderTop: "1px solid #e5e7eb" }}>
-            Menampilkan {logs.length} entri terbaru
+            Menampilkan {allLogs.length} entri{hasMore && " — masih ada entri lebih lama"}
           </div>
+        </div>
+      )}
+
+      {/* Load more button */}
+      {!loading && !error && hasMore && (
+        <div style={{ textAlign: "center", marginTop: 12 }}>
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => loadLogs(page + 1)}
+            disabled={loadingMore}
+          >
+            {loadingMore ? "Memuat..." : "Muat Lebih Banyak"}
+          </button>
         </div>
       )}
     </div>

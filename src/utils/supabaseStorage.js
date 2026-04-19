@@ -401,18 +401,22 @@ export async function saveActivityLog(entry, userId) {
   if (error) throw new Error(`Gagal menyimpan log aktivitas: ${error.message}`);
 }
 
+const PAGE_SIZE = 50;
+
 /**
- * Fetch activity log entries with optional filters.
- * Returns newest-first, capped at 200 rows.
- * @param {{ userId?, action?, entityType?, dateFrom?, dateTo? }} filters
- * @returns {Promise<Array>}
+ * Fetch activity log entries with optional filters and pagination.
+ * Returns newest-first, PAGE_SIZE rows per page.
+ * @param {{ userId?, action?, entityType?, dateFrom?, dateTo?, page? }} filters
+ * @returns {Promise<{ rows: Array, hasMore: boolean }>}
  */
 export async function loadActivityLog(filters = {}) {
+  const page   = filters.page || 0;
+  const offset = page * PAGE_SIZE;
   let q = supabase
     .from('activity_log')
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(200);
+    .range(offset, offset + PAGE_SIZE);
   if (filters.userId)     q = q.eq('user_id', filters.userId);
   if (filters.action)     q = q.eq('action', filters.action);
   if (filters.entityType) q = q.eq('entity_type', filters.entityType);
@@ -420,7 +424,11 @@ export async function loadActivityLog(filters = {}) {
   if (filters.dateTo)     q = q.lte('created_at', filters.dateTo + 'T23:59:59Z');
   const { data, error } = await q;
   if (error) throw new Error(`Gagal memuat log aktivitas: ${error.message}`);
-  return data || [];
+  const fetched = data || [];
+  return {
+    rows:    fetched.slice(0, PAGE_SIZE),
+    hasMore: fetched.length > PAGE_SIZE,
+  };
 }
 
 /**

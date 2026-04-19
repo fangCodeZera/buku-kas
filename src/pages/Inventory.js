@@ -225,7 +225,7 @@ const Inventory = ({
   };
 
   const openAdj = (itemName, unit) => {
-    setAdjTarget({ itemName, unit: unit || "karung", isNew: false });
+    setAdjTarget({ itemName, unit: unit || "karung" });
     setAdjDir("add"); setAdjQtyStr(""); setAdjReason(""); setAdjError("");
     setAdjQtyError(""); setAdjReasonError("");
   };
