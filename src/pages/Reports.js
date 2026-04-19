@@ -7,8 +7,7 @@
  * Client and item filters are now multi-select (zero-dep custom component).
  */
 import React, { useState, useMemo, useEffect } from "react";
-import { StatusBadge, TypeBadge } from "../components/Badge";
-import DueBadge      from "../components/DueBadge";
+import { TypeBadge } from "../components/Badge";
 import Icon        from "../components/Icon";
 import Toast       from "../components/Toast";
 import MultiSelect from "../components/MultiSelect";
@@ -59,17 +58,18 @@ function getMultiItemContribution(t, selItems) {
   };
 }
 
+const EDIT_NOTES = new Set(["Detail Perubahan", "Transaksi diedit — nilai diperbarui"]);
+
 const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = null, onClearItemFilter = () => {}, profile }) => {
   const isOwner = profile?.role === "owner";
   const [dateFrom,        setDateFrom]        = useState(() => {
     if (initItemFilter) return "";
-    const [y, m] = today().split("-");
-    return `${y}-${m}-01`;
+    return today(); // "daily" default — from = today
   });
   const [dateTo,          setDateTo]          = useState(() => initItemFilter ? "" : today());
   const [selectedClients, setSelectedClients] = useState([]);
   const [selectedItems,   setSelectedItems]   = useState(() => initItemFilter ? [initItemFilter] : []);
-  const [period,          setPeriod]          = useState(() => initItemFilter ? "all-time" : "monthly");
+  const [period,          setPeriod]          = useState(() => initItemFilter ? "all-time" : "daily");
   const [inventoryFilterItem, setInventoryFilterItem] = useState(initItemFilter || null);
 
   // Clear App.js reportItemFilter once consumed so re-navigating to Reports starts fresh
@@ -81,6 +81,14 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
   const [confirmCount,    setConfirmCount]    = useState(null);
   const [exportFormat,    setExportFormat]    = useState("csv");
   const [detailTx,        setDetailTx]        = useState(null);
+
+  // Column visibility toggles — reset to default on every page load (no persistence)
+  // Sudah Dibayar is visible by default; others hidden. Role-sensitive cols gated by isOwner.
+  const [colSudahDibayar, setColSudahDibayar] = useState(true);
+  const [colTotalNilai,   setColTotalNilai]   = useState(false);
+  const [colSisaTagihan,  setColSisaTagihan]  = useState(false);
+  const [colPiutang,      setColPiutang]      = useState(false);
+  const [colJenis,        setColJenis]        = useState(false);
 
   const applyPeriod = (p) => {
     // "all-time" period option: clears date filters to show all transactions
@@ -141,6 +149,40 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     const contrib = getMultiItemContribution(t, selectedItems);
     return a + (contrib ? contrib.combinedCashValue : Number(t.value) - (Number(t.outstanding) || 0));
   }, 0), [filtered, selectedItems]);
+
+  const paymentCount = useMemo(() =>
+    transactions.reduce((total, t) => {
+      if (!Array.isArray(t.paymentHistory)) return total;
+      return total + t.paymentHistory.filter((ph) =>
+        Number(ph.amount) > 0 &&
+        !EDIT_NOTES.has(ph.note) &&
+        (!dateFrom || (ph.date || "") >= dateFrom) &&
+        (!dateTo   || (ph.date || "") <= dateTo)
+      ).length;
+    }, 0),
+  [transactions, dateFrom, dateTo]);
+
+  const grandTotalPaid = useMemo(() => {
+    const filteredNet = filtered.reduce((sum, t) => {
+      const cash = Number(t.value) - (Number(t.outstanding) || 0);
+      return t.type === "income" ? sum + cash : sum - cash;
+    }, 0);
+    const filteredIds = new Set(filtered.map((t) => t.id));
+    const allPaymentsNet = transactions.reduce((sum, t) => {
+      if (filteredIds.has(t.id)) return sum; // already in filteredNet
+      if (!Array.isArray(t.paymentHistory)) return sum;
+      const pmtSum = t.paymentHistory
+        .filter((ph) =>
+          Number(ph.amount) > 0 &&
+          !EDIT_NOTES.has(ph.note) &&
+          (!dateFrom || (ph.date || "") >= dateFrom) &&
+          (!dateTo   || (ph.date || "") <= dateTo)
+        )
+        .reduce((s, ph) => s + Number(ph.amount), 0);
+      return t.type === "income" ? sum + pmtSum : sum - pmtSum;
+    }, 0);
+    return filteredNet + allPaymentsNet;
+  }, [filtered, transactions, dateFrom, dateTo]);
 
   const exportCSV = () => {
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -223,9 +265,9 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
   };
 
   const handleGenerateReport = () => {
-    if (filtered.length === 0) { setToast("Tidak ada transaksi yang cocok dengan filter saat ini."); return; }
-    if (filtered.length > 50)  { setConfirmCount(filtered.length); return; }
-    onReport({ transactions: filtered, dateFrom, dateTo });
+    if (filtered.length === 0 && paymentCount === 0) { setToast("Tidak ada transaksi yang cocok dengan filter saat ini."); return; }
+    if (filtered.length + paymentCount > 50) { setConfirmCount(filtered.length); return; }
+    onReport({ transactions: filtered, allTransactions: transactions, dateFrom, dateTo, colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis });
   };
 
   const hasActiveFilters = selectedClients.length > 0 || selectedItems.length > 0;
@@ -238,6 +280,64 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     if (dateFrom) parts.push(`${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`);
     return parts.length ? parts.join(" · ") : "Semua transaksi";
   }, [typeFilter, selectedClients, selectedItems, dateFrom, dateTo]);
+
+  // Helper: filter predicate for visible payment entries
+  const visiblePmtFilter = (ph) =>
+    Number(ph.amount) > 0 &&
+    !EDIT_NOTES.has(ph.note) &&
+    (!dateFrom || (ph.date || "") >= dateFrom) &&
+    (!dateTo   || (ph.date || "") <= dateTo);
+
+  // Helper: render payment <tr> elements for a transaction
+  const mkPaymentRows = (t, payments, keyPrefix) => {
+    const isIncome = t.type === "income";
+    const phBorderColor = isIncome ? "#10b981" : "#ef4444";
+    const phBg          = isIncome ? "#f0fdf4" : "#fff1f2";
+    const phBadgeBg     = isIncome ? "#dcfce7" : "#fee2e2";
+    const phBadgeFg     = isIncome ? "#065f46" : "#991b1b";
+    const phBadgeLabel  = isIncome ? "Pembayaran Diterima" : "Pembayaran Dilakukan";
+    const phAmountColor = isIncome ? "#10b981" : "#ef4444";
+    return payments.map((ph, phIdx) => (
+      <tr key={`${keyPrefix}-${t.id}-${phIdx}`} style={{ background: phBg, borderLeft: `3px solid ${phBorderColor}` }}>
+        <td />
+        <td style={{ fontSize: 11, fontWeight: 600, color: isIncome ? "#6366f1" : "#374151", fontFamily: "monospace", whiteSpace: "nowrap" }}>
+          {t.txnId || <span style={{ color: "#d1d5db" }}>—</span>}
+        </td>
+        <td className="td-date" style={{ fontSize: 11, color: "#6b7280" }}>{fmtDate(ph.date)}</td>
+        <td className="td-name" style={{ fontSize: 11, color: "#6b7280" }}>{t.counterparty}</td>
+        <td style={{ fontSize: 11 }}>
+          <div>
+            <span style={{ background: phBadgeBg, color: phBadgeFg, borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>
+              {phBadgeLabel}
+            </span>
+            {ph.note ? <span style={{ marginLeft: 4, color: "#374151" }}>{ph.note}</span> : null}
+          </div>
+          {(ph.outstandingBefore != null || ph.outstandingAfter != null) && (
+            <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2 }}>
+              Sisa: {fmtIDR(ph.outstandingBefore ?? 0)} → {fmtIDR(ph.outstandingAfter ?? 0)}
+              {Number(ph.outstandingAfter) === 0 && <span style={{ color: "#10b981", fontWeight: 600 }}> ✓ Lunas</span>}
+            </div>
+          )}
+        </td>
+        <td /><td /><td /><td />
+        {colSudahDibayar && (
+          <td className="td-right" style={{ color: phAmountColor, fontWeight: 700, fontSize: 12 }}>
+            {isIncome ? "+" : "-"}{fmtIDR(ph.amount)}
+          </td>
+        )}
+        {colTotalNilai  && <td />}
+        {colSisaTagihan && (
+          <td className="td-right" style={{ fontSize: 11 }}>
+            {Number(ph.outstandingAfter) > 0
+              ? <span style={{ color: "#f59e0b" }}>{fmtIDR(ph.outstandingAfter)}</span>
+              : <span style={{ color: "#10b981", fontWeight: 600 }}>Lunas ✓</span>}
+          </td>
+        )}
+        {colPiutang && <td />}
+        {colJenis   && <td />}
+      </tr>
+    ));
+  };
 
   return (
     <div>
@@ -358,7 +458,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         <div className="reports-confirm-banner" role="alert">
           <span>Cetak laporan untuk <strong>{confirmCount} transaksi</strong>?</span>
           <div style={{ display:"flex", gap:8, marginTop:8 }}>
-            <button onClick={() => { setConfirmCount(null); onReport({ transactions: filtered, dateFrom, dateTo }); }} className="btn btn-primary btn-sm">Ya, Cetak Laporan</button>
+            <button onClick={() => { setConfirmCount(null); onReport({ transactions: filtered, allTransactions: transactions, dateFrom, dateTo, colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis }); }} className="btn btn-primary btn-sm">Ya, Cetak Laporan</button>
             <button onClick={() => setConfirmCount(null)} className="btn btn-secondary btn-sm">Batal</button>
           </div>
         </div>
@@ -386,128 +486,217 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
 
       {/* Transaction table */}
       <div className="table-card">
+        {/* Column toggle bar */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", padding: "8px 12px 4px", borderBottom: "1px solid #e2e8f0" }}>
+          <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, marginRight: 2 }}>Tampilkan kolom:</span>
+          {[
+            ["Sudah Dibayar", colSudahDibayar, setColSudahDibayar],
+            ["Total Nilai",   colTotalNilai,   setColTotalNilai],
+            ["Sisa Tagihan",  colSisaTagihan,  setColSisaTagihan],
+            ["Piutang/Hutang",colPiutang,      setColPiutang],
+            ["Jenis",         colJenis,        setColJenis],
+          ].map(([label, on, setter]) => (
+            <button
+              key={label}
+              onClick={() => setter((v) => !v)}
+              className={`filter-btn${on ? " filter-btn--active" : ""}`}
+              style={{ fontSize: 11, padding: "2px 10px" }}
+              aria-pressed={on}
+            >{label}</button>
+          ))}
+        </div>
+
         <div className="table-header-bar"><strong>{filtered.length} transaksi</strong></div>
-        {filtered.length === 0 ? (
+        {filtered.length === 0 && paymentCount === 0 ? (
           <div className="empty-state">Tidak ada data untuk filter ini.</div>
         ) : (
-          <div style={{ overflowX:"auto" }}>
+          <div style={{ overflowX: "auto" }}>
             <table className="data-table">
+              <colgroup>
+                <col style={{ width: 36 }} />
+                <col style={{ width: 110 }} />
+                <col style={{ width: 90 }} />
+                <col style={{ width: 120 }} />
+                <col />
+                <col style={{ width: 70 }} />
+                <col style={{ width: 80 }} />
+                <col style={{ width: 90 }} />
+                <col style={{ width: 100 }} />
+                {colSudahDibayar && <col style={{ width: 110 }} />}
+                {colTotalNilai   && <col style={{ width: 110 }} />}
+                {colSisaTagihan  && <col style={{ width: 110 }} />}
+                {colPiutang      && <col style={{ width: 110 }} />}
+                {colJenis                   && <col style={{ width: 90 }} />}
+              </colgroup>
               <thead>
-                <tr>{["Tanggal","No. Invoice","Klien","Barang","Stok","Jenis","Status","Jatuh Tempo","Nilai (Rp)","Piutang/Hutang"].map((h) => <th key={h}>{h}</th>)}</tr>
+                <tr>
+                  <th style={{ textAlign: "center" }}>No</th>
+                  <th>No. Invoice</th>
+                  <th>Tanggal</th>
+                  <th>Klien</th>
+                  <th>Barang</th>
+                  <th className="th-right">Krg</th>
+                  <th className="th-right">Berat (Kg)</th>
+                  <th className="th-right">Harga/Kg</th>
+                  <th className="th-right">Subtotal</th>
+                  {colSudahDibayar && <th className="th-right">Sudah Dibayar</th>}
+                  {colTotalNilai   && <th className="th-right">Total Nilai</th>}
+                  {colSisaTagihan  && <th className="th-right">Sisa Tagihan</th>}
+                  {colPiutang      && <th className="th-right">Piutang/Hutang</th>}
+                  {colJenis                   && <th className="th-center">Jenis</th>}
+                </tr>
               </thead>
               <tbody>
-                {filtered.map((t, i) => {
-                  const contrib = getMultiItemContribution(t, selectedItems);
-                  const cashVal = contrib
-                    ? contrib.combinedCashValue
-                    : Number(t.value) - (Number(t.outstanding) || 0);
-                  const displayOutstanding = contrib
-                    ? contrib.combinedProportionalOutstanding
-                    : (t.outstanding || 0);
-                  const isMulti = Array.isArray(t.items) && t.items.length > 1;
-                  const stockColor = t.type === "income" ? "#ef4444" : "#10b981";
-                  return (
-                    <tr
-                      key={t.id}
-                      className={i%2===0?"":"row-alt"}
-                      style={{ cursor: "pointer" }}
-                      onClick={(e) => { if (!e.target.closest("button, a, input, select, textarea")) setDetailTx(t); }}
-                    >
-                      <td className="text-muted td-date">{fmtDate(t.date)}</td>
-                      <td style={{ fontSize: 11, fontWeight: 600, color: t.type === "income" ? "#6366f1" : "#374151", fontFamily: "monospace", whiteSpace: "nowrap" }}>
-                        {t.txnId || <span style={{ color: "#d1d5db" }}>—</span>}
-                      </td>
-                      <td className="td-name">{t.counterparty}</td>
+                {filtered.map((t, txIdx) => {
+                  const items = Array.isArray(t.items) && t.items.length > 0
+                    ? t.items
+                    : [{ itemName: t.itemName || "—", sackQty: t.stockQty ?? 0, weightKg: t.weightKg || 0, pricePerKg: t.pricePerKg || 0, subtotal: t.value || 0 }];
+                  const isMulti = items.length > 1;
+                  const txNo = txIdx + 1;
+                  const paid = Number(t.value) - (Number(t.outstanding) || 0);
+                  const outstanding = Number(t.outstanding) || 0;
+                  const rowBg = { background: "#f8fafc" }; // first/subtotal rows — slight shade
+                  const itemBg = { background: "#ffffff" }; // continuation item rows
+                  const optCells = (show) => show ? (
+                    <>
+                      {colSudahDibayar && <td className="td-right" style={{ color: paid > 0 ? "#10b981" : "#9ca3af", fontWeight: 600 }}>{fmtIDR(paid)}</td>}
+                      {colTotalNilai   && <td className="td-right" style={{ fontWeight: 600 }}>{fmtIDR(t.value)}</td>}
+                      {colSisaTagihan  && <td className="td-right" style={{ color: outstanding > 0 ? "#f59e0b" : "#9ca3af" }}>{outstanding > 0 ? fmtIDR(outstanding) : "—"}</td>}
+                      {colPiutang      && <td className="td-center">{(() => {
+                        const [bg, fg, label] = outstanding > 0
+                          ? t.type === "income"
+                            ? ["#d1fae5", "#065f46", "Piutang"]
+                            : ["#fee2e2", "#991b1b", "Hutang"]
+                          : ["#d1fae5", "#065f46", "Lunas"];
+                        return <span style={{ background: bg, color: fg, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{label}</span>;
+                      })()}</td>}
+                      {colJenis        && <td className="td-center"><TypeBadge type={t.type} /></td>}
+                    </>
+                  ) : (
+                    <>
+                      {colSudahDibayar && <td />}
+                      {colTotalNilai   && <td />}
+                      {colSisaTagihan  && <td />}
+                      {colPiutang      && <td />}
+                      {colJenis        && <td />}
+                    </>
+                  );
 
-                      {/* Item / Barang column */}
-                      <td style={isMulti ? { verticalAlign: "top" } : {}}>
-                        {contrib ? (
-                          <div className="item-list">
-                            {contrib.filteredItems.map((item, idx) => (
-                              <div key={`m-${idx}`} className="item-list__row item-filter-primary">
-                                <span className="item-list__bullet">•</span>
-                                <span>{item.itemName}</span>
-                              </div>
-                            ))}
-                            {contrib.otherItems.map((item, idx) => (
-                              <div key={`o-${idx}`} className="item-list__row item-filter-secondary">
-                                <span className="item-list__bullet" style={{ color: "#d1d5db" }}>•</span>
-                                <span>{item.itemName}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : isMulti ? (
-                          <div className="item-list">
-                            {t.items.map((item, idx) => (
-                              <div key={idx} className="item-list__row">
-                                <span className="item-list__bullet">•</span>
-                                <span>{item.itemName}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          t.itemName
-                        )}
-                      </td>
+                  const groupBorder = txIdx > 0 ? { borderTop: "1.5px solid #cbd5e1" } : {};
 
-                      {/* Stok column */}
-                      <td style={{ color: stockColor, fontWeight: 600, ...(isMulti ? { verticalAlign: "top" } : {}) }}>
-                        {contrib ? (
-                          <div className="item-list" style={{ alignItems: "center" }}>
-                            {contrib.filteredItems.map((item, idx) => (
-                              <div key={`m-${idx}`} className="item-list__row item-filter-primary" style={{ justifyContent: "center" }}>
-                                <span style={{ color: stockColor }}>{t.type === "income" ? "-" : "+"}{fmtQty(item.sackQty)} karung</span>
-                              </div>
-                            ))}
-                            {contrib.otherItems.map((item, idx) => (
-                              <div key={`o-${idx}`} className="item-list__row item-filter-secondary" style={{ justifyContent: "center" }}>
-                                <span>{t.type === "income" ? "-" : "+"}{fmtQty(item.sackQty)} karung</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : isMulti ? (
-                          <div className="item-list" style={{ alignItems: "center" }}>
-                            {t.items.map((item, idx) => (
-                              <div key={idx} className="item-list__row" style={{ justifyContent: "center" }}>
-                                <span style={{ color: stockColor }}>{t.type === "income" ? "-" : "+"}{fmtQty(item.sackQty)} karung</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <>{t.type === "income" ? "-" : "+"}{fmtQty(t.stockQty)} {t.stockUnit}</>
-                        )}
-                      </td>
+                  if (!isMulti) {
+                    // Single-item transaction — one row, optional cols shown here
+                    const it = items[0];
+                    const inlinePayments = Array.isArray(t.paymentHistory)
+                      ? t.paymentHistory.filter(visiblePmtFilter)
+                      : [];
+                    return [
+                      <tr
+                        key={t.id}
+                        style={{ ...rowBg, ...groupBorder, cursor: "pointer" }}
+                        onClick={(e) => { if (!e.target.closest("button,a,input,select,textarea")) setDetailTx(t); }}
+                      >
+                        <td style={{ textAlign: "center", color: "#6b7280", fontSize: 12 }}>{txNo}</td>
+                        <td style={{ fontSize: 11, fontWeight: 600, color: t.type === "income" ? "#6366f1" : "#374151", fontFamily: "monospace", whiteSpace: "nowrap" }}>
+                          {t.txnId || <span style={{ color: "#d1d5db" }}>—</span>}
+                        </td>
+                        <td className="text-muted td-date">{fmtDate(t.date)}</td>
+                        <td className="td-name">{t.counterparty}</td>
+                        <td>{it.itemName}</td>
+                        <td className="td-right">{it.sackQty != null ? fmtQty(it.sackQty) : "—"}</td>
+                        <td className="td-right">{it.weightKg ? fmtQty(it.weightKg) : "—"}</td>
+                        <td className="td-right">{it.pricePerKg ? fmtIDR(it.pricePerKg) : "—"}</td>
+                        <td className="td-right" style={{ fontWeight: 700 }}>{fmtIDR(it.subtotal)}</td>
+                        {optCells(true)}
+                      </tr>,
+                      ...mkPaymentRows(t, inlinePayments, "iph"),
+                    ];
+                  }
 
-                      <td><TypeBadge type={t.type} /></td>
-                      <td><StatusBadge status={t.status} /></td>
-                      <td style={{ textAlign:"center" }}><DueBadge dueDate={t.dueDate} outstanding={t.outstanding} /></td>
+                  // Multi-item transaction — item rows + subtotal row
+                  const rows = items.map((it, itIdx) => {
+                    const isFirst = itIdx === 0;
+                    return (
+                      <tr
+                        key={`${t.id}-${itIdx}`}
+                        style={{ ...(isFirst ? rowBg : itemBg), ...(isFirst ? groupBorder : {}), cursor: isFirst ? "pointer" : "default" }}
+                        onClick={isFirst ? (e) => { if (!e.target.closest("button,a,input,select,textarea")) setDetailTx(t); } : undefined}
+                      >
+                        <td style={{ textAlign: "center", color: "#6b7280", fontSize: 12 }}>{isFirst ? txNo : ""}</td>
+                        <td style={{ fontSize: 11, fontWeight: 600, color: t.type === "income" ? "#6366f1" : "#374151", fontFamily: "monospace", whiteSpace: "nowrap" }}>
+                          {isFirst ? (t.txnId || <span style={{ color: "#d1d5db" }}>—</span>) : ""}
+                        </td>
+                        <td className="text-muted td-date">{isFirst ? fmtDate(t.date) : ""}</td>
+                        <td className="td-name">{isFirst ? t.counterparty : ""}</td>
+                        <td style={{ paddingLeft: isFirst ? undefined : 20 }}>{it.itemName}</td>
+                        <td className="td-right">{it.sackQty != null ? fmtQty(it.sackQty) : "—"}</td>
+                        <td className="td-right">{it.weightKg ? fmtQty(it.weightKg) : "—"}</td>
+                        <td className="td-right">{it.pricePerKg ? fmtIDR(it.pricePerKg) : "—"}</td>
+                        <td className="td-right">{fmtIDR(it.subtotal)}</td>
+                        {optCells(false)}
+                      </tr>
+                    );
+                  });
 
-                      {/* Nilai Kas column */}
-                      <td style={{ fontWeight: 700, color: t.type === "income" ? "#10b981" : "#ef4444" }}>
-                        {contrib ? (
-                          <div>
-                            <div className="item-filter-value-primary" style={{ color: t.type === "income" ? "#10b981" : "#ef4444" }}>{fmtIDR(contrib.combinedCashValue)}</div>
-                            <div className="item-filter-value-secondary">Total transaksi: {fmtIDR(Number(t.value) - (Number(t.outstanding) || 0))}</div>
-                          </div>
-                        ) : fmtIDR(cashVal)}
+                  // Subtotal row — spans label cols, shows total value + optional cols
+                  const subtotalRow = (
+                    <tr key={`${t.id}-sub`} style={{ ...rowBg, borderTop: "1px solid #e2e8f0" }}>
+                      <td colSpan={8} style={{ textAlign: "right", fontSize: 11, color: "#6b7280", paddingRight: 8, fontStyle: "italic" }}>
+                        Total:
                       </td>
-
-                      {/* Piutang/Hutang column */}
-                      <td style={{ fontSize: 11, color: displayOutstanding > 0 ? "#f59e0b" : "#9ca3af" }}>
-                        {displayOutstanding > 0 ? (
-                          <div>
-                            <div>{fmtIDR(displayOutstanding)}</div>
-                            {contrib && (t.outstanding || 0) > 0 && (
-                              <div className="item-filter-value-secondary">Total: {fmtIDR(t.outstanding)}</div>
-                            )}
-                          </div>
-                        ) : "—"}
-                      </td>
+                      <td className="td-right" style={{ fontWeight: 700 }}>{fmtIDR(t.value)}</td>
+                      {optCells(true)}
                     </tr>
                   );
+
+                  const inlinePayments = Array.isArray(t.paymentHistory)
+                    ? t.paymentHistory.filter(visiblePmtFilter)
+                    : [];
+                  return [...rows, subtotalRow, ...mkPaymentRows(t, inlinePayments, "iph")];
                 })}
+                {/* Orphan payment rows — payments from transactions outside the date filter */}
+                {(() => {
+                  const filteredIds = new Set(filtered.map((t) => t.id));
+                  const orphanRows = transactions.flatMap((t) => {
+                    if (filteredIds.has(t.id)) return [];
+                    const pmts = Array.isArray(t.paymentHistory)
+                      ? t.paymentHistory.filter(visiblePmtFilter)
+                      : [];
+                    return mkPaymentRows(t, pmts, "oph");
+                  });
+                  if (orphanRows.length === 0) return null;
+                  const totalCols = 9 + [colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis].filter(Boolean).length;
+                  return [
+                    <tr key="orphan-sep">
+                      <td colSpan={totalCols} style={{ fontSize: 11, color: "#6b7280", padding: "6px 8px", background: "#f1f5f9", borderTop: "1.5px solid #cbd5e1" }}>
+                        Pembayaran dari transaksi di luar periode ini:
+                      </td>
+                    </tr>,
+                    ...orphanRows,
+                  ];
+                })()}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Grand total row */}
+        {(filtered.length > 0 || paymentCount > 0) && (
+          <div style={{ padding: "10px 16px", borderTop: "2px solid #e2e8f0", fontSize: 13, color: "#374151", display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontWeight: 600 }}>{filtered.length} transaksi</span>
+            {paymentCount > 0 && (
+              <>
+                <span style={{ color: "#6b7280" }}>·</span>
+                <span style={{ color: "#6b7280" }}>{paymentCount} pembayaran</span>
+              </>
+            )}
+            <span style={{ color: "#6b7280" }}>|</span>
+            <span>
+              Grand Total Sudah Dibayar:{" "}
+              <span style={{ fontWeight: 700, color: "#10b981" }}>
+                {fmtIDR(grandTotalPaid)}
+              </span>
+            </span>
           </div>
         )}
       </div>

@@ -1895,9 +1895,15 @@ export default function App() {
       {reportState && (
         <ReportModal
           transactions={reportState.transactions}
+          allTransactions={reportState.allTransactions}
           settings={data.settings}
           dateFrom={reportState.dateFrom}
           dateTo={reportState.dateTo}
+          colSudahDibayar={reportState.colSudahDibayar}
+          colTotalNilai={reportState.colTotalNilai}
+          colSisaTagihan={reportState.colSisaTagihan}
+          colPiutang={reportState.colPiutang}
+          colJenis={reportState.colJenis}
           onClose={() => setReportState(null)}
         />
       )}

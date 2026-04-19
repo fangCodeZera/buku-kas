@@ -55,7 +55,7 @@ src/
     Inventory.js                  1665  Stock inventory with catalog table + ledger
     Contacts.js                    639  Contact list + detail panel + transaction history
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
-    Reports.js                     508  Date-range financial report + CSV/JSON export (Laba/Rugi hidden from Karyawan)
+    Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table)
     Outstanding.js                 557  AR/AP outstanding transactions view
     Settings.js                    591  Business settings + JSON/CSV backup/restore + printer type toggle
     ArchivedItems.js               286  Archived catalog items — restore or delete
@@ -71,7 +71,7 @@ src/
     InvoiceModal.js                337  Printable A4 invoice
     SuratJalanModal.js             289  Printable A4 delivery note
     DotMatrixPrintModal.js         122  Dot matrix preview + print modal (invoice & surat jalan)
-    ReportModal.js                 312  Printable A4 report modal (opened from Reports page)
+    ReportModal.js                 ~450 Printable landscape report modal — 3-col header (biz/title/meta), 8 fixed cols (NO|NO.INVOICE|TANGGAL|KLIEN|BARANG|BERAT KG @ HARGA|KRG|SUBTOTAL) + 5 optional cols, per-item rows, payment rows (inline+orphan), 3 print-option toggles (company name / orphan payments / summary), Grand Total IDR
     StockWarningModal.js            77  Negative-stock warning
     CategoryModal.js               488  Category management with drag-and-drop
     StockReportModal.js            330  Printable stock report
@@ -206,7 +206,7 @@ const [sidebarOpen,           setSidebarOpen]           = useState(() => window.
 const [reportItemFilter,      setReportItemFilter]      = useState(null);   // item name pre-filter from Inventory "Lihat"
 const [outstandingHighlight,  setOutstandingHighlight]  = useState(null);   // tx ID array to highlight on Outstanding page
 const [txPageHighlight,       setTxPageHighlight]       = useState(null);   // { txId, date } — highlight a tx on Penjualan/Pembelian from ActivityLog "Lihat"
-const [reportState,           setReportState]           = useState(null);   // { transactions, dateFrom, dateTo } — opens ReportModal
+const [reportState,           setReportState]           = useState(null);   // { transactions, allTransactions, dateFrom, dateTo, colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis } — opens ReportModal
 
 // UI state
 const [backupBannerDismissed, setBackupBannerDismissed] = useState(false);
@@ -542,13 +542,35 @@ onNavigateToArchive?
 **Props:** `transactions, contacts, settings, onReport?, initItemFilter?, onClearItemFilter?, profile?`
 Note: `onInvoice` prop is not used in the current code (was removed). `onReport` triggers ReportModal via App.js.
 
-**Key state:** `dateFrom`, `dateTo`, `selectedClients`, `selectedItems`, `period`, `toast`, `confirmCount`, `exportFormat`
+**Key state:** `dateFrom`, `dateTo`, `selectedClients`, `selectedItems`, `period` (default `"daily"`), `toast`, `confirmCount`, `exportFormat`, `detailTx`, `colSudahDibayar` (default true), `colTotalNilai` (false), `colSisaTagihan` (false), `colPiutang` (false), `colJenis` (false)
 
-**Role-based visibility:** `isOwner = profile?.role === "owner"`. The "Laba / Rugi" summary card (net profit) is hidden when `!isOwner` — Karyawan staff see only Total Pemasukan and Total Pengeluaran. Grid switches from `summary-grid--3` to `summary-grid--2` when Laba/Rugi is hidden. Transaction table and export remain fully visible to all roles.
+**Default period:** `"daily"` — `dateFrom` and `dateTo` both initialize to `today()`. Previously `"monthly"`.
 
-**Export:** Can export JSON or CSV. CSV format has 14 columns (per-transaction rows, no summary row). JSON export tracks `lastExportDate` in settings. Import now re-enabled in Supabase mode — upserts each entity via `Promise.allSettled`.
+**Role-based visibility:** `isOwner = profile?.role === "owner"`. Summary cards (Total Pemasukan, Total Pengeluaran, Laba/Rugi) hidden from Karyawan (`{isOwner && (...)}` block). All optional table columns (including financial cols) visible to all authenticated users — no role restriction on the table.
 
-**Internal:** `getMultiItemContribution(t, selItems)` — computes item breakdown for multi-item transactions when item filter active.
+**Export:** Can export JSON or CSV. CSV format has 15 columns (per-item rows). JSON export. Both use Blob+createObjectURL. CSV export is unaffected by column toggle state — always exports full data.
+
+**Transaction table structure (redesigned 2026-04-19):**
+- Fixed columns: No | No.Invoice | Tanggal | Klien | Barang | Krg | Berat (Kg) | Harga/Kg | Subtotal
+- Optional toggle columns (shown above table as `filter-btn` toggles): Sudah Dibayar (default on), Total Nilai, Sisa Tagihan, Piutang/Hutang, Jenis
+- **Single-item transactions:** one row — optional cols shown on that row
+- **Multi-item transactions:** one row per item (first row has No/txnId/date/client; continuation rows have those cells blank) + a subtotal row (`Total:` right-aligned label, total value) — optional cols shown on subtotal row only, blank on item rows
+- Row no. counts transactions, not rows
+- First/subtotal rows: `background: #f8fafc`; continuation item rows: `background: #ffffff`
+- `border-top: 1.5px solid #cbd5e1` applied to the first row of every transaction group except the first (`txIdx > 0`) — visually separates transaction groups
+- Clicking first row (single or multi) opens `TransactionDetailModal`
+- Table renders when `filtered.length > 0 || paymentCount > 0`. Empty state ("Tidak ada data untuk filter ini.") shown only when both are 0.
+- Grand total below table: `N transaksi [· N pembayaran] | Grand Total Sudah Dibayar: Rp [sum]` — shown when `filtered.length > 0 || paymentCount > 0`; `· N pembayaran` shown only when `paymentCount > 0`
+- **Piutang/Hutang column** shows a status badge (not a number): `outstanding > 0 + income` → "Piutang" green; `outstanding > 0 + expense` → "Hutang" red; `outstanding === 0` → "Lunas" green. Inline IIFE, no external component.
+- **Payment rows** — two groups:
+  - **Inline:** rendered immediately after their parent transaction row(s) inside `filtered.map()`. Filtered by `visiblePmtFilter` (payment date in range, amount > 0, not an edit note).
+  - **Orphan:** rendered after all `filtered.map()` rows in a separate IIFE block. Covers payments from transactions whose transaction date is outside the filter range, but whose payment date is within. Preceded by a separator row: "Pembayaran dari transaksi di luar periode ini:". Only shown when orphan rows exist.
+  - Content (Option B): No column blank; No.Invoice = txnId (income: indigo, expense: dark); Tanggal = payment date; Klien = counterparty; Barang = badge ("Pembayaran Diterima"/"Pembayaran Dilakukan") + note, with `Sisa: Rp X → Rp Y [✓ Lunas]` line below. Sudah Dibayar = `+` (income green) or `-` (expense red) amount. Sisa Tagihan = remaining amount or "Lunas ✓". Not clickable.
+  - `visiblePmtFilter(ph)` and `mkPaymentRows(t, payments, keyPrefix)` are in-render helpers defined before `return (`.
+- `paymentCount` useMemo counts from ALL `transactions` (not `filtered`) — consistent with orphan payment coverage.
+- `grandTotalPaid` useMemo: sums `(value - outstanding)` for `filtered` transactions PLUS `ph.amount` for all visible payment rows across ALL transactions. Used in grand total bar.
+
+**Internal:** `getMultiItemContribution(t, selItems)` — retained as dead code (no longer used in table rendering; still used in `income`/`expense` useMemos for summary cards).
 
 ### pages/Outstanding.js
 **Props:** `transactions, onEdit, onMarkPaid, onDelete, onInvoice, highlightTxIds?, onClearHighlight?`
