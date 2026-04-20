@@ -188,8 +188,8 @@ const Inventory = ({
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
-  const openRename = (itemName, unit) => {
-    setRenameTarget({ itemName, unit });
+  const openRename = (itemName, unit, isCatalogued = false) => {
+    setRenameTarget({ itemName, unit, isCatalogued });
     setRenameNewName(itemName);
     setRenameError("");
     setRenameMergeConfirm(false);
@@ -202,6 +202,12 @@ const Inventory = ({
     const normalizedNew = normalizeTitleCase(trimmed);
     const normalizedOld = renameTarget.itemName;
     const isSameKey = normItem(normalizedNew) === normItem(normalizedOld);
+    // Guard: catalogued items cannot merge into an existing item — catalog dedup is complex
+    if (renameTarget.isCatalogued && !isSameKey && normItem(normalizedNew) in activeStockMap) {
+      setRenameError("Nama ini sudah dipakai oleh item lain. Pilih nama yang belum ada.");
+      return;
+    }
+    // Uncatalogued: show merge-confirm (existing behavior unchanged)
     if (!isSameKey && !renameMergeConfirm && normItem(normalizedNew) in activeStockMap) {
       setRenameMergeConfirm(true);
       return;
@@ -613,16 +619,11 @@ const Inventory = ({
       defaultUnit: (catalogForm.defaultUnit || "karung").trim() || "karung",
     };
 
-    // If name changed, cascade rename to all matching transactions and adjustments
-    const original = itemCatalog.find((c) => c.id === catalogForm.id);
-    if (original && normItem(original.name) !== normItem(updatedItem.name)) {
-      // Rename the base item (covers transactions without subtypes or with base-level stock)
-      onRenameItem(original.name, updatedItem.name);
-      // Rename each subtype's combined name (e.g. "Bawang Putih Cina" → "Bawang Putih Lokal Cina")
-      for (const sub of (original.subtypes || [])) {
-        onRenameItem(`${original.name} ${sub}`, `${updatedItem.name} ${sub}`);
-      }
-    }
+    // Catalog rename is handled atomically by App.js renameInventoryItem
+    // (called via onRenameItem from the Ubah Nama button).
+    // handleUpdateCatalogItem no longer cascades name changes — it's only
+    // reachable for subtype/unit edits (via handleAddSubtype / inline subtype rename),
+    // where name is unchanged.
 
     onUpdateCatalogItem(updatedItem);
     setCatalogForm(null); setCatalogFormError(""); setCatalogSubtypeError("");
@@ -1552,11 +1553,14 @@ const Inventory = ({
                               >
                                 <Icon name="reports" size={13} color="#6366f1" />
                               </button>
-                              {/* 4. Ubah Nama — only for uncatalogued items */}
-                              {/* Catalogued items and subtypes must be renamed via the catalog edit form */}
-                              {isToday && !row.catalogItem && !row.isSubtype && (
+                              {/* 4. Ubah Nama — for catalogued base rows and uncatalogued items */}
+                              {/* Routes through renameInventoryItem which atomically updates
+                                  itemCatalog (if catalogued) and cascades all transactions,
+                                  adjustments, and combined subtype names. Subtype rows have no
+                                  rename path yet — deferred to B3. */}
+                              {isToday && !row.isSubtype && (
                                 <button
-                                  onClick={() => openRename(row.displayName, row.unit)}
+                                  onClick={() => openRename(row.displayName, row.unit, !!row.catalogItem)}
                                   className="action-btn action-btn--edit"
                                   title="Ubah Nama"
                                   aria-label={`Ubah nama ${row.displayName}`}

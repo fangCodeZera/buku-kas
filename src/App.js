@@ -1337,40 +1337,87 @@ export default function App() {
       }
     );
 
-  // ── Rename an inventory item across all transactions and adjustments ───────
-  const renameInventoryItem = (oldName, newName) =>
-    update((d) => ({
-      ...d,
-      transactions: d.transactions.map((t) => {
-        const matchesTop = normItem(t.itemName) === normItem(oldName);
-        return {
-          ...t,
-          itemName: matchesTop ? newName : t.itemName,
-          items: Array.isArray(t.items)
-            ? t.items.map((it) =>
-                normItem(it.itemName) === normItem(oldName)
-                  ? { ...it, itemName: newName }
-                  : it
-              )
-            : t.items,
+  // ── Rename an inventory item across all transactions, adjustments, and catalog ─
+  // If oldName matches a catalog entry, the catalog name is updated atomically and
+  // all subtype combined names ("Base Sub") are cascaded on transactions and adjustments.
+  // If no catalog entry matches, behavior is identical to the original (uncatalogued rename).
+  const renameInventoryItem = (oldName, newName) => {
+    // Capture catalog match ID via closure so the supabaseOperation can look it up
+    // in nd (post-mutation state) by ID rather than by name — avoids false matches
+    // on a coincidentally same-named catalog entry at the destination.
+    // Same pattern as deleteCatalogItem / adjIdsToDelete.
+    // RETRY SAFETY: only set when found — never cleared on retry (when fn re-runs on
+    // already-renamed state, find() returns undefined and we must not overwrite the ID).
+    let catalogMatchId = null;
+    update(
+      (d) => {
+        const catalogMatch = (d.itemCatalog || []).find(
+          (c) => normItem(c.name) === normItem(oldName)
+        );
+        if (catalogMatch) catalogMatchId = catalogMatch.id;
+        const subtypeList = catalogMatch?.subtypes || [];
+
+        // Build a map of every old variant → new variant:
+        // base name + each subtype's combined name ("Base Sub" → "NewBase Sub")
+        const nameMap = new Map();
+        nameMap.set(normItem(oldName), newName);
+        for (const sub of subtypeList) {
+          nameMap.set(normItem(`${oldName} ${sub}`), `${newName} ${sub}`);
+        }
+        const mapName = (name) => {
+          const mapped = nameMap.get(normItem(name));
+          return mapped !== undefined ? mapped : name;
         };
-      }),
-      stockAdjustments: (d.stockAdjustments || []).map((a) =>
-        normItem(a.itemName) === normItem(oldName) ? { ...a, itemName: newName } : a
-      ),
-    }),
-    (nd) => Promise.all([
-      ...nd.transactions
-        .filter((t) => {
-          const items = Array.isArray(t.items) && t.items.length > 0 ? t.items : [{ itemName: t.itemName }];
-          return items.some((it) => normItem(it.itemName) === normItem(newName));
-        })
-        .map((tx) => sbSaveTransaction(tx, user.id)),
-      ...nd.stockAdjustments
-        .filter((a) => normItem(a.itemName) === normItem(newName))
-        .map((adj) => sbSaveStockAdjustment(adj, user.id)),
-    ])
+
+        return {
+          ...d,
+          transactions: d.transactions.map((t) => ({
+            ...t,
+            itemName: mapName(t.itemName),
+            items: Array.isArray(t.items)
+              ? t.items.map((it) => ({ ...it, itemName: mapName(it.itemName) }))
+              : t.items,
+          })),
+          stockAdjustments: (d.stockAdjustments || []).map((a) => ({
+            ...a,
+            itemName: mapName(a.itemName),
+          })),
+          itemCatalog: catalogMatch
+            ? (d.itemCatalog || []).map((c) =>
+                c.id === catalogMatch.id ? { ...c, name: newName } : c
+              )
+            : d.itemCatalog,
+        };
+      },
+      (nd) => {
+        // Find the renamed catalog entry by ID (captured above) so we never
+        // accidentally match a pre-existing entry whose name happens to equal newName.
+        const renamedCatalog = catalogMatchId
+          ? (nd.itemCatalog || []).find((c) => c.id === catalogMatchId)
+          : null;
+        const subtypeList = renamedCatalog?.subtypes || [];
+        // All name variants that now carry newName as the base
+        const newNames = new Set([
+          normItem(newName),
+          ...subtypeList.map((s) => normItem(`${newName} ${s}`)),
+        ]);
+        const matchesNew = (name) => newNames.has(normItem(name || ""));
+        return Promise.all([
+          ...nd.transactions
+            .filter((t) => {
+              const items = Array.isArray(t.items) && t.items.length > 0
+                ? t.items : [{ itemName: t.itemName }];
+              return items.some((it) => matchesNew(it.itemName));
+            })
+            .map((tx) => sbSaveTransaction(tx, user.id)),
+          ...nd.stockAdjustments
+            .filter((a) => matchesNew(a.itemName))
+            .map((adj) => sbSaveStockAdjustment(adj, user.id)),
+          renamedCatalog ? sbSaveItemCatalogItem(renamedCatalog, user.id) : Promise.resolve(),
+        ]);
+      }
     );
+  };
 
   // ── Delete all transactions and adjustments for an inventory item ──────────
   const deleteInventoryItem = (itemName) => {
