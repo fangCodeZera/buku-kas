@@ -148,6 +148,8 @@ Form valid: .form-input--error, .form-select--error, .field-error
 Inventory:  .inventory-group-header (hover locked to #1e3a5f — do not remove)
             .inventory-item-card, .inventory-item-card__* (full set in styles.css)
             .inventory-item-card--uncataloged
+Category:   .cat-modal__archive-toggle, .cat-modal__archive-hint
+            .cat-modal__item-pill--archived (opacity 0.55 + strikethrough)
 Utility:    .whitespace-nowrap, .hidden, .md\:table-cell
 ```
 

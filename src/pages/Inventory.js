@@ -1680,6 +1680,7 @@ const Inventory = ({
         <CategoryModal
           categories={itemCategories}
           stockMap={stockMap}
+          itemCatalog={itemCatalog}
           onSave={(cats) => { onUpdateCategories(cats); setShowCategoryModal(false); }}
           onClose={() => setShowCategoryModal(false)}
         />

@@ -2,9 +2,9 @@
  * components/CategoryModal.js
  * Modal for managing item categories/groups.
  * Supports inline editing, HTML5 drag-and-drop (items between groups, group merge),
- * and auto-detection of categories for uncategorized items.
+ * auto-detection of categories for uncategorized items, and archive-aware filtering.
  */
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { autoDetectCategories, generateCodes } from "../utils/categoryUtils";
 import { generateId, normalizeTitleCase, normItem } from "../utils/idGenerators";
 import Icon from "./Icon";
@@ -14,10 +14,11 @@ import Icon from "./Icon";
  *   categories: Array,
  *   stockMap: Object,
  *   onSave: (categories: Array) => void,
- *   onClose: () => void
+ *   onClose: () => void,
+ *   itemCatalog?: Array
  * }} props
  */
-const CategoryModal = ({ categories, stockMap, onSave, onClose }) => {
+const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = [] }) => {
   // ── Local state ─────────────────────────────────────────────────────────────
   const [localCats, setLocalCats] = useState(() =>
     autoDetectCategories(stockMap, categories)
@@ -31,6 +32,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose }) => {
   const [dragOverTarget, setDragOverTarget] = useState(null); // group id
   const [dirty, setDirty] = useState(false);
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const nameInputRef = useRef(null);
   const codeInputRef = useRef(null);
@@ -55,6 +57,50 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose }) => {
       newGroupRef.current = null;
     }
   }, [localCats]);
+
+  // ── Archive-aware key sets ──────────────────────────────────────────────────
+  // Both sets depend only on itemCatalog, not localCats.
+  // Subtypes are evaluated independently of base archive status — matches Inventory.js lines 499–506.
+
+  const archivedCatalogKeys = useMemo(() => {
+    const set = new Set();
+    for (const cat of itemCatalog) {
+      if (cat.archived === true) set.add(normItem(cat.name));
+      const archivedSubs = new Set((cat.archivedSubtypes || []).map(normItem));
+      for (const sub of (cat.subtypes || [])) {
+        if (archivedSubs.has(normItem(sub))) set.add(normItem(`${cat.name} ${sub}`));
+      }
+    }
+    return set;
+  }, [itemCatalog]);
+
+  const activeCatalogKeys = useMemo(() => {
+    const set = new Set();
+    for (const cat of itemCatalog) {
+      if (cat.archived === false) set.add(normItem(cat.name));
+      const archivedSubs = new Set((cat.archivedSubtypes || []).map(normItem));
+      for (const sub of (cat.subtypes || [])) {
+        if (!archivedSubs.has(normItem(sub))) set.add(normItem(`${cat.name} ${sub}`));
+      }
+    }
+    return set;
+  }, [itemCatalog]);
+
+  // One-shot orphan detection on mount — logs stale itemCategories keys with no catalog entry.
+  useEffect(() => {
+    const orphans = [];
+    for (const cat of localCats) {
+      for (const key of cat.items) {
+        if (!activeCatalogKeys.has(key) && !archivedCatalogKeys.has(key)) {
+          orphans.push({ key, groupName: cat.groupName });
+        }
+      }
+    }
+    if (orphans.length > 0) {
+      console.warn("[CategoryModal] Detected orphan keys in itemCategories:", orphans);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally run once on mount only
 
   // ── Helper: regenerate all non-manual codes ─────────────────────────────────
   const regenerateAllCodes = useCallback((cats) => {
@@ -255,7 +301,9 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose }) => {
 
   // ── Save ───────────────────────────────────────────────────────────────────
   const handleSave = () => {
-    // Filter out groups with no items AND no name (abandoned empty groups)
+    // Filter out groups with no items AND no name (abandoned empty groups).
+    // localCats is NEVER filtered by archive state here — archived items must
+    // keep their category references across saves.
     const cleaned = localCats.filter((c) => c.items.length > 0 || c.groupName.trim());
     onSave(cleaned);
   };
@@ -277,6 +325,27 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose }) => {
   const uncategorizedItems = Object.keys(stockMap).filter(
     (k) => !allCategorizedItems.has(k)
   );
+
+  // Count archived keys hidden when toggle is off, across categories and uncategorized section.
+  const hiddenArchivedCount = useMemo(() => {
+    let count = 0;
+    for (const cat of localCats) {
+      for (const key of cat.items) {
+        if (archivedCatalogKeys.has(key)) count++;
+      }
+    }
+    for (const key of uncategorizedItems) {
+      if (archivedCatalogKeys.has(key)) count++;
+    }
+    return count;
+  }, [localCats, archivedCatalogKeys, stockMap]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Filtered uncategorized items by toggle state.
+  // Rule: archived keys are hidden when toggle is off; uncataloged-with-txs keys
+  // (in neither set) are always shown — they're real items needing categorization.
+  const filteredUncategorized = showArchived
+    ? uncategorizedItems
+    : uncategorizedItems.filter((k) => !archivedCatalogKeys.has(k));
 
   // ── Determine drag highlight class per group ────────────────────────────────
   const getGroupClassName = (catId) => {
@@ -301,161 +370,191 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose }) => {
 
         {/* Body */}
         <div className="cat-modal__body">
-          {localCats.map((cat) => (
-            <div
-              key={cat.id}
-              className={getGroupClassName(cat.id)}
-              onDragOver={handleDragOver}
-              onDragEnter={(e) => handleDragEnter(e, cat.id)}
-              onDragLeave={(e) => handleDragLeave(e, cat.id)}
-              onDrop={(e) => handleDrop(e, cat.id)}
-            >
-              {/* Group header */}
-              <div className="cat-modal__group-header">
-                {/* Drag handle for group merge */}
-                <span
-                  className="cat-modal__group-drag"
-                  draggable="true"
-                  onDragStart={(e) => handleGroupDragStart(e, cat.id)}
-                  onDragEnd={handleDragEnd}
-                  title="Seret ke grup lain untuk menggabungkan"
-                >
-                  ⠿
-                </span>
+          {/* Archive visibility toggle */}
+          <div className="cat-modal__archive-toggle">
+            <label>
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+              />
+              <span>Tampilkan yang diarsipkan</span>
+            </label>
+            {!showArchived && hiddenArchivedCount > 0 && (
+              <span className="cat-modal__archive-hint">
+                ({hiddenArchivedCount} diarsipkan disembunyikan)
+              </span>
+            )}
+          </div>
 
-                {/* Group name */}
-                {editingName === cat.id ? (
-                  <span style={{ position: "relative" }}>
-                    <input
-                      ref={nameInputRef}
-                      className="cat-modal__group-name-input"
-                      defaultValue={cat.groupName}
-                      onBlur={(e) => commitName(cat.id, e.target.value)}
-                      onKeyDown={(e) => handleNameKeyDown(e, cat.id)}
-                      onChange={() => setNameError(null)}
-                      placeholder="Nama kategori..."
-                    />
-                    {nameError && (
-                      <span style={{
-                        position: "absolute", top: "100%", left: 0,
-                        fontSize: 11, color: "#ef4444", whiteSpace: "nowrap",
-                        background: "#fff", padding: "2px 4px", borderRadius: 4,
-                        boxShadow: "0 1px 4px rgba(0,0,0,0.12)", zIndex: 10,
-                      }}>
-                        {nameError}
-                      </span>
-                    )}
-                  </span>
-                ) : (
+          {localCats.map((cat) => {
+            // Filter visible items based on toggle state.
+            // Orphan keys (in neither active nor archived sets) are always hidden — stale references.
+            const visibleItems = cat.items.filter((key) =>
+              showArchived
+                ? activeCatalogKeys.has(key) || archivedCatalogKeys.has(key)
+                : activeCatalogKeys.has(key)
+            );
+            // Hide entire group when all items filtered out, UNLESS name is being edited
+            // (keep visible so the user can finish typing).
+            if (visibleItems.length === 0 && editingName !== cat.id) return null;
+
+            return (
+              <div
+                key={cat.id}
+                className={getGroupClassName(cat.id)}
+                onDragOver={handleDragOver}
+                onDragEnter={(e) => handleDragEnter(e, cat.id)}
+                onDragLeave={(e) => handleDragLeave(e, cat.id)}
+                onDrop={(e) => handleDrop(e, cat.id)}
+              >
+                {/* Group header */}
+                <div className="cat-modal__group-header">
+                  {/* Drag handle for group merge */}
                   <span
-                    className="cat-modal__group-name"
-                    onClick={() => { setEditingName(cat.id); setNameError(null); }}
-                    title="Klik untuk edit nama"
+                    className="cat-modal__group-drag"
+                    draggable="true"
+                    onDragStart={(e) => handleGroupDragStart(e, cat.id)}
+                    onDragEnd={handleDragEnd}
+                    title="Seret ke grup lain untuk menggabungkan"
                   >
-                    {cat.groupName || "(tanpa nama)"}
+                    ⠿
                   </span>
-                )}
 
-                {/* Group code */}
-                {editingCode === cat.id ? (
-                  <span style={{ position: "relative" }}>
-                    <input
-                      ref={codeInputRef}
-                      className="cat-modal__group-code-input"
-                      defaultValue={cat.code}
-                      onBlur={(e) => commitCode(cat.id, e.target.value)}
-                      onKeyDown={(e) => handleCodeKeyDown(e, cat.id)}
-                      onChange={() => setCodeError(null)}
-                      maxLength={6}
-                      placeholder="KODE"
-                    />
-                    {codeError && (
-                      <span style={{
-                        position: "absolute", top: "100%", left: 0,
-                        fontSize: 11, color: "#ef4444", whiteSpace: "nowrap",
-                        background: "#fff", padding: "2px 4px", borderRadius: 4,
-                        boxShadow: "0 1px 4px rgba(0,0,0,0.12)", zIndex: 10,
-                      }}>
-                        {codeError}
-                      </span>
-                    )}
-                  </span>
-                ) : (
-                  <span
-                    className="cat-modal__group-code"
-                    onClick={() => setEditingCode(cat.id)}
-                    title="Klik untuk edit kode"
-                  >
-                    {cat.code || "—"}
-                  </span>
-                )}
-
-                {/* Item count */}
-                <span className="cat-modal__group-count">
-                  {cat.items.length} item
-                </span>
-
-                {/* Delete group */}
-                <button
-                  className="cat-modal__group-delete"
-                  draggable="false"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => { e.stopPropagation(); deleteGroup(cat.id); }}
-                  title="Hapus kategori"
-                  aria-label={`Hapus kategori ${cat.groupName}`}
-                >
-                  <Icon name="trash" size={14} color="currentColor" />
-                </button>
-              </div>
-
-              {/* Items */}
-              {cat.items.length > 0 && (
-                <div className="cat-modal__group-items">
-                  {cat.items.map((normName) => (
-                    <span
-                      key={normName}
-                      className={`cat-modal__item-pill${
-                        dragItem && dragItem.type === "item" && dragItem.itemName === normName
-                          ? " cat-modal__item-pill--dragging"
-                          : ""
-                      }`}
-                      draggable="true"
-                      onDragStart={(e) => handleItemDragStart(e, normName, cat.id)}
-                      onDragEnd={handleDragEnd}
-                      title="Seret ke grup lain"
-                    >
-                      {getDisplayName(normName)}
+                  {/* Group name */}
+                  {editingName === cat.id ? (
+                    <span style={{ position: "relative" }}>
+                      <input
+                        ref={nameInputRef}
+                        className="cat-modal__group-name-input"
+                        defaultValue={cat.groupName}
+                        onBlur={(e) => commitName(cat.id, e.target.value)}
+                        onKeyDown={(e) => handleNameKeyDown(e, cat.id)}
+                        onChange={() => setNameError(null)}
+                        placeholder="Nama kategori..."
+                      />
+                      {nameError && (
+                        <span style={{
+                          position: "absolute", top: "100%", left: 0,
+                          fontSize: 11, color: "#ef4444", whiteSpace: "nowrap",
+                          background: "#fff", padding: "2px 4px", borderRadius: 4,
+                          boxShadow: "0 1px 4px rgba(0,0,0,0.12)", zIndex: 10,
+                        }}>
+                          {nameError}
+                        </span>
+                      )}
                     </span>
-                  ))}
+                  ) : (
+                    <span
+                      className="cat-modal__group-name"
+                      onClick={() => { setEditingName(cat.id); setNameError(null); }}
+                      title="Klik untuk edit nama"
+                    >
+                      {cat.groupName || "(tanpa nama)"}
+                    </span>
+                  )}
+
+                  {/* Group code */}
+                  {editingCode === cat.id ? (
+                    <span style={{ position: "relative" }}>
+                      <input
+                        ref={codeInputRef}
+                        className="cat-modal__group-code-input"
+                        defaultValue={cat.code}
+                        onBlur={(e) => commitCode(cat.id, e.target.value)}
+                        onKeyDown={(e) => handleCodeKeyDown(e, cat.id)}
+                        onChange={() => setCodeError(null)}
+                        maxLength={6}
+                        placeholder="KODE"
+                      />
+                      {codeError && (
+                        <span style={{
+                          position: "absolute", top: "100%", left: 0,
+                          fontSize: 11, color: "#ef4444", whiteSpace: "nowrap",
+                          background: "#fff", padding: "2px 4px", borderRadius: 4,
+                          boxShadow: "0 1px 4px rgba(0,0,0,0.12)", zIndex: 10,
+                        }}>
+                          {codeError}
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span
+                      className="cat-modal__group-code"
+                      onClick={() => setEditingCode(cat.id)}
+                      title="Klik untuk edit kode"
+                    >
+                      {cat.code || "—"}
+                    </span>
+                  )}
+
+                  {/* Item count */}
+                  <span className="cat-modal__group-count">
+                    {cat.items.length} item
+                  </span>
+
+                  {/* Delete group */}
+                  <button
+                    className="cat-modal__group-delete"
+                    draggable="false"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); deleteGroup(cat.id); }}
+                    title="Hapus kategori"
+                    aria-label={`Hapus kategori ${cat.groupName}`}
+                  >
+                    <Icon name="trash" size={14} color="currentColor" />
+                  </button>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* Items */}
+                {visibleItems.length > 0 && (
+                  <div className="cat-modal__group-items">
+                    {visibleItems.map((normName) => (
+                      <span
+                        key={normName}
+                        className={`cat-modal__item-pill${
+                          dragItem && dragItem.type === "item" && dragItem.itemName === normName
+                            ? " cat-modal__item-pill--dragging"
+                            : ""
+                        }${archivedCatalogKeys.has(normName) ? " cat-modal__item-pill--archived" : ""}`}
+                        draggable="true"
+                        onDragStart={(e) => handleItemDragStart(e, normName, cat.id)}
+                        onDragEnd={handleDragEnd}
+                        title={archivedCatalogKeys.has(normName) ? "Item diarsipkan" : "Seret ke grup lain"}
+                      >
+                        {getDisplayName(normName)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {/* Uncategorized safety net */}
-          {uncategorizedItems.length > 0 && (
+          {filteredUncategorized.length > 0 && (
             <div className="cat-modal__group cat-modal__group--uncategorized">
               <div className="cat-modal__group-header">
                 <span className="cat-modal__group-name" style={{ fontStyle: "italic" }}>
                   Belum Dikategorikan
                 </span>
                 <span className="cat-modal__group-count">
-                  {uncategorizedItems.length} item
+                  {filteredUncategorized.length} item
                 </span>
               </div>
               <div className="cat-modal__group-items">
-                {uncategorizedItems.map((normName) => (
+                {filteredUncategorized.map((normName) => (
                   <span
                     key={normName}
                     className={`cat-modal__item-pill${
                       dragItem && dragItem.type === "item" && dragItem.itemName === normName
                         ? " cat-modal__item-pill--dragging"
                         : ""
-                    }`}
+                    }${archivedCatalogKeys.has(normName) ? " cat-modal__item-pill--archived" : ""}`}
                     draggable="true"
                     onDragStart={(e) => handleItemDragStart(e, normName, "__uncategorized")}
                     onDragEnd={handleDragEnd}
-                    title="Seret ke grup lain"
+                    title={archivedCatalogKeys.has(normName) ? "Item diarsipkan" : "Seret ke grup lain"}
                   >
                     {getDisplayName(normName)}
                   </span>

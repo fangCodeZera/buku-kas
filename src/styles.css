@@ -2771,6 +2771,20 @@ input[type="number"] {
 .cat-modal__item-pill:active { cursor: grabbing; }
 .cat-modal__item-pill:hover { background: #e5e7eb; }
 .cat-modal__item-pill--dragging { opacity: 0.35; }
+.cat-modal__item-pill--archived {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+.cat-modal__archive-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #374151;
+}
+.cat-modal__archive-toggle label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.cat-modal__archive-hint { font-size: 12px; color: #9ca3af; }
 .cat-modal__footer {
   display: flex;
   align-items: center;
