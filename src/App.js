@@ -1369,6 +1369,19 @@ export default function App() {
           return mapped !== undefined ? mapped : name;
         };
 
+        // Update itemCategories to reflect the catalog rename
+        // groupName must change + items[] rebuilt with new base key and new subtype combined keys
+        const newCategories = catalogMatch
+          ? (d.itemCategories || []).map((cat) => {
+              if (normItem(cat.groupName) !== normItem(oldName)) return cat;
+              const newBaseKey = normItem(newName);
+              const newSubKeys = subtypeList.map((sub) =>
+                normItem(`${newName} ${sub}`)
+              );
+              return { ...cat, groupName: newName, items: [newBaseKey, ...newSubKeys] };
+            })
+          : d.itemCategories;
+
         return {
           ...d,
           transactions: d.transactions.map((t) => ({
@@ -1387,6 +1400,7 @@ export default function App() {
                 c.id === catalogMatch.id ? { ...c, name: newName } : c
               )
             : d.itemCatalog,
+          itemCategories: newCategories,
         };
       },
       (nd) => {
@@ -1414,10 +1428,85 @@ export default function App() {
             .filter((a) => matchesNew(a.itemName))
             .map((adj) => sbSaveStockAdjustment(adj, user.id)),
           renamedCatalog ? sbSaveItemCatalogItem(renamedCatalog, user.id) : Promise.resolve(),
+          catalogMatchId ? sbSaveItemCategories(nd.itemCategories, user.id) : Promise.resolve(),
         ]);
       }
     );
   };
+
+  // ── Rename a subtype across its parent catalog entry and all transactions/adjustments ─
+  // Updates parent.subtypes[] (replacing oldSub with newSub) and cascades the combined
+  // name ("${parent.name} ${oldSub}" → "${parent.name} ${newSub}") on all touched records.
+  // parentCatalogId is passed directly — no closure-capture needed for retry safety
+  // (the parent is found by ID in nd, which is stable across retries).
+  const renameSubtype = (parentCatalogId, oldSub, newSub) =>
+    update(
+      (d) => {
+        const parent = (d.itemCatalog || []).find((c) => c.id === parentCatalogId);
+        if (!parent) return d; // parent not found — no-op
+        const oldCombined = `${parent.name} ${oldSub}`;
+        const newCombined = `${parent.name} ${newSub}`;
+        const mapName = (name) =>
+          normItem(name) === normItem(oldCombined) ? newCombined : name;
+        return {
+          ...d,
+          transactions: d.transactions.map((t) => ({
+            ...t,
+            itemName: mapName(t.itemName),
+            items: Array.isArray(t.items)
+              ? t.items.map((it) => ({ ...it, itemName: mapName(it.itemName) }))
+              : t.items,
+          })),
+          stockAdjustments: (d.stockAdjustments || []).map((a) => ({
+            ...a,
+            itemName: mapName(a.itemName),
+          })),
+          itemCatalog: (d.itemCatalog || []).map((c) => {
+            if (c.id !== parentCatalogId) return c;
+            return {
+              ...c,
+              subtypes: (c.subtypes || []).map((s) =>
+                normItem(s) === normItem(oldSub) ? newSub : s
+              ),
+            };
+          }),
+          // Update itemCategories — groupName stays the same (parent name unchanged),
+          // but items[] must be rebuilt with the renamed combined key.
+          // Use updatedSubtypes (post-rename list) NOT parent.subtypes (pre-rename ref).
+          itemCategories: (d.itemCategories || []).map((cat) => {
+            if (normItem(cat.groupName) !== normItem(parent.name)) return cat;
+            const baseKey = normItem(parent.name);
+            const updatedSubtypes = (parent.subtypes || []).map((s) =>
+              normItem(s) === normItem(oldSub) ? newSub : s
+            );
+            const newSubKeys = updatedSubtypes.map((sub) =>
+              normItem(`${parent.name} ${sub}`)
+            );
+            return { ...cat, items: [baseKey, ...newSubKeys] };
+          }),
+        };
+      },
+      (nd) => {
+        const parent = (nd.itemCatalog || []).find((c) => c.id === parentCatalogId);
+        if (!parent) return Promise.resolve();
+        const newCombined = `${parent.name} ${newSub}`;
+        const matchesNew = (name) => normItem(name || "") === normItem(newCombined);
+        return Promise.all([
+          ...nd.transactions
+            .filter((t) => {
+              const items = Array.isArray(t.items) && t.items.length > 0
+                ? t.items : [{ itemName: t.itemName }];
+              return items.some((it) => matchesNew(it.itemName));
+            })
+            .map((tx) => sbSaveTransaction(tx, user.id)),
+          ...nd.stockAdjustments
+            .filter((a) => matchesNew(a.itemName))
+            .map((adj) => sbSaveStockAdjustment(adj, user.id)),
+          sbSaveItemCatalogItem(parent, user.id),
+          sbSaveItemCategories(nd.itemCategories, user.id),
+        ]);
+      }
+    );
 
   // ── Delete all transactions and adjustments for an inventory item ──────────
   const deleteInventoryItem = (itemName) => {
@@ -1784,6 +1873,7 @@ export default function App() {
             onViewItem={handleViewItem}
             onAddAdjustment={addStockAdjustment}
             onRenameItem={renameInventoryItem}
+            onRenameSubtype={renameSubtype}
             onDeleteItem={deleteInventoryItem}
             onDeleteAdjustment={deleteStockAdjustment}
             itemCategories={data.itemCategories || []}

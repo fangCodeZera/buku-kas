@@ -62,6 +62,7 @@ const Inventory = ({
   onViewItem,
   onAddAdjustment,
   onRenameItem          = () => {},
+  onRenameSubtype       = () => {},
   onDeleteItem          = () => {},
   onDeleteAdjustment    = () => {},
   itemCategories        = [],
@@ -188,8 +189,8 @@ const Inventory = ({
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
-  const openRename = (itemName, unit, isCatalogued = false) => {
-    setRenameTarget({ itemName, unit, isCatalogued });
+  const openRename = (itemName, unit, isCatalogued = false, subtypeContext = null) => {
+    setRenameTarget({ itemName, unit, isCatalogued, subtypeContext });
     setRenameNewName(itemName);
     setRenameError("");
     setRenameMergeConfirm(false);
@@ -202,6 +203,38 @@ const Inventory = ({
     const normalizedNew = normalizeTitleCase(trimmed);
     const normalizedOld = renameTarget.itemName;
     const isSameKey = normItem(normalizedNew) === normItem(normalizedOld);
+
+    const subtypeContext = renameTarget.subtypeContext ?? null;
+    if (subtypeContext) {
+      // Subtype rename — route to onRenameSubtype
+      if (isSameKey) { setRenameTarget(null); setRenameMergeConfirm(false); return; }
+      // Validate that the parent portion of the combined name was not changed
+      const parentPrefix = subtypeContext.parentName + " ";
+      if (!normalizedNew.toLowerCase().startsWith(parentPrefix.toLowerCase())) {
+        setRenameError("Nama parent tidak bisa diubah di sini. Gunakan Ubah Nama pada baris parent untuk mengubah nama katalog.");
+        return;
+      }
+      const newSub = normalizedNew.slice(parentPrefix.length).trim();
+      if (!newSub) { setRenameError("Nama tipe tidak boleh kosong."); return; }
+      // Block if newSub already exists in the parent (active or archived)
+      const parentEntry = itemCatalog.find((c) => c.id === subtypeContext.parentCatalogId);
+      const allSubtypes = [
+        ...(parentEntry?.subtypes || []),
+        ...(parentEntry?.archivedSubtypes || []),
+      ];
+      if (allSubtypes.some((s) => normItem(s) === normItem(newSub))) {
+        setRenameError("Tipe ini sudah ada pada barang yang sama. Pilih nama tipe yang belum dipakai.");
+        return;
+      }
+      setSubmitting(true);
+      onRenameSubtype(subtypeContext.parentCatalogId, subtypeContext.subtypeName, newSub);
+      setToast(`Tipe berhasil diubah dari "${subtypeContext.subtypeName}" ke "${newSub}"`);
+      setRenameTarget(null);
+      setRenameMergeConfirm(false);
+      setSubmitting(false);
+      return;
+    }
+
     // Guard: catalogued items cannot merge into an existing item — catalog dedup is complex
     if (renameTarget.isCatalogued && !isSameKey && normItem(normalizedNew) in activeStockMap) {
       setRenameError("Nama ini sudah dipakai oleh item lain. Pilih nama yang belum ada.");
@@ -1553,14 +1586,22 @@ const Inventory = ({
                               >
                                 <Icon name="reports" size={13} color="#6366f1" />
                               </button>
-                              {/* 4. Ubah Nama — for catalogued base rows and uncatalogued items */}
-                              {/* Routes through renameInventoryItem which atomically updates
-                                  itemCatalog (if catalogued) and cascades all transactions,
-                                  adjustments, and combined subtype names. Subtype rows have no
-                                  rename path yet — deferred to B3. */}
-                              {isToday && !row.isSubtype && (
+                              {/* 4. Ubah Nama — for all rows: uncatalogued, catalogued base, catalogued subtype */}
+                              {/* Base rows: routes through renameInventoryItem (atomically updates itemCatalog + cascade).
+                                  Subtype rows: routes through renameSubtype (atomically updates parent subtypes[] + cascade).
+                                  Uncatalogued: rename + optional merge with another uncatalogued item. */}
+                              {isToday && (
                                 <button
-                                  onClick={() => openRename(row.displayName, row.unit, !!row.catalogItem)}
+                                  onClick={() => {
+                                    const subtypeContext = row.isSubtype
+                                      ? {
+                                          parentCatalogId: row.parentCatalogItem.id,
+                                          subtypeName: row.subtypeName,
+                                          parentName: row.parentCatalogItem.name,
+                                        }
+                                      : null;
+                                    openRename(row.displayName, row.unit, !!row.catalogItem, subtypeContext);
+                                  }}
                                   className="action-btn action-btn--edit"
                                   title="Ubah Nama"
                                   aria-label={`Ubah nama ${row.displayName}`}
