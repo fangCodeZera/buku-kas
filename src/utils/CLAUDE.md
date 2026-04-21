@@ -286,6 +286,38 @@ rules:    Linear scan through categories[].items. Returns first match.
 example:  getCategoryForItem("bawang putih kating", categories) → { id, groupName: "Bawang Putih", ... }
 ```
 
+```
+function: isDuplicateCategoryName(categories, catId, name)
+params:   categories: Array, catId: string (id to exclude from check), name: string (raw input)
+returns:  boolean — true if another category (not catId) has the same normItem(name)
+throws:   never
+rules:    Returns false for empty/blank names (never duplicate). Used in commitName validation
+          (CategoryModal) and commitGroupName (Inventory inline edit).
+example:  isDuplicateCategoryName(cats, "id-123", "Bawang Merah") → true if another group has that name
+```
+
+```
+function: isDuplicateCategoryCode(categories, catId, code)
+params:   categories: Array, catId: string (id to exclude), code: string (raw input)
+returns:  boolean — true if another category (not catId) already uses this code (uppercased)
+throws:   never
+rules:    Returns false for empty codes (multiple empty codes allowed). Used in commitCode
+          (CategoryModal) and commitGroupCode (Inventory inline edit).
+example:  isDuplicateCategoryCode(cats, "id-123", "BM") → true if another group uses "BM"
+```
+
+```
+function: cascadeCodeUpdate(categories, editedCatId, newCode)
+params:   categories: Array, editedCatId: string, newCode: string (raw input)
+returns:  Array — new categories array with updated code + cascaded child codes
+throws:   never
+rules:    Pure function — does NOT mutate input, does NOT touch codeManuallyEdited ref.
+          Caller (CategoryModal commitCode) is responsible for ref cleanup on children.
+          Child detection: normItem(child.groupName).startsWith(normItem(parent.groupName) + " ").
+          Child new code = newCode.trim().toUpperCase() + first-letter suffix of remaining words.
+example:  cascadeCodeUpdate(cats, parentId, "BW") → "Bawang Merah" code becomes "BWM"
+```
+
 ---
 
 ### `src/utils/paymentUtils.js` (20 lines)

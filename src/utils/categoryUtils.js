@@ -3,7 +3,7 @@
  * Item category/group utilities for stock reports.
  * Pure functions — no React, no component imports.
  */
-import { generateId } from "./idGenerators";
+import { generateId, normItem } from "./idGenerators";
 
 /**
  * Generate a short code from a single group name (no parent-child awareness).
@@ -313,3 +313,63 @@ export const getCategoryForItem = (normalizedItemName, categories) => {
   }
   return null;
 };
+
+/**
+ * Returns true if another category (not catId) has the same normalized name.
+ * Empty/blank names are never duplicates.
+ * @param {Array} categories
+ * @param {string} catId
+ * @param {string} name
+ */
+export function isDuplicateCategoryName(categories, catId, name) {
+  const normTarget = normItem(name.trim());
+  if (!normTarget) return false;
+  return categories.some(
+    (c) => c.id !== catId && normItem(c.groupName) === normTarget
+  );
+}
+
+/**
+ * Returns true if another category (not catId) already uses this code.
+ * Empty codes are never duplicates (multiple "" codes allowed).
+ * @param {Array} categories
+ * @param {string} catId
+ * @param {string} code
+ */
+export function isDuplicateCategoryCode(categories, catId, code) {
+  const trimmed = code.trim().toUpperCase();
+  if (!trimmed) return false;
+  return categories.some((c) => c.id !== catId && c.code === trimmed);
+}
+
+/**
+ * Updates the code for editedCatId, then cascades the new code prefix to any
+ * child category whose normalized name starts with the parent name + " ".
+ *
+ * Pure function — returns a new categories array. Does NOT mutate input.
+ * Does NOT touch any manual-edit tracking ref — caller is responsible.
+ *
+ * @param {Array} categories
+ * @param {string} editedCatId
+ * @param {string} newCode
+ * @returns {Array}
+ */
+export function cascadeCodeUpdate(categories, editedCatId, newCode) {
+  const trimmed = newCode.trim().toUpperCase();
+  const withEdit = categories.map((c) =>
+    c.id === editedCatId ? { ...c, code: trimmed } : c
+  );
+  const editedGroup = withEdit.find((c) => c.id === editedCatId);
+  if (!editedGroup) return withEdit;
+  const editedName = editedGroup.groupName;
+  const normEdited = normItem(editedName);
+  if (!normEdited) return withEdit;
+  return withEdit.map((c) => {
+    if (c.id === editedCatId) return c;
+    const normChild = normItem(c.groupName);
+    if (!normChild.startsWith(normEdited + " ")) return c;
+    const remainingWords = c.groupName.slice(editedName.length).trim().split(/\s+/);
+    const suffix = remainingWords.map((w) => w[0].toUpperCase()).join("");
+    return { ...c, code: trimmed + suffix };
+  });
+}

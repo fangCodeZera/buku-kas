@@ -209,7 +209,7 @@
 ---
 
 ### Component: `CategoryModal`
-**File:** `CategoryModal.js` (488 lines)
+**File:** `CategoryModal.js` (~600 lines)
 **Purpose:** Modal for managing item categories/groups. Supports inline editing, HTML5 drag-and-drop for moving items between groups and merging groups, and auto-detection of categories for uncategorized items.
 **Props:**
 - `categories: Array` — existing category objects
@@ -225,8 +225,8 @@
 - Uncategorized items in dashed amber "Belum Dikategorikan" section
 - Confirm dialog when cancelling with unsaved changes
 - Codes auto-regenerated with parent-child awareness when group names change
-- `commitName` validates duplicate group names via `normItem()`, stays in edit mode with error on duplicate
-- `commitCode` cascades to children by name-prefix match
+- `commitName` uses `isDuplicateCategoryName()` from `categoryUtils.js`, stays in edit mode with error on duplicate
+- `commitCode` uses `isDuplicateCategoryCode()` + `cascadeCodeUpdate()` from `categoryUtils.js`. Ref cleanup (`codeManuallyEdited.current.delete`) for child categories remains in CategoryModal, not in the pure helper.
 - **Conditionally-mounted**: Escape key no guard needed.
 
 ---

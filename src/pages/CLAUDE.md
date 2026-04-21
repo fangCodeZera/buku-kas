@@ -59,11 +59,12 @@
 - Submit debounce: `submitting`
 - Catalog UI: `catalogForm`, `catalogFormError`, `catalogSubtypeError`, `deleteCatalogConfirm`, `removeSubtypeConfirm`
 - Stock ledger: `expandedStockItem`, `ledgerTypeFilter`, `ledgerDateFrom`, `ledgerDateTo`, `adjDeleteConfirm`
+- Inline group edit (today-only): `editingGroupName`, `editingGroupCode`, `groupNameError`, `groupCodeError`
 - General: `toast`, `showCategoryModal`
 
 **Key useMemos:**
 - `activeStockMap` — returns `stockMap` (today) or `computeStockMapForDate(...)` for historical dates
-- `tableGroups` — builds flat rows from `itemCatalog` (base + subtypes) + uncataloged items from `activeStockMap`, groups using `getCategoryForItem()` with groupName-prefix fallback for zero-stock base items (longest match). Returns `[{ groupName, code, items[] }]` with "Lainnya" last.
+- `tableGroups` — builds flat rows from `itemCatalog` (base + subtypes) + uncataloged items from `activeStockMap`, groups using `getCategoryForItem()` with groupName-prefix fallback for zero-stock base items (longest match). Returns `[{ id, groupName, code, items[] }]` with "Lainnya" (`id: null`) last. `id` is used by the inline edit UI to target the matching `itemCategories` entry.
 - `ledgerEntries` / `visibleLedgerEntries` — stock history for expanded item, filtered by type/date, newest-first
 
 **Table layout:** Group header rows (dark navy `.inventory-group-header`) → base item row → indented subtype rows. "LAINNYA — UNC" group catches items not matched to any category.

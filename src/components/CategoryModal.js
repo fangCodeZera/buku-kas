@@ -5,7 +5,10 @@
  * auto-detection of categories for uncategorized items, and archive-aware filtering.
  */
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { autoDetectCategories, generateCodes } from "../utils/categoryUtils";
+import {
+  autoDetectCategories, generateCodes,
+  isDuplicateCategoryName, isDuplicateCategoryCode, cascadeCodeUpdate,
+} from "../utils/categoryUtils";
 import { generateId, normalizeTitleCase, normItem } from "../utils/idGenerators";
 import Icon from "./Icon";
 
@@ -124,9 +127,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
   const commitName = (catId, newName) => {
     const trimmed = newName.trim();
     // Duplicate check: stay in edit mode so the user can fix the name
-    const isDuplicate = localCats.some(
-      (c) => c.id !== catId && normItem(c.groupName) === normItem(trimmed)
-    );
+    const isDuplicate = isDuplicateCategoryName(localCats, catId, trimmed);
     if (isDuplicate) {
       setNameError("Nama kategori sudah ada");
       return; // keep editing — don't exit, don't revert
@@ -152,9 +153,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
     const trimmed = newCode.trim().toUpperCase();
     // Duplicate check: if another group already uses this code, keep the
     // input open so the user can fix it (same pattern as commitName).
-    const isDuplicateCode = trimmed && localCats.some(
-      (c) => c.id !== catId && c.code === trimmed
-    );
+    const isDuplicateCode = isDuplicateCategoryCode(localCats, catId, trimmed);
     if (isDuplicateCode) {
       setCodeError("Kode ini sudah dipakai oleh kategori lain");
       return; // keep editing — do not close, do not save
@@ -163,26 +162,20 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
     setEditingCode(null);
     codeManuallyEdited.current.add(catId);
     setLocalCats((prev) => {
-      // First apply the edit to the target group
-      const withEdit = prev.map((c) => (c.id === catId ? { ...c, code: trimmed } : c));
-      // Cascade: find the edited group's name, then update any child group whose
-      // name starts with that name + " " (case-insensitive prefix match).
-      const editedGroup = withEdit.find((c) => c.id === catId);
-      if (!editedGroup) return withEdit;
-      const editedName = editedGroup.groupName;
-      const editedCode = trimmed;
-      const normEdited = normItem(editedName);
-      return withEdit.map((c) => {
-        if (c.id === catId) return c;
-        const normChild = normItem(c.groupName);
-        if (!normChild.startsWith(normEdited + " ")) return c;
-        // Child found — derive its new code from the parent's new code
-        const remainingWords = c.groupName.slice(editedName.length).trim().split(/\s+/);
-        const suffix = remainingWords.map((w) => w[0].toUpperCase()).join("");
-        // Remove child from manual-edit set so it tracks the parent going forward
-        codeManuallyEdited.current.delete(c.id);
-        return { ...c, code: editedCode + suffix };
-      });
+      const updated = cascadeCodeUpdate(prev, catId, trimmed);
+      // Clear manual-edit tracking for child categories that now follow parent
+      const editedGroup = updated.find((c) => c.id === catId);
+      if (editedGroup) {
+        const normEdited = normItem(editedGroup.groupName);
+        for (const c of updated) {
+          if (c.id === catId) continue;
+          const normChild = normItem(c.groupName);
+          if (normChild.startsWith(normEdited + " ")) {
+            codeManuallyEdited.current.delete(c.id);
+          }
+        }
+      }
+      return updated;
     });
     setDirty(true);
   };
