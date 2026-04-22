@@ -209,24 +209,25 @@
 ---
 
 ### Component: `CategoryModal`
-**File:** `CategoryModal.js` (~600 lines)
-**Purpose:** Modal for managing item categories/groups. Supports inline editing, HTML5 drag-and-drop for moving items between groups and merging groups, and auto-detection of categories for uncategorized items.
+**File:** `CategoryModal.js` (~390 lines)
+**Purpose:** Category view + inline rename + archive toggle. Read-only item pills; commit-immediately semantics: every rename persists via `onSave()` instantly. No local staging.
 **Props:**
 - `categories: Array` — existing category objects
 - `stockMap: Object` — keyed by normalized item name
 - `onSave: (categories: Array) => void`
 - `onClose: () => void`
+- `itemCatalog?: Array` — for archive-aware filtering
 
 **Used by:** `Inventory.js`
 **Special behaviour:**
-- On mount: runs `autoDetectCategories(stockMap, categories)` to pre-populate
-- Group drag onto another group = merge (items combined, source deleted)
-- Item drag between groups = move
-- Uncategorized items in dashed amber "Belum Dikategorikan" section
-- Confirm dialog when cancelling with unsaved changes
-- Codes auto-regenerated with parent-child awareness when group names change
-- `commitName` uses `isDuplicateCategoryName()` from `categoryUtils.js`, stays in edit mode with error on duplicate
-- `commitCode` uses `isDuplicateCategoryCode()` + `cascadeCodeUpdate()` from `categoryUtils.js`. Ref cleanup (`codeManuallyEdited.current.delete`) for child categories remains in CategoryModal, not in the pure helper.
+- `displayCategories` useMemo (`autoDetectCategories(stockMap, categories)`) — always reflects latest prop, no local staging
+- Click category name → inline input, Enter/blur commits immediately via `onSave(regenerateAllCodes(updated))`
+- Click category code → inline input, Enter/blur commits immediately via `onSave(cascadeCodeUpdate(...))`
+- `commitName`/`commitCode` both use duplicate validation from `categoryUtils.js`; stay in edit mode with inline error on duplicate
+- `codeManuallyEdited` ref cleanup for child categories remains in CategoryModal (side-effect, not a pure helper concern)
+- Archive toggle (`showArchived`) hides archived item pills when off; orphan keys always hidden
+- Footer is a single "Tutup" button — no Batal/Simpan/Buat Kategori Baru
+- Inventory.js passes `onSave={onUpdateCategories}` — modal stays open after save; user closes via Tutup
 - **Conditionally-mounted**: Escape key no guard needed.
 
 ---

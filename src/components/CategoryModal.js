@@ -1,16 +1,16 @@
 /**
  * components/CategoryModal.js
  * Modal for managing item categories/groups.
- * Supports inline editing, HTML5 drag-and-drop (items between groups, group merge),
- * auto-detection of categories for uncategorized items, and archive-aware filtering.
+ * Supports inline rename of category name/code, archive-aware filtering,
+ * and auto-detection of categories for uncategorized items.
+ * Commit-immediately semantics: every rename persists via onSave() instantly.
  */
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   autoDetectCategories, generateCodes,
   isDuplicateCategoryName, isDuplicateCategoryCode, cascadeCodeUpdate,
 } from "../utils/categoryUtils";
-import { generateId, normalizeTitleCase, normItem } from "../utils/idGenerators";
-import Icon from "./Icon";
+import { normalizeTitleCase, normItem } from "../utils/idGenerators";
 
 /**
  * @param {{
@@ -22,24 +22,20 @@ import Icon from "./Icon";
  * }} props
  */
 const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = [] }) => {
-  // ── Local state ─────────────────────────────────────────────────────────────
-  const [localCats, setLocalCats] = useState(() =>
-    autoDetectCategories(stockMap, categories)
+  // ── Derived display state — commit-immediately (no local staging) ────────────
+  const displayCategories = useMemo(
+    () => autoDetectCategories(stockMap, categories),
+    [stockMap, categories]
   );
   const [editingName, setEditingName] = useState(null);   // cat id or null
   const [nameError,   setNameError]   = useState(null);   // duplicate-name error message or null
   const [codeError,   setCodeError]   = useState(null);   // duplicate-code error message or null
   const [editingCode, setEditingCode] = useState(null);   // cat id or null
   const codeManuallyEdited = useRef(new Set());
-  const [dragItem, setDragItem] = useState(null);          // { type, itemName?, sourceGroupId?, groupId? }
-  const [dragOverTarget, setDragOverTarget] = useState(null); // group id
-  const [dirty, setDirty] = useState(false);
-  const [showConfirmCancel, setShowConfirmCancel] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
   const nameInputRef = useRef(null);
   const codeInputRef = useRef(null);
-  const newGroupRef  = useRef(null); // id of newly created group to auto-focus
 
   useEffect(() => {
     const handleKeyDown = (e) => { if (e.key === "Escape") onClose(); };
@@ -47,22 +43,16 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  // Auto-focus name input when editing starts or new group created
+  // Auto-focus name/code input when editing starts
   useEffect(() => {
     if (editingName && nameInputRef.current) nameInputRef.current.focus();
   }, [editingName]);
   useEffect(() => {
     if (editingCode && codeInputRef.current) codeInputRef.current.focus();
   }, [editingCode]);
-  useEffect(() => {
-    if (newGroupRef.current) {
-      setEditingName(newGroupRef.current);
-      newGroupRef.current = null;
-    }
-  }, [localCats]);
 
   // ── Archive-aware key sets ──────────────────────────────────────────────────
-  // Both sets depend only on itemCatalog, not localCats.
+  // Both sets depend only on itemCatalog, not displayCategories.
   // Subtypes are evaluated independently of base archive status — matches Inventory.js lines 499–506.
 
   const archivedCatalogKeys = useMemo(() => {
@@ -92,7 +82,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
   // One-shot orphan detection on mount — logs stale itemCategories keys with no catalog entry.
   useEffect(() => {
     const orphans = [];
-    for (const cat of localCats) {
+    for (const cat of displayCategories) {
       for (const key of cat.items) {
         if (!activeCatalogKeys.has(key) && !archivedCatalogKeys.has(key)) {
           orphans.push({ key, groupName: cat.groupName });
@@ -127,20 +117,17 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
   const commitName = (catId, newName) => {
     const trimmed = newName.trim();
     // Duplicate check: stay in edit mode so the user can fix the name
-    const isDuplicate = isDuplicateCategoryName(localCats, catId, trimmed);
+    const isDuplicate = isDuplicateCategoryName(displayCategories, catId, trimmed);
     if (isDuplicate) {
       setNameError("Nama kategori sudah ada");
       return; // keep editing — don't exit, don't revert
     }
     setNameError(null);
     setEditingName(null);
-    setLocalCats((prev) => {
-      const updated = prev.map((c) =>
-        c.id === catId ? { ...c, groupName: trimmed } : c
-      );
-      return regenerateAllCodes(updated);
-    });
-    setDirty(true);
+    const updated = displayCategories.map((c) =>
+      c.id === catId ? { ...c, groupName: trimmed } : c
+    );
+    onSave(regenerateAllCodes(updated));
   };
 
   const handleNameKeyDown = (e, catId) => {
@@ -153,7 +140,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
     const trimmed = newCode.trim().toUpperCase();
     // Duplicate check: if another group already uses this code, keep the
     // input open so the user can fix it (same pattern as commitName).
-    const isDuplicateCode = isDuplicateCategoryCode(localCats, catId, trimmed);
+    const isDuplicateCode = isDuplicateCategoryCode(displayCategories, catId, trimmed);
     if (isDuplicateCode) {
       setCodeError("Kode ini sudah dipakai oleh kategori lain");
       return; // keep editing — do not close, do not save
@@ -161,23 +148,19 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
     setCodeError(null);
     setEditingCode(null);
     codeManuallyEdited.current.add(catId);
-    setLocalCats((prev) => {
-      const updated = cascadeCodeUpdate(prev, catId, trimmed);
-      // Clear manual-edit tracking for child categories that now follow parent
-      const editedGroup = updated.find((c) => c.id === catId);
-      if (editedGroup) {
-        const normEdited = normItem(editedGroup.groupName);
-        for (const c of updated) {
-          if (c.id === catId) continue;
-          const normChild = normItem(c.groupName);
-          if (normChild.startsWith(normEdited + " ")) {
-            codeManuallyEdited.current.delete(c.id);
-          }
+    const updated = cascadeCodeUpdate(displayCategories, catId, trimmed);
+    // Clear manual-edit tracking for child categories that now follow parent
+    const editedGroup = updated.find((c) => c.id === catId);
+    if (editedGroup) {
+      const normEdited = normItem(editedGroup.groupName);
+      for (const c of updated) {
+        if (c.id === catId) continue;
+        if (normItem(c.groupName).startsWith(normEdited + " ")) {
+          codeManuallyEdited.current.delete(c.id);
         }
       }
-      return updated;
-    });
-    setDirty(true);
+    }
+    onSave(updated);
   };
 
   const handleCodeKeyDown = (e, catId) => {
@@ -185,134 +168,9 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
     if (e.key === "Escape") { setEditingCode(null); setCodeError(null); }
   };
 
-  // ── Drag & Drop: items ──────────────────────────────────────────────────────
-  const handleItemDragStart = (e, itemName, sourceGroupId) => {
-    setDragItem({ type: "item", itemName, sourceGroupId });
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", itemName);
-  };
-
-  // ── Drag & Drop: groups (merge) ────────────────────────────────────────────
-  const handleGroupDragStart = (e, groupId) => {
-    setDragItem({ type: "group", groupId });
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", groupId);
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  };
-
-  const handleDragEnter = (e, targetGroupId) => {
-    e.preventDefault();
-    if (!dragItem) return;
-    // Don't highlight self
-    if (dragItem.type === "item" && dragItem.sourceGroupId === targetGroupId) return;
-    if (dragItem.type === "group" && dragItem.groupId === targetGroupId) return;
-    setDragOverTarget(targetGroupId);
-  };
-
-  const handleDragLeave = (e, targetGroupId) => {
-    // Only clear if actually leaving the group element (not entering a child)
-    if (!e.currentTarget.contains(e.relatedTarget)) {
-      if (dragOverTarget === targetGroupId) setDragOverTarget(null);
-    }
-  };
-
-  const handleDrop = (e, targetGroupId) => {
-    e.preventDefault();
-    setDragOverTarget(null);
-    if (!dragItem) return;
-
-    if (dragItem.type === "item") {
-      const { itemName, sourceGroupId } = dragItem;
-      if (sourceGroupId === targetGroupId) { setDragItem(null); return; }
-
-      setLocalCats((prev) => {
-        let updated = prev.map((c) => {
-          if (c.id === sourceGroupId) {
-            return { ...c, items: c.items.filter((i) => i !== itemName) };
-          }
-          if (c.id === targetGroupId) {
-            return { ...c, items: [...c.items, itemName] };
-          }
-          return c;
-        });
-        // Remove source group if it became empty
-        updated = updated.filter((c) => c.items.length > 0 || c.id === targetGroupId);
-        return updated;
-      });
-      setDirty(true);
-    }
-
-    if (dragItem.type === "group") {
-      const { groupId } = dragItem;
-      if (groupId === targetGroupId) { setDragItem(null); return; }
-
-      setLocalCats((prev) => {
-        const source = prev.find((c) => c.id === groupId);
-        if (!source) return prev;
-        const updated = prev.map((c) => {
-          if (c.id === targetGroupId) {
-            return { ...c, items: [...c.items, ...source.items] };
-          }
-          return c;
-        });
-        return updated.filter((c) => c.id !== groupId);
-      });
-      setDirty(true);
-    }
-
-    setDragItem(null);
-  };
-
-  const handleDragEnd = () => {
-    setDragItem(null);
-    setDragOverTarget(null);
-  };
-
-  // ── Delete group → items become uncategorized ───────────────────────────────
-  // Orphaned items appear in the "Belum Dikategorikan" section at the bottom,
-  // so the user sees the delete took effect. They can drag items into other
-  // groups or click "Buat Kategori Baru" to re-group them.
-  const deleteGroup = (catId) => {
-    setLocalCats((prev) => prev.filter((c) => c.id !== catId));
-    setDirty(true);
-  };
-
-  // ── Create new empty category ──────────────────────────────────────────────
-  const createNewCategory = () => {
-    const newId = generateId();
-    newGroupRef.current = newId;
-    setLocalCats((prev) => [
-      ...prev,
-      { id: newId, groupName: "", code: "", items: [] },
-    ]);
-    setDirty(true);
-  };
-
-  // ── Save ───────────────────────────────────────────────────────────────────
-  const handleSave = () => {
-    // Filter out groups with no items AND no name (abandoned empty groups).
-    // localCats is NEVER filtered by archive state here — archived items must
-    // keep their category references across saves.
-    const cleaned = localCats.filter((c) => c.items.length > 0 || c.groupName.trim());
-    onSave(cleaned);
-  };
-
-  // ── Cancel ─────────────────────────────────────────────────────────────────
-  const handleCancel = () => {
-    if (dirty) {
-      setShowConfirmCancel(true);
-      return;
-    }
-    onClose();
-  };
-
   // ── Compute uncategorized items (safety net) ────────────────────────────────
   const allCategorizedItems = new Set();
-  for (const c of localCats) {
+  for (const c of displayCategories) {
     for (const item of c.items) allCategorizedItems.add(item);
   }
   const uncategorizedItems = Object.keys(stockMap).filter(
@@ -322,7 +180,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
   // Count archived keys hidden when toggle is off, across categories and uncategorized section.
   const hiddenArchivedCount = useMemo(() => {
     let count = 0;
-    for (const cat of localCats) {
+    for (const cat of displayCategories) {
       for (const key of cat.items) {
         if (archivedCatalogKeys.has(key)) count++;
       }
@@ -331,7 +189,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
       if (archivedCatalogKeys.has(key)) count++;
     }
     return count;
-  }, [localCats, archivedCatalogKeys, stockMap]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [displayCategories, archivedCatalogKeys, stockMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filtered uncategorized items by toggle state.
   // Rule: archived keys are hidden when toggle is off; uncataloged-with-txs keys
@@ -339,14 +197,6 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
   const filteredUncategorized = showArchived
     ? uncategorizedItems
     : uncategorizedItems.filter((k) => !archivedCatalogKeys.has(k));
-
-  // ── Determine drag highlight class per group ────────────────────────────────
-  const getGroupClassName = (catId) => {
-    const base = "cat-modal__group";
-    if (dragOverTarget !== catId) return base;
-    if (dragItem && dragItem.type === "group") return `${base} cat-modal__group--merge-target`;
-    return `${base} cat-modal__group--drag-over`;
-  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -357,7 +207,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
           <h3 id="cat-modal-title" className="modal-title">Kelola Kategori Barang</h3>
           <p className="modal-body">
             Atur kategori untuk mengelompokkan item di laporan stok.
-            Seret item antar grup, atau seret grup ke grup lain untuk menggabungkan.
+            Klik nama atau kode untuk mengedit — perubahan disimpan otomatis.
           </p>
         </div>
 
@@ -380,7 +230,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
             )}
           </div>
 
-          {localCats.map((cat) => {
+          {displayCategories.map((cat) => {
             // Filter visible items based on toggle state.
             // Orphan keys (in neither active nor archived sets) are always hidden — stale references.
             const visibleItems = cat.items.filter((key) =>
@@ -395,25 +245,10 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
             return (
               <div
                 key={cat.id}
-                className={getGroupClassName(cat.id)}
-                onDragOver={handleDragOver}
-                onDragEnter={(e) => handleDragEnter(e, cat.id)}
-                onDragLeave={(e) => handleDragLeave(e, cat.id)}
-                onDrop={(e) => handleDrop(e, cat.id)}
+                className="cat-modal__group"
               >
                 {/* Group header */}
                 <div className="cat-modal__group-header">
-                  {/* Drag handle for group merge */}
-                  <span
-                    className="cat-modal__group-drag"
-                    draggable="true"
-                    onDragStart={(e) => handleGroupDragStart(e, cat.id)}
-                    onDragEnd={handleDragEnd}
-                    title="Seret ke grup lain untuk menggabungkan"
-                  >
-                    ⠿
-                  </span>
-
                   {/* Group name */}
                   {editingName === cat.id ? (
                     <span style={{ position: "relative" }}>
@@ -485,18 +320,6 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
                   <span className="cat-modal__group-count">
                     {cat.items.length} item
                   </span>
-
-                  {/* Delete group */}
-                  <button
-                    className="cat-modal__group-delete"
-                    draggable="false"
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); deleteGroup(cat.id); }}
-                    title="Hapus kategori"
-                    aria-label={`Hapus kategori ${cat.groupName}`}
-                  >
-                    <Icon name="trash" size={14} color="currentColor" />
-                  </button>
                 </div>
 
                 {/* Items */}
@@ -505,15 +328,8 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
                     {visibleItems.map((normName) => (
                       <span
                         key={normName}
-                        className={`cat-modal__item-pill${
-                          dragItem && dragItem.type === "item" && dragItem.itemName === normName
-                            ? " cat-modal__item-pill--dragging"
-                            : ""
-                        }${archivedCatalogKeys.has(normName) ? " cat-modal__item-pill--archived" : ""}`}
-                        draggable="true"
-                        onDragStart={(e) => handleItemDragStart(e, normName, cat.id)}
-                        onDragEnd={handleDragEnd}
-                        title={archivedCatalogKeys.has(normName) ? "Item diarsipkan" : "Seret ke grup lain"}
+                        className={`cat-modal__item-pill${archivedCatalogKeys.has(normName) ? " cat-modal__item-pill--archived" : ""}`}
+                        title={archivedCatalogKeys.has(normName) ? "Item diarsipkan" : undefined}
                       >
                         {getDisplayName(normName)}
                       </span>
@@ -539,15 +355,8 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
                 {filteredUncategorized.map((normName) => (
                   <span
                     key={normName}
-                    className={`cat-modal__item-pill${
-                      dragItem && dragItem.type === "item" && dragItem.itemName === normName
-                        ? " cat-modal__item-pill--dragging"
-                        : ""
-                    }${archivedCatalogKeys.has(normName) ? " cat-modal__item-pill--archived" : ""}`}
-                    draggable="true"
-                    onDragStart={(e) => handleItemDragStart(e, normName, "__uncategorized")}
-                    onDragEnd={handleDragEnd}
-                    title={archivedCatalogKeys.has(normName) ? "Item diarsipkan" : "Seret ke grup lain"}
+                    className={`cat-modal__item-pill${archivedCatalogKeys.has(normName) ? " cat-modal__item-pill--archived" : ""}`}
+                    title={archivedCatalogKeys.has(normName) ? "Item diarsipkan" : undefined}
                   >
                     {getDisplayName(normName)}
                   </span>
@@ -559,43 +368,12 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
 
         {/* Footer */}
         <div className="cat-modal__footer">
-          <button onClick={createNewCategory} className="btn btn-outline btn-sm">
-            ＋ Buat Kategori Baru
-          </button>
           <div className="cat-modal__footer-actions">
-            <button onClick={handleCancel} className="btn btn-secondary">
-              Batal
-            </button>
-            <button onClick={handleSave} className="btn btn-primary">
-              Simpan
+            <button onClick={onClose} className="btn btn-secondary">
+              Tutup
             </button>
           </div>
         </div>
-
-        {/* Confirm cancel overlay */}
-        {showConfirmCancel && (
-          <div
-            className="modal-overlay"
-            style={{ zIndex: 1100, position: "absolute", inset: 0, borderRadius: "inherit" }}
-            onClick={() => setShowConfirmCancel(false)}
-          >
-            <div className="modal-box" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
-              <div style={{ textAlign: "center", marginBottom: 16 }}>
-                <Icon name="warning" size={28} color="#f59e0b" />
-                <h3 className="modal-title" style={{ marginTop: 8 }}>Batalkan Perubahan?</h3>
-                <p className="modal-body">Perubahan yang belum disimpan akan hilang.</p>
-              </div>
-              <div className="modal-actions">
-                <button onClick={() => setShowConfirmCancel(false)} className="btn btn-outline">
-                  Kembali
-                </button>
-                <button onClick={onClose} className="btn btn-danger">
-                  Ya, Batalkan
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
