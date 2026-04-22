@@ -156,7 +156,7 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
       for (const c of updated) {
         if (c.id === catId) continue;
         if (normItem(c.groupName).startsWith(normEdited + " ")) {
-          codeManuallyEdited.current.delete(c.id);
+          codeManuallyEdited.current.add(c.id);
         }
       }
     }
@@ -208,6 +208,10 @@ const CategoryModal = ({ categories, stockMap, onSave, onClose, itemCatalog = []
           <p className="modal-body">
             Atur kategori untuk mengelompokkan item di laporan stok.
             Klik nama atau kode untuk mengedit — perubahan disimpan otomatis.
+          </p>
+          <p className="modal-body" style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+            ℹ️ Untuk mengubah nama item di seluruh aplikasi, gunakan tombol{" "}
+            <strong>Ubah Nama</strong> pada baris item di halaman Inventaris.
           </p>
         </div>
 

@@ -2060,55 +2060,6 @@ input[type="number"] {
   background: #1e3a5f !important;
   cursor: default;
 }
-.inventory-group-edit-btn {
-  background: transparent;
-  border: none;
-  padding: 2px;
-  cursor: pointer;
-  color: rgba(255, 255, 255, 0.6);
-  display: inline-flex;
-  align-items: center;
-  border-radius: 4px;
-  transition: background 120ms ease, color 120ms ease;
-}
-.inventory-group-edit-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.95);
-}
-.inventory-group-edit-btn:focus-visible {
-  outline: 2px solid #93c5fd;
-  outline-offset: 1px;
-}
-.inventory-group-name-input,
-.inventory-group-code-input {
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: #ffffff;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: inherit;
-  font-weight: inherit;
-  font-family: inherit;
-  outline: none;
-  min-width: 120px;
-}
-.inventory-group-name-input:focus,
-.inventory-group-code-input:focus {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: #93c5fd;
-  box-shadow: 0 0 0 2px rgba(147, 197, 253, 0.4);
-}
-.inventory-group-code-input {
-  min-width: 60px;
-  max-width: 100px;
-  text-transform: uppercase;
-}
-.inventory-group-name-input::selection,
-.inventory-group-code-input::selection {
-  background: rgba(147, 197, 253, 0.5);
-  color: #ffffff;
-}
-
 /* ── Ledger filter labels + date range ───────────────────────────────────── */
 .stock-ledger-filter-label {
   font-size: 10px;

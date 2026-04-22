@@ -19,10 +19,7 @@ import Toast              from "../components/Toast";
 import CategoryModal      from "../components/CategoryModal";
 import { fmtDate, fmtQty, generateId, today, addDays, normalizeTitleCase, normItem, nowTime } from "../utils/idGenerators";
 import { computeStockMapForDate } from "../utils/stockUtils";
-import {
-  autoDetectCategories, getCategoryForItem,
-  isDuplicateCategoryName, isDuplicateCategoryCode, cascadeCodeUpdate,
-} from "../utils/categoryUtils";
+import { autoDetectCategories, getCategoryForItem } from "../utils/categoryUtils";
 
 /** Full Indonesian date format: "Sabtu, 15 Maret 2026" */
 const fmtDateLong = (d) => {
@@ -141,10 +138,6 @@ const Inventory = ({
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   // Inline category group name/code edit state (main page, today-only)
-  const [editingGroupName, setEditingGroupName] = useState(null);  // cat id | null
-  const [editingGroupCode, setEditingGroupCode] = useState(null);  // cat id | null
-  const [groupNameError,   setGroupNameError]   = useState(null);  // error msg | null
-  const [groupCodeError,   setGroupCodeError]   = useState(null);  // error msg | null
 
   // Stock ledger state
   const [expandedStockItem, setExpandedStockItem] = useState(null);
@@ -182,8 +175,6 @@ const Inventory = ({
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
-      if (editingGroupName) { setEditingGroupName(null); setGroupNameError(null); return; }
-      if (editingGroupCode) { setEditingGroupCode(null); setGroupCodeError(null); return; }
       if (catalogForm)       { setCatalogForm(null); setCatalogFormError(""); setCatalogSubtypeError(""); return; }
       if (deleteConfirm)     { setDeleteConfirm(null); return; }
       if (adjTarget)         { setAdjTarget(null); return; }
@@ -197,51 +188,9 @@ const Inventory = ({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [catalogForm, deleteConfirm, adjTarget, renameTarget, deleteTarget, adjDeleteConfirm,
-      addSubtypeTarget, expandedStockItem, showCategoryModal,
-      editingGroupName, editingGroupCode]);
+      addSubtypeTarget, expandedStockItem, showCategoryModal]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
-
-  // ── Inline group name/code edit handlers (main page, today-only) ─────────────
-
-  const commitGroupName = (catId, newName) => {
-    const trimmed = newName.trim();
-    if (!trimmed) {
-      setGroupNameError("Nama kategori tidak boleh kosong");
-      return;
-    }
-    if (isDuplicateCategoryName(itemCategories, catId, trimmed)) {
-      setGroupNameError("Nama kategori sudah ada");
-      return;
-    }
-    setGroupNameError(null);
-    setEditingGroupName(null);
-    const updated = itemCategories.map((c) =>
-      c.id === catId ? { ...c, groupName: trimmed } : c
-    );
-    onUpdateCategories(updated);
-  };
-
-  const commitGroupCode = (catId, newCode) => {
-    if (isDuplicateCategoryCode(itemCategories, catId, newCode)) {
-      setGroupCodeError("Kode ini sudah dipakai oleh kategori lain");
-      return;
-    }
-    setGroupCodeError(null);
-    setEditingGroupCode(null);
-    const updated = cascadeCodeUpdate(itemCategories, catId, newCode);
-    onUpdateCategories(updated);
-  };
-
-  const handleGroupNameKeyDown = (e, catId) => {
-    if (e.key === "Enter") commitGroupName(catId, e.target.value);
-    if (e.key === "Escape") { setEditingGroupName(null); setGroupNameError(null); }
-  };
-
-  const handleGroupCodeKeyDown = (e, catId) => {
-    if (e.key === "Enter") commitGroupCode(catId, e.target.value);
-    if (e.key === "Escape") { setEditingGroupCode(null); setGroupCodeError(null); }
-  };
 
   const openRename = (itemName, unit, isCatalogued = false, subtypeContext = null) => {
     setRenameTarget({ itemName, unit, isCatalogued, subtypeContext });
@@ -625,12 +574,12 @@ const Inventory = ({
 
       if (cat) {
         if (!groupMap[cat.groupName]) {
-          groupMap[cat.groupName] = { id: cat.id, groupName: cat.groupName, code: cat.code || "", items: [] };
+          groupMap[cat.groupName] = { groupName: cat.groupName, code: cat.code || "", items: [] };
         }
         groupMap[cat.groupName].items.push(row);
       } else {
         if (!groupMap["__unc__"]) {
-          groupMap["__unc__"] = { id: null, groupName: "Lainnya", code: "UNC", items: [] };
+          groupMap["__unc__"] = { groupName: "Lainnya", code: "UNC", items: [] };
         }
         groupMap["__unc__"].items.push(row);
       }
@@ -1530,83 +1479,7 @@ const Inventory = ({
                     <tr className="inventory-group-header">
                       <td colSpan={5}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          {(() => {
-                            const canEdit = group.id && isToday && itemCategories.some((c) => c.id === group.id);
-                            const errorStyle = {
-                              position: "absolute", top: "100%", left: 0,
-                              fontSize: 11, color: "#ef4444", whiteSpace: "nowrap",
-                              background: "#fff", padding: "2px 4px", borderRadius: 4,
-                              boxShadow: "0 1px 4px rgba(0,0,0,0.12)", zIndex: 10,
-                            };
-                            return (
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                                {/* Group name */}
-                                {canEdit && editingGroupName === group.id ? (
-                                  <span style={{ position: "relative", display: "inline-block" }}>
-                                    <input
-                                      className="inventory-group-name-input"
-                                      defaultValue={group.groupName}
-                                      autoFocus
-                                      onFocus={(e) => e.target.select()}
-                                      onBlur={(e) => commitGroupName(group.id, e.target.value)}
-                                      onKeyDown={(e) => handleGroupNameKeyDown(e, group.id)}
-                                      onChange={() => setGroupNameError(null)}
-                                    />
-                                    {groupNameError && <span style={errorStyle}>{groupNameError}</span>}
-                                  </span>
-                                ) : (
-                                  <>
-                                    <span>{group.groupName}</span>
-                                    {canEdit && (
-                                      <button
-                                        className="inventory-group-edit-btn"
-                                        onClick={() => { setEditingGroupName(group.id); setGroupNameError(null); }}
-                                        title="Ubah nama kategori"
-                                        aria-label={`Ubah nama kategori ${group.groupName}`}
-                                        type="button"
-                                      >
-                                        <Icon name="edit" size={12} color="currentColor" />
-                                      </button>
-                                    )}
-                                  </>
-                                )}
-
-                                <span>—</span>
-
-                                {/* Group code */}
-                                {canEdit && editingGroupCode === group.id ? (
-                                  <span style={{ position: "relative", display: "inline-block" }}>
-                                    <input
-                                      className="inventory-group-code-input"
-                                      defaultValue={group.code}
-                                      autoFocus
-                                      maxLength={6}
-                                      onFocus={(e) => e.target.select()}
-                                      onBlur={(e) => commitGroupCode(group.id, e.target.value)}
-                                      onKeyDown={(e) => handleGroupCodeKeyDown(e, group.id)}
-                                      onChange={() => setGroupCodeError(null)}
-                                    />
-                                    {groupCodeError && <span style={errorStyle}>{groupCodeError}</span>}
-                                  </span>
-                                ) : (
-                                  <>
-                                    <span>{group.code}</span>
-                                    {canEdit && (
-                                      <button
-                                        className="inventory-group-edit-btn"
-                                        onClick={() => { setEditingGroupCode(group.id); setGroupCodeError(null); }}
-                                        title="Ubah kode kategori"
-                                        aria-label={`Ubah kode kategori ${group.code}`}
-                                        type="button"
-                                      >
-                                        <Icon name="edit" size={12} color="currentColor" />
-                                      </button>
-                                    )}
-                                  </>
-                                )}
-                              </span>
-                            );
-                          })()}
+                          <span>{group.groupName} — {group.code}</span>
                           {groupCatalogItem && (
                             <button
                               className="category-add-subtype-btn"
