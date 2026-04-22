@@ -150,8 +150,11 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     return a + (contrib ? contrib.combinedCashValue : Number(t.value) - (Number(t.outstanding) || 0));
   }, 0), [filtered, selectedItems]);
 
-  const paymentCount = useMemo(() =>
-    transactions.reduce((total, t) => {
+  const paymentCount = useMemo(() => {
+    const filteredTxIds = new Set(filtered.map((t) => t.id));
+    return transactions.reduce((total, t) => {
+      // When item filter active, only count payments from transactions in the filtered set
+      if (selectedItems.length > 0 && !filteredTxIds.has(t.id)) return total;
       if (!Array.isArray(t.paymentHistory)) return total;
       return total + t.paymentHistory.filter((ph) =>
         Number(ph.amount) > 0 &&
@@ -159,16 +162,19 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         (!dateFrom || (ph.date || "") >= dateFrom) &&
         (!dateTo   || (ph.date || "") <= dateTo)
       ).length;
-    }, 0),
-  [transactions, dateFrom, dateTo]);
+    }, 0);
+  }, [transactions, filtered, dateFrom, dateTo, selectedItems]);
 
   const grandTotalPaid = useMemo(() => {
     const filteredNet = filtered.reduce((sum, t) => {
-      const cash = Number(t.value) - (Number(t.outstanding) || 0);
+      const contrib = getMultiItemContribution(t, selectedItems);
+      const cash = contrib
+        ? contrib.combinedCashValue
+        : Number(t.value) - (Number(t.outstanding) || 0);
       return t.type === "income" ? sum + cash : sum - cash;
     }, 0);
     const filteredIds = new Set(filtered.map((t) => t.id));
-    const allPaymentsNet = transactions.reduce((sum, t) => {
+    const allPaymentsNet = selectedItems.length > 0 ? 0 : transactions.reduce((sum, t) => {
       if (filteredIds.has(t.id)) return sum; // already in filteredNet
       if (!Array.isArray(t.paymentHistory)) return sum;
       const pmtSum = t.paymentHistory
@@ -182,7 +188,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
       return t.type === "income" ? sum + pmtSum : sum - pmtSum;
     }, 0);
     return filteredNet + allPaymentsNet;
-  }, [filtered, transactions, dateFrom, dateTo]);
+  }, [filtered, transactions, dateFrom, dateTo, selectedItems]);
 
   const exportCSV = () => {
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -205,7 +211,10 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         ? t.items
         : [{ itemName: t.itemName || "", sackQty: t.stockQty ?? "", weightKg: t.weightKg || 0, pricePerKg: t.pricePerKg || 0, subtotal: t.value || 0 }];
       const jenisLabel = t.type === "income" ? "Penjualan" : "Pembelian";
-      const sudahDibayar = Number(t.value) - (Number(t.outstanding) || 0);
+      const contrib = getMultiItemContribution(t, selectedItems);
+      const sudahDibayar = contrib
+        ? contrib.combinedCashValue
+        : Number(t.value) - (Number(t.outstanding) || 0);
       const txNo = txIdx + 1;
       items.forEach((it, itIdx) => {
         const isFirst = itIdx === 0;
@@ -334,7 +343,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     (!dateTo   || (ph.date || "") <= dateTo);
 
   // Helper: render payment <tr> elements for a transaction
-  const mkPaymentRows = (t, payments, keyPrefix) => {
+  const mkPaymentRows = (t, payments, keyPrefix, contrib = null) => {
     const isIncome = t.type === "income";
     const phBorderColor = isIncome ? "#10b981" : "#ef4444";
     const phBg          = isIncome ? "#f0fdf4" : "#fff1f2";
@@ -357,6 +366,11 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
             </span>
             {ph.note ? <span style={{ marginLeft: 4, color: "#374151" }}>{ph.note}</span> : null}
           </div>
+          {contrib && (
+            <div style={{ fontSize: 10, color: "#9ca3af", fontStyle: "italic", marginTop: 2 }}>
+              Pembayaran untuk seluruh transaksi ({fmtIDR(t.value)})
+            </div>
+          )}
           {(ph.outstandingBefore != null || ph.outstandingAfter != null) && (
             <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2 }}>
               Sisa: {fmtIDR(ph.outstandingBefore ?? 0)} → {fmtIDR(ph.outstandingAfter ?? 0)}
@@ -602,30 +616,38 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                   const outstanding = Number(t.outstanding) || 0;
                   const rowBg = { background: "#f8fafc" }; // first/subtotal rows — slight shade
                   const itemBg = { background: "#ffffff" }; // continuation item rows
-                  const optCells = (show) => show ? (
-                    <>
-                      {colSudahDibayar && <td className="td-right" style={{ color: paid > 0 ? "#10b981" : "#9ca3af", fontWeight: 600 }}>{fmtIDR(paid)}</td>}
-                      {colTotalNilai   && <td className="td-right" style={{ fontWeight: 600 }}>{fmtIDR(t.value)}</td>}
-                      {colSisaTagihan  && <td className="td-right" style={{ color: outstanding > 0 ? "#f59e0b" : "#9ca3af" }}>{outstanding > 0 ? fmtIDR(outstanding) : "—"}</td>}
-                      {colPiutang      && <td className="td-center">{(() => {
-                        const [bg, fg, label] = outstanding > 0
-                          ? t.type === "income"
-                            ? ["#d1fae5", "#065f46", "Piutang"]
-                            : ["#fee2e2", "#991b1b", "Hutang"]
-                          : ["#d1fae5", "#065f46", "Lunas"];
-                        return <span style={{ background: bg, color: fg, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{label}</span>;
-                      })()}</td>}
-                      {colJenis        && <td className="td-center"><TypeBadge type={t.type} /></td>}
-                    </>
-                  ) : (
-                    <>
-                      {colSudahDibayar && <td />}
-                      {colTotalNilai   && <td />}
-                      {colSisaTagihan  && <td />}
-                      {colPiutang      && <td />}
-                      {colJenis        && <td />}
-                    </>
-                  );
+                  const optCells = (show, contrib = null) => {
+                    const effectivePaid = contrib ? contrib.combinedCashValue : paid;
+                    const effectiveOutstanding = contrib
+                      ? contrib.combinedProportionalOutstanding
+                      : outstanding;
+                    const paidColor = effectivePaid > 0 ? "#10b981" : "#9ca3af";
+                    const outstandingColor = effectiveOutstanding > 0 ? "#f59e0b" : "#9ca3af";
+                    return show ? (
+                      <>
+                        {colSudahDibayar && <td className="td-right" style={{ color: paidColor, fontWeight: 600 }}>{fmtIDR(effectivePaid)}</td>}
+                        {colTotalNilai   && <td className="td-right" style={{ fontWeight: 600 }}>{fmtIDR(contrib ? contrib.combinedSubtotal : Number(t.value))}</td>}
+                        {colSisaTagihan  && <td className="td-right" style={{ color: outstandingColor }}>{effectiveOutstanding > 0 ? fmtIDR(effectiveOutstanding) : "—"}</td>}
+                        {colPiutang      && <td className="td-center">{(() => {
+                          const [bg, fg, label] = outstanding > 0
+                            ? t.type === "income"
+                              ? ["#d1fae5", "#065f46", "Piutang"]
+                              : ["#fee2e2", "#991b1b", "Hutang"]
+                            : ["#d1fae5", "#065f46", "Lunas"];
+                          return <span style={{ background: bg, color: fg, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{label}</span>;
+                        })()}</td>}
+                        {colJenis        && <td className="td-center"><TypeBadge type={t.type} /></td>}
+                      </>
+                    ) : (
+                      <>
+                        {colSudahDibayar && <td />}
+                        {colTotalNilai   && <td />}
+                        {colSisaTagihan  && <td />}
+                        {colPiutang      && <td />}
+                        {colJenis        && <td />}
+                      </>
+                    );
+                  };
 
                   const groupBorder = txIdx > 0 ? { borderTop: "1.5px solid #cbd5e1" } : {};
 
@@ -659,12 +681,19 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                   }
 
                   // Multi-item transaction — item rows + subtotal row
+                  const contrib = getMultiItemContribution(t, selectedItems);
                   const rows = items.map((it, itIdx) => {
                     const isFirst = itIdx === 0;
+                    const isFiltered = selectedItems.length === 0 || selectedItems.includes(it.itemName);
                     return (
                       <tr
                         key={`${t.id}-${itIdx}`}
-                        style={{ ...(isFirst ? rowBg : itemBg), ...(isFirst ? groupBorder : {}), cursor: isFirst ? "pointer" : "default" }}
+                        style={{
+                          ...(isFirst ? rowBg : itemBg),
+                          ...(isFirst ? groupBorder : {}),
+                          ...(!isFiltered && contrib ? { opacity: 0.4, color: "#9ca3af" } : {}),
+                          cursor: isFirst ? "pointer" : "default",
+                        }}
                         onClick={isFirst ? (e) => { if (!e.target.closest("button,a,input,select,textarea")) setDetailTx(t); } : undefined}
                       >
                         <td style={{ textAlign: "center", color: "#6b7280", fontSize: 12 }}>{isFirst ? txNo : ""}</td>
@@ -687,20 +716,32 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                   const subtotalRow = (
                     <tr key={`${t.id}-sub`} style={{ ...rowBg, borderTop: "1px solid #e2e8f0" }}>
                       <td colSpan={8} style={{ textAlign: "right", fontSize: 11, color: "#6b7280", paddingRight: 8, fontStyle: "italic" }}>
-                        Total:
+                        {contrib ? (
+                          <>
+                            Total: {fmtIDR(contrib.combinedSubtotal)}{" "}
+                            <span style={{ color: "#9ca3af", fontWeight: 400, fontSize: 10 }}>
+                              (dari {fmtIDR(contrib.totalTransactionValue)})
+                            </span>
+                          </>
+                        ) : "Total:"}
                       </td>
-                      <td className="td-right" style={{ fontWeight: 700 }}>{fmtIDR(t.value)}</td>
-                      {optCells(true)}
+                      <td className="td-right" style={{ fontWeight: 700 }}>
+                        {contrib ? fmtIDR(contrib.combinedSubtotal) : fmtIDR(t.value)}
+                      </td>
+                      {optCells(true, contrib)}
                     </tr>
                   );
 
                   const inlinePayments = Array.isArray(t.paymentHistory)
                     ? t.paymentHistory.filter(visiblePmtFilter)
                     : [];
-                  return [...rows, subtotalRow, ...mkPaymentRows(t, inlinePayments, "iph")];
+                  return [...rows, subtotalRow, ...mkPaymentRows(t, inlinePayments, "iph", contrib)];
                 })}
                 {/* Orphan payment rows — payments from transactions outside the date filter */}
                 {(() => {
+                  // Hide orphan payments when item filter is active — orphan payments
+                  // have no item-level breakdown and cannot be attributed to a filtered item.
+                  if (selectedItems.length > 0) return null;
                   const filteredIds = new Set(filtered.map((t) => t.id));
                   const orphanRows = transactions.flatMap((t) => {
                     if (filteredIds.has(t.id)) return [];
