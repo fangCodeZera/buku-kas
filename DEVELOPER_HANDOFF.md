@@ -41,7 +41,7 @@ src/
     printUtils.js                   47  printWithPortal, escapeHtml
     stockUtils.js                  114  computeStockMap, computeStockMapForDate
     textFormatter.js               387  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText)
-    AuthContext.js                 173  AuthProvider, useAuth — session state, signIn (with login audit log), signOut, 15-min idle timeout; clears #access_token hash on auth state change to prevent PASSWORD_RECOVERY re-trigger on reload
+    AuthContext.js                 175  AuthProvider, useAuth — session state, signIn (with login audit log), signOut, 15-min idle timeout; `ignoringSessionRef` guards onAuthStateChange during idle sign-out (T23); clears #access_token hash on auth state change to prevent PASSWORD_RECOVERY re-trigger on reload
     supabaseClient.js               19  Creates Supabase client (anon key only, env var validated)
     supabaseStorage.js             445  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog, getNextTxnSerial, isSupabaseReachable
     storageConfig.js                ~30  USE_SUPABASE flag
@@ -51,7 +51,7 @@ src/
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
-    Inventory.js                  ~1640  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories)
+    Inventory.js                  ~1680  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24)
     Contacts.js                    639  Contact list + detail panel + transaction history
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
     Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table)
@@ -71,7 +71,7 @@ src/
     SuratJalanModal.js             289  Printable A4 delivery note
     DotMatrixPrintModal.js         122  Dot matrix preview + print modal (invoice & surat jalan)
     ToggleSwitch.js                 65  Reusable toggle switch — track+thumb, #007bff/#cbd5e1, keyboard accessible (role=switch, Space/Enter)
-    ReportModal.js                 580  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR
+    ReportModal.js                 590  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR. Defaults (T25): showCompanyName=false, showSummary=false, printTable1=true, printTable2=false. grandTotalPaid = table1Total + table2Total (T26 — each 0 when its toggle is off)
     StockWarningModal.js            77  Negative-stock warning
     StockReportModal.js            ~370  Printable stock report — derives groupings from itemCatalog prop (active entries = groups, active subtypes = members, uncatalogued → "Lainnya"). Toggles: showZeroStock (includes catalog items with no history as qty 0), showCompanyName
     Badge.js                       113  StatusBadge, TypeBadge (named exports)
@@ -722,7 +722,7 @@ Edit entries (`note === "Detail Perubahan"` or `"Transaksi diedit — nilai dipe
 
 Computes formatted ASCII text via `useMemo` (deps: `transaction, mode, settings, invoiceNote, platNomor, catatanPengiriman`) using `formatInvoice(transaction, settings, { note: invoiceNote })` or `formatSuratJalan(transaction, settings, { platNomor, catatanPengiriman })`. Preview updates live as user types in input fields.
 
-Renders preview in `.dot-matrix-preview` `<pre>` block (monospace, gray background, scrollable). "Konfirmasi Cetak" button manually escapes `&`, `<`, `>` then calls `printWithPortal()` with inline-styled `<pre>` (Courier New, 12pt, line-height 1). "Batal" button and Escape key close the modal. Conditionally mounted — no Escape guard needed.
+Renders preview in `.dot-matrix-preview` `<pre>` block (no inline style — font from CSS class). "Konfirmasi Cetak" button manually escapes `&`, `<`, `>` then calls `printWithPortal()` with inline-styled `<pre>` (Courier New, 12pt, no bold, line-height 1 — T22: Arial and bold Courier New both tried and reverted; original format preserved). "Batal" button and Escape key close the modal. Conditionally mounted — no Escape guard needed.
 
 Note: Uses manual `replace(/&/g, ...)` chain in `handlePrint` rather than `escapeHtml()` from `printUtils.js` — both approaches are equivalent.
 
@@ -798,7 +798,7 @@ Blocks UI when a Supabase write fails. Shows error message with Retry and Dismis
 3. Fires non-blocking `saveActivityLog({ user_name: prof?.full_name || email, action: 'login', ... })` — failure never prevents login
 4. Returns auth data; AuthContext updates user/profile state automatically via `onAuthStateChange`
 
-**`signOut()`:** Synchronously clears `session`, `user`, `profile` state, then `await supabase.auth.signOut()`. Does NOT clear `idleTimedOut` — the flag must survive sign-out so Login.js can show the session-expired banner.
+**`signOut()`:** Synchronously clears `session`, `user`, `profile` state, then `await supabase.auth.signOut()`, then `ignoringSessionRef.current = false`. Does NOT clear `idleTimedOut` — the flag must survive sign-out so Login.js can show the session-expired banner.
 
 **`handleSession`:** Fetches profile, force-signs-out inactive accounts (`is_active === false`).
 
@@ -809,8 +809,10 @@ Blocks UI when a Supabase write fails. Shows error message with Retry and Dismis
 - `ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"]`
 - `useEffect` depends on `[user]` — starts timer when user logs in, cleans up on logout
 - `resetTimer()` clears and restarts a `setTimeout`; each activity event calls `resetTimer()`
-- On timeout: `await signOut()` then `setIdleTimedOut(true)` — order matters so flag outlives cleared state
-- `idleTimedOut` state: NOT cleared in `signOut()` — only `clearIdleTimedOut()` resets it (called after successful re-login in Login.js)
+- On timeout: `ignoringSessionRef.current = true`, then `await signOut()`, then `setIdleTimedOut(true)` — order matters so flag outlives cleared state; `ignoringSessionRef` blocks token-refresh race via `onAuthStateChange`
+- Same pattern in `handleVisibilityChange` (sleep/resume path)
+- `idleTimedOut` state: NOT cleared in `signOut()` — only `clearIdleTimedOut()` resets it (called after successful re-login in Login.js); `clearIdleTimedOut` also clears `ignoringSessionRef`
+- **T23 race fix:** `ignoringSessionRef = useRef(false)` — set before idle sign-out, cleared after. `onAuthStateChange` returns early when true, preventing Supabase's token auto-refresh from restoring the session mid-logout.
 - All event listeners use `{ passive: true }` for performance
 
 ### Role-Based Restrictions (Karyawan vs Pemilik)
@@ -1045,6 +1047,24 @@ Added a `code` field to catalog items. Code is auto-generated on creation, shown
 - "Tampilkan pembayaran di luar periode" checkbox — hidden in ReportModal when filter active
 
 **`selectedItems` passthrough:** `onReport({...selectedItems})` → `reportState.selectedItems` → `<ReportModal selectedItems={...}>`.
+
+---
+
+### T28 — EDIT_NOTES extraction + audit log accuracy (2026-04-26)
+
+**Problem 1:** `EDIT_NOTES` was declared as three independent local constants in `App.js`, `Reports.js`, and `ReportModal.js`. If a new edit note type was added to App.js (where entries are written), the other two files would silently diverge, causing `grandTotalPaid` and `alreadyPaid` to disagree.
+
+**Fix:** `EDIT_NOTES` exported from `src/utils/reportUtils.js`. All three files import from there. Do not declare locally.
+
+**Problem 2:** In `editTransaction`, the `editPaymentEntry` audit block used `nt.outstanding` (form value) for `outstandingAfter`, `paidAfter`, and `statusAfter` — but after T27 the actual stored outstanding is `out` (corrected value). When T27 differed from the form, the audit history showed misleading numbers.
+
+**Fix:** `editPaymentEntry` now uses `out` for `outstandingAfter` and `paidAfter`, and `deriveStatus(nt.type, out > 0)` for `statusAfter`.
+
+**Problem 3:** `financialChanged` compared `Number(x.outstanding) !== Number(nt.outstanding)` — if T27 silently corrected a legacy inconsistency but the user didn't change outstanding in the form, `financialChanged` was false and no audit entry was created.
+
+**Fix:** `financialChanged` now compares `Number(x.outstanding) !== out`.
+
+---
 
 Key patterns to never reintroduce:
 - UTC off-by-1: never use `new Date(dateStr + "T00:00:00")` (no Z) for date arithmetic

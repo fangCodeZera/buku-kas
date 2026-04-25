@@ -239,7 +239,17 @@ example:  computeStockMapForDate(data.transactions, "2026-03-01", data.stockAdju
 
 ---
 
-### `src/utils/reportUtils.js` (46 lines)
+### `src/utils/reportUtils.js` (57 lines)
+
+```
+constant: EDIT_NOTES
+value:    Set<string> — { "Detail Perubahan", "Transaksi diedit — nilai diperbarui" }
+rules:    Shared across App.js, Reports.js, and ReportModal.js. Do NOT declare locally.
+          Import via: import { EDIT_NOTES } from "../utils/reportUtils";
+          Any new edit note type written in App.js editTransaction must be added here.
+          Purpose: exclude edit-metadata entries (amount=0) from alreadyPaid sums and
+          grand total payment counts. The amount>0 guard is a secondary safety net.
+```
 
 ```
 function: getMultiItemContribution(t, selItems)

@@ -169,8 +169,8 @@
 **Used by:** `App.js` (global `dotMatrixData` state `{ transaction, mode }`)
 **Special behaviour:**
 - Input fields (`invoiceNote`, `platNomor`, `catatanPengiriman`) shown above preview, conditional on `mode`.
-- Preview in `.dot-matrix-preview` `<pre>` updates live as user types.
-- "Konfirmasi Cetak" manually escapes `&`, `<`, `>` via `.replace()` chain before calling `printWithPortal()`.
+- Preview in `.dot-matrix-preview` `<pre>` updates live as user types. No inline style on preview — font set by `.dot-matrix-preview` CSS class.
+- "Konfirmasi Cetak" manually escapes `&`, `<`, `>` via `.replace()` chain before calling `printWithPortal()`. Print output uses `'Courier New', Courier, monospace` `12pt`, no bold (T22: Arial and bold Courier New both tried and reverted — original format preserved).
 - **Conditionally-mounted**: Escape key no guard needed.
 
 ---

@@ -13,9 +13,7 @@ import Toast       from "../components/Toast";
 import MultiSelect from "../components/MultiSelect";
 import { fmtIDR, fmtDate, fmtQty, today, addDays } from "../utils/idGenerators";
 import TransactionDetailModal from "../components/TransactionDetailModal";
-import { getMultiItemContribution } from "../utils/reportUtils";
-
-const EDIT_NOTES = new Set(["Detail Perubahan", "Transaksi diedit — nilai diperbarui"]);
+import { getMultiItemContribution, EDIT_NOTES } from "../utils/reportUtils";
 
 const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = null, onClearItemFilter = () => {}, profile }) => {
   const isOwner = profile?.role === "owner";

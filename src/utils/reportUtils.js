@@ -4,6 +4,16 @@
  */
 
 /**
+ * Payment history note strings that represent edit metadata, not real payments.
+ * Shared across App.js, Reports.js, and ReportModal.js to ensure consistency.
+ * Any new edit note type added to App.js must be added here too.
+ */
+export const EDIT_NOTES = new Set([
+  "Detail Perubahan",
+  "Transaksi diedit — nilai diperbarui",
+]);
+
+/**
  * For a multi-item transaction, compute the combined contribution of ALL selected items.
  * Returns null when no filter is active, transaction has 0 or 1 items, all items match,
  * or none match (only returns non-null when there is a genuine mix).

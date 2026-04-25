@@ -134,7 +134,8 @@ const Inventory = ({
   const [addSubtypeError,      setAddSubtypeError]      = useState("");
   // Unified delete confirm: { type: "catalog", catalogItem, displayName }
   //                       | { type: "subtype", subtypeName, parentCatalogItem, displayName }
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleteConfirm,      setDeleteConfirm]      = useState(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
 
   // Stock ledger state
   const [expandedStockItem, setExpandedStockItem] = useState(null);
@@ -173,7 +174,7 @@ const Inventory = ({
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       if (catalogForm)       { setCatalogForm(null); setCatalogFormError(""); setCatalogSubtypeError(""); return; }
-      if (deleteConfirm)     { setDeleteConfirm(null); return; }
+      if (deleteConfirm)     { setDeleteConfirm(null); setDeleteConfirmInput(''); return; }
       if (adjTarget)         { setAdjTarget(null); return; }
       if (renameTarget)      { setRenameTarget(null); setRenameMergeConfirm(false); return; }
       if (deleteTarget)      { setDeleteTarget(null); return; }
@@ -667,6 +668,7 @@ const Inventory = ({
         parentCatalogItem: row.parentCatalogItem,
         displayName:       row.displayName,
       });
+      setDeleteConfirmInput('');
     } else {
       // Base item: hasTx checks base key AND all subtype keys — subtypes must be considered
       // because if any subtype has transactions, deleting the base should show Archive, not Delete.
@@ -679,6 +681,7 @@ const Inventory = ({
         catalogItem: row.catalogItem,
         displayName: row.displayName,
       });
+      setDeleteConfirmInput('');
     }
   };
 
@@ -703,6 +706,7 @@ const Inventory = ({
       setToast(`Tipe ${confirm.subtypeName} berhasil dihapus`);
     }
     setDeleteConfirm(null);
+    setDeleteConfirmInput('');
     setSubmitting(false);
   };
 
@@ -1067,7 +1071,7 @@ const Inventory = ({
 
       {/* ── Unified delete/archive confirm (base item or subtype) ── */}
       {deleteConfirm && (
-        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+        <div className="modal-overlay" onClick={() => { setDeleteConfirm(null); setDeleteConfirmInput(''); }}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 380 }}>
             <h3 className="modal-title">
               {deleteConfirm.type === "archiveCatalog" ? "📦 Arsipkan Barang?" :
@@ -1106,6 +1110,21 @@ const Inventory = ({
                   <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
                     Data transaksi yang sudah ada tidak akan terpengaruh.
                   </p>
+                  <p style={{ fontSize: 13, color: "#ef4444", fontWeight: 600, marginTop: 8 }}>
+                    Tidak dapat dibatalkan.
+                  </p>
+                  <input
+                    type="text"
+                    value={deleteConfirmInput}
+                    onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                    placeholder={'Ketik "hapus" untuk melanjutkan'}
+                    style={{
+                      width: "100%", marginTop: 10, padding: "8px 11px",
+                      border: "1.5px solid #e2e8f0", borderRadius: 8,
+                      fontSize: 14, boxSizing: "border-box",
+                    }}
+                    aria-label='Ketik hapus untuk konfirmasi'
+                  />
                 </>
               )}
               {deleteConfirm.type === "subtype" && (
@@ -1114,11 +1133,26 @@ const Inventory = ({
                   <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
                     Data transaksi yang sudah ada tidak akan terpengaruh.
                   </p>
+                  <p style={{ fontSize: 13, color: "#ef4444", fontWeight: 600, marginTop: 8 }}>
+                    Tidak dapat dibatalkan.
+                  </p>
+                  <input
+                    type="text"
+                    value={deleteConfirmInput}
+                    onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                    placeholder={'Ketik "hapus" untuk melanjutkan'}
+                    style={{
+                      width: "100%", marginTop: 10, padding: "8px 11px",
+                      border: "1.5px solid #e2e8f0", borderRadius: 8,
+                      fontSize: 14, boxSizing: "border-box",
+                    }}
+                    aria-label='Ketik hapus untuk konfirmasi'
+                  />
                 </>
               )}
             </div>
             <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>Batal</button>
+              <button className="btn btn-secondary" onClick={() => { setDeleteConfirm(null); setDeleteConfirmInput(''); }}>Batal</button>
               {(deleteConfirm.type === "archiveCatalog" || deleteConfirm.type === "archiveSubtype") ? (
                 <button
                   className="btn btn-primary"
@@ -1129,7 +1163,17 @@ const Inventory = ({
                   Arsipkan
                 </button>
               ) : (
-                <button className="btn btn-danger" onClick={() => handleConfirmDelete(deleteConfirm)} disabled={submitting}>Hapus</button>
+                <button
+                  className="btn btn-danger"
+                  onClick={() => handleConfirmDelete(deleteConfirm)}
+                  disabled={
+                    submitting ||
+                    ((deleteConfirm.type === "catalog" || deleteConfirm.type === "subtype") &&
+                      deleteConfirmInput.trim().toLowerCase() !== "hapus")
+                  }
+                >
+                  Hapus
+                </button>
               )}
             </div>
           </div>

@@ -14,10 +14,8 @@
 import React, { useRef, useEffect, useState } from "react";
 import { fmtIDR, fmtDate, fmtQty, today } from "../utils/idGenerators";
 import { printWithPortal } from "../utils/printUtils";
-import { getMultiItemContribution } from "../utils/reportUtils";
+import { getMultiItemContribution, EDIT_NOTES } from "../utils/reportUtils";
 import ToggleSwitch from "./ToggleSwitch";
-
-const EDIT_NOTES = new Set(["Detail Perubahan", "Transaksi diedit — nilai diperbarui"]);
 
 const ReportModal = ({
   transactions,
@@ -33,12 +31,12 @@ const ReportModal = ({
   colJenis = false,
   onClose,
 }) => {
-  const [showCompanyName, setShowCompanyName] = useState(true);
-  const [showSummary, setShowSummary] = useState(true);
+  const [showCompanyName, setShowCompanyName] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
   const [table1Open, setTable1Open] = useState(true);
   const [table2Open, setTable2Open] = useState(true);
   const [printTable1, setPrintTable1] = useState(true);
-  const [printTable2, setPrintTable2] = useState(true);
+  const [printTable2, setPrintTable2] = useState(false);
   const docRef = useRef(null);
 
   useEffect(() => {
@@ -67,23 +65,31 @@ const ReportModal = ({
 
   // Grand total: income paid amounts added, expense paid amounts subtracted (net cash basis)
   const filteredTxIds = new Set(transactions.map((t) => t.id));
-  const grandTotalPaid =
-    transactions.reduce((sum, t) => {
-      const contrib = getMultiItemContribution(t, selectedItems);
-      const cash = contrib
-        ? contrib.combinedCashValue
-        : Number(t.value) - (Number(t.outstanding) || 0);
-      return t.type === "income" ? sum + cash : sum - cash;
-    }, 0) +
-    // Orphan payments: excluded when item filter active (no item-level breakdown possible)
-    (selectedItems.length > 0 ? 0 : allTransactions.reduce((sum, t) => {
-      if (filteredTxIds.has(t.id)) return sum; // already in filteredNet above
-      if (!Array.isArray(t.paymentHistory)) return sum;
-      const pmtSum = t.paymentHistory
-        .filter(visiblePmtFilter)
-        .reduce((s, ph) => s + Number(ph.amount), 0);
-      return t.type === "income" ? sum + pmtSum : sum - pmtSum;
-    }, 0));
+
+  // Table 1 contribution — only when printTable1 is on
+  const table1Total = printTable1
+    ? transactions.reduce((sum, t) => {
+        const contrib = getMultiItemContribution(t, selectedItems);
+        const cash = contrib
+          ? contrib.combinedCashValue
+          : Number(t.value) - (Number(t.outstanding) || 0);
+        return t.type === "income" ? sum + cash : sum - cash;
+      }, 0)
+    : 0;
+
+  // Table 2 contribution — only when printTable2 is on and no item filter active
+  const table2Total = (printTable2 && selectedItems.length === 0)
+    ? allTransactions.reduce((sum, t) => {
+        if (filteredTxIds.has(t.id)) return sum;
+        if (!Array.isArray(t.paymentHistory)) return sum;
+        const pmtSum = t.paymentHistory
+          .filter(visiblePmtFilter)
+          .reduce((s, ph) => s + Number(ph.amount), 0);
+        return t.type === "income" ? sum + pmtSum : sum - pmtSum;
+      }, 0)
+    : 0;
+
+  const grandTotalPaid = table1Total + table2Total;
 
   const filteredIds = new Set(transactions.map((t) => t.id));
 

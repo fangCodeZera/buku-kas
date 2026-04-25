@@ -72,8 +72,10 @@ import { computeStockMap }         from "./utils/stockUtils";
 import { computeARandAP }          from "./utils/balanceUtils";
 import { generateId, generateTxnId, fmtIDR, normItem, normalizeTitleCase, addDays, today, nowTime } from "./utils/idGenerators";
 import { deriveStatus }            from "./utils/statusUtils";
+import { EDIT_NOTES }              from "./utils/reportUtils";
 
 /** Generate a short code from an item name. Multi-word: initials uppercase. Single-word: consonants, max 4 chars. */
+
 const generateItemCode = (name) => {
   if (!name || !name.trim()) return '';
   const words = name.trim().split(/\s+/);
@@ -760,7 +762,14 @@ export default function App() {
       ...d,
       transactions: d.transactions.map((x) => {
         if (x.id !== nt.id) return x;
-        const out = Number(nt.outstanding) || 0;
+        const alreadyPaid = (x.paymentHistory || []).reduce((sum, ph) => {
+          if (Number(ph.amount) <= 0) return sum;
+          if (EDIT_NOTES.has(ph.note)) return sum;
+          return sum + Number(ph.amount);
+        }, 0);
+        const newValue = Number(nt.value) || 0;
+        const correctOutstanding = Math.max(0, newValue - alreadyPaid);
+        const out = Number(nt.outstanding) === 0 ? 0 : correctOutstanding;
         // dueDate rules on edit:
         //  - fully paid → null
         //  - partial/unpaid and date changed → recalculate from new date
@@ -792,7 +801,7 @@ export default function App() {
         const counterpartyChanged = x.counterparty !== nt.counterparty;
         const dateChanged         = x.date !== nt.date;
         const financialChanged    = Number(x.value) !== Number(nt.value) ||
-          Number(x.outstanding) !== Number(nt.outstanding);
+          Number(x.outstanding) !== out;
         const statusChanged       = x.status !== nt.status;
         const dueDateChanged      = x.dueDate !== nt.dueDate;
         const notesChanged        = (x.notes || "") !== (nt.notes || "");
@@ -846,11 +855,11 @@ export default function App() {
             valueBefore:       Number(x.value)       || 0,
             valueAfter:        Number(nt.value)       || 0,
             paidBefore:        Math.max(0, (Number(x.value) || 0) - (Number(x.outstanding) || 0)),
-            paidAfter:         Math.max(0, (Number(nt.value) || 0) - (Number(nt.outstanding) || 0)),
+            paidAfter:         Math.max(0, (Number(nt.value) || 0) - out),
             outstandingBefore: Number(x.outstanding) || 0,
-            outstandingAfter:  Number(nt.outstanding) || 0,
+            outstandingAfter:  out,
           }),
-          ...(statusChanged  && { statusBefore:  x.status  || "",   statusAfter:  nt.status  || "" }),
+          ...(statusChanged  && { statusBefore:  x.status  || "",   statusAfter:  deriveStatus(nt.type, out > 0) }),
           ...(dueDateChanged && { dueDateBefore: x.dueDate || null, dueDateAfter: nt.dueDate || null }),
           ...(notesChanged   && { notesBefore:   x.notes   || "",   notesAfter:   nt.notes   || "" }),
           ...(itemsChanged   && { itemsAdded: addedItems, itemsRemoved: removedItems, itemsChanged: changedItems }),
@@ -859,6 +868,8 @@ export default function App() {
           ...nt,
           txnId,
           dueDate,
+          outstanding:    out,
+          status:         deriveStatus(nt.type, out > 0),
           version:        (x.version || 0) + 1,
           createdAt:      x.createdAt || nt.createdAt || new Date().toISOString(),
           paymentHistory: editPaymentEntry

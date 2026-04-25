@@ -2,7 +2,7 @@
 // All auth state lives here. Never access supabase.auth directly outside this file.
 // Exposes: { user, profile, session, loading, signIn, signOut, resetPassword, idleTimedOut, clearIdleTimedOut, passwordRecovery, updatePassword, clearPasswordRecovery }
 
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useRef } from "react";
 import supabase from "./supabaseClient";
 import { saveActivityLog } from "./supabaseStorage";
 
@@ -20,6 +20,10 @@ export function AuthProvider({ children }) {
   const [idleTimedOut, setIdleTimedOut] = useState(false);
   // passwordRecovery is set when the user arrives via a reset-password email link.
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+
+  // ignoringSessionRef: set to true during idle-triggered sign-out to prevent
+  // onAuthStateChange from restoring the session mid-logout via Supabase token refresh.
+  const ignoringSessionRef = useRef(false);
 
   // Fetch profile row from profiles table
   const fetchProfile = async (userId) => {
@@ -68,6 +72,11 @@ export function AuthProvider({ children }) {
     // Keep session in sync with Supabase auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        // During idle-triggered sign-out, ignore any incoming session refresh
+        // from Supabase's token auto-refresh — it would otherwise restore the
+        // user mid-logout and cause the flash-then-redirect bug.
+        if (ignoringSessionRef.current) return;
+
         if (event === "PASSWORD_RECOVERY") {
           setPasswordRecovery(true);
         }
@@ -109,6 +118,8 @@ export function AuthProvider({ children }) {
     // NOTE: idleTimedOut is intentionally NOT cleared here.
     // It survives sign-out so Login.js can show the "session expired" message.
     // Only clearIdleTimedOut() resets it, called after successful re-login.
+    // Clear the ignoring flag so future logins work normally.
+    ignoringSessionRef.current = false;
   };
 
   // ── Idle timeout: auto sign-out after 15 minutes of inactivity ────────────
@@ -124,6 +135,7 @@ export function AuthProvider({ children }) {
       clearTimeout(timerId);
       localStorage.setItem('buku-kas-last-activity', Date.now().toString());
       timerId = setTimeout(async () => {
+        ignoringSessionRef.current = true;
         await signOut();
         setIdleTimedOut(true);
       }, IDLE_TIMEOUT_MS);
@@ -133,6 +145,7 @@ export function AuthProvider({ children }) {
       if (document.visibilityState === 'visible') {
         const last = parseInt(localStorage.getItem('buku-kas-last-activity') || '0', 10);
         if (last > 0 && Date.now() - last > IDLE_TIMEOUT_MS) {
+          ignoringSessionRef.current = true;
           await signOut();
           setIdleTimedOut(true);
         }
@@ -157,7 +170,10 @@ export function AuthProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  const clearIdleTimedOut = () => setIdleTimedOut(false);
+  const clearIdleTimedOut = () => {
+    ignoringSessionRef.current = false;
+    setIdleTimedOut(false);
+  };
 
   const resetPassword = async (email) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
