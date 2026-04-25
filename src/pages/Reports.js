@@ -13,50 +13,7 @@ import Toast       from "../components/Toast";
 import MultiSelect from "../components/MultiSelect";
 import { fmtIDR, fmtDate, fmtQty, today, addDays } from "../utils/idGenerators";
 import TransactionDetailModal from "../components/TransactionDetailModal";
-
-/**
- * For a multi-item transaction, compute the combined contribution of ALL selected items.
- * Works for any number of active item filters (1, 2, or more).
- *
- * Returns null when:
- *   - No item filter is active (selItems is empty)
- *   - The transaction has 0 or 1 items (single-item tx needs no special breakdown)
- *   - ALL items in the transaction are selected (no grey "other" items to show)
- *   - NONE of the items in the transaction are selected (shouldn't happen after filtering)
- *
- * @param {Object}   t        - transaction
- * @param {string[]} selItems - active item filter names (array, any length)
- * @returns {{ filteredItems, otherItems, combinedSubtotal, combinedProportionalOutstanding,
- *             combinedCashValue, totalTransactionValue, totalOutstanding } | null}
- */
-function getMultiItemContribution(t, selItems) {
-  if (!selItems || selItems.length === 0) return null;
-  if (!Array.isArray(t.items) || t.items.length <= 1) return null;
-
-  const filteredItems = t.items.filter((it) => selItems.includes(it.itemName));
-  const otherItems    = t.items.filter((it) => !selItems.includes(it.itemName));
-
-  // Only apply breakdown rendering when there's a mix (some match, some don't)
-  if (filteredItems.length === 0 || otherItems.length === 0) return null;
-
-  const combinedSubtotal = filteredItems.reduce((s, it) => s + (Number(it.subtotal) || 0), 0);
-  const totalTransactionValue = Number(t.value) || 0;
-  const totalOutstanding      = Number(t.outstanding) || 0;
-  const combinedProportionalOutstanding = totalTransactionValue > 0
-    ? Math.round((combinedSubtotal / totalTransactionValue) * totalOutstanding)
-    : 0;
-  const combinedCashValue = combinedSubtotal - combinedProportionalOutstanding;
-
-  return {
-    filteredItems,
-    otherItems,
-    combinedSubtotal,
-    combinedProportionalOutstanding,
-    combinedCashValue,
-    totalTransactionValue,
-    totalOutstanding,
-  };
-}
+import { getMultiItemContribution } from "../utils/reportUtils";
 
 const EDIT_NOTES = new Set(["Detail Perubahan", "Transaksi diedit — nilai diperbarui"]);
 
@@ -89,6 +46,8 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
   const [colSisaTagihan,  setColSisaTagihan]  = useState(false);
   const [colPiutang,      setColPiutang]      = useState(false);
   const [colJenis,        setColJenis]        = useState(false);
+  const [table1Open,      setTable1Open]      = useState(true);
+  const [table2Open,      setTable2Open]      = useState(true);
 
   const applyPeriod = (p) => {
     // "all-time" period option: clears date filters to show all transactions
@@ -321,7 +280,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
   const handleGenerateReport = () => {
     if (filtered.length === 0 && paymentCount === 0) { setToast("Tidak ada transaksi yang cocok dengan filter saat ini."); return; }
     if (filtered.length + paymentCount > 50) { setConfirmCount(filtered.length); return; }
-    onReport({ transactions: filtered, allTransactions: transactions, dateFrom, dateTo, colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis });
+    onReport({ transactions: filtered, allTransactions: transactions, dateFrom, dateTo, selectedItems, colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis });
   };
 
   const hasActiveFilters = selectedClients.length > 0 || selectedItems.length > 0;
@@ -341,6 +300,20 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     !EDIT_NOTES.has(ph.note) &&
     (!dateFrom || (ph.date || "") >= dateFrom) &&
     (!dateTo   || (ph.date || "") <= dateTo);
+
+  // Orphan payments: payments made in the date window for transactions OUTSIDE the window
+  const orphanPayments = useMemo(() => {
+    if (selectedItems.length > 0) return [];
+    const filteredIds = new Set(filtered.map((t) => t.id));
+    const result = [];
+    transactions.forEach((t) => {
+      if (filteredIds.has(t.id)) return;
+      if (!Array.isArray(t.paymentHistory)) return;
+      const pmts = t.paymentHistory.filter(visiblePmtFilter);
+      if (pmts.length > 0) result.push({ t, pmts });
+    });
+    return result;
+  }, [transactions, filtered, selectedItems, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Helper: render payment <tr> elements for a transaction
   const mkPaymentRows = (t, payments, keyPrefix, contrib = null) => {
@@ -517,7 +490,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         <div className="reports-confirm-banner" role="alert">
           <span>Cetak laporan untuk <strong>{confirmCount} transaksi</strong>?</span>
           <div style={{ display:"flex", gap:8, marginTop:8 }}>
-            <button onClick={() => { setConfirmCount(null); onReport({ transactions: filtered, allTransactions: transactions, dateFrom, dateTo, colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis }); }} className="btn btn-primary btn-sm">Ya, Cetak Laporan</button>
+            <button onClick={() => { setConfirmCount(null); onReport({ transactions: filtered, allTransactions: transactions, dateFrom, dateTo, selectedItems, colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis }); }} className="btn btn-primary btn-sm">Ya, Cetak Laporan</button>
             <button onClick={() => setConfirmCount(null)} className="btn btn-secondary btn-sm">Batal</button>
           </div>
         </div>
@@ -543,8 +516,8 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         </div>
       )}
 
-      {/* Transaction table */}
-      <div className="table-card">
+      {/* Transaction table — Table 1: Transactions in period */}
+      <div className="table-card" style={{ marginBottom: 16 }}>
         {/* Column toggle bar */}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", padding: "8px 12px 4px", borderBottom: "1px solid #e2e8f0" }}>
           <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, marginRight: 2 }}>Tampilkan kolom:</span>
@@ -565,9 +538,22 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
           ))}
         </div>
 
-        <div className="table-header-bar"><strong>{filtered.length} transaksi</strong></div>
-        {filtered.length === 0 && paymentCount === 0 ? (
-          <div className="empty-state">Tidak ada data untuk filter ini.</div>
+        {/* Table 1 collapse header */}
+        <div
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", cursor: "pointer", userSelect: "none", borderBottom: table1Open ? "1px solid #e2e8f0" : "none" }}
+          onClick={() => setTable1Open((v) => !v)}
+          aria-expanded={table1Open}
+        >
+          <strong style={{ fontSize: 13 }}>
+            {table1Open ? "▾" : "▸"} Transaksi Periode Ini
+            <span style={{ fontWeight: 400, color: "#6b7280", marginLeft: 8, fontSize: 12 }}>
+              {filtered.length} transaksi · {paymentCount} pembayaran
+            </span>
+          </strong>
+        </div>
+
+        {!table1Open ? null : filtered.length === 0 ? (
+          <div className="empty-state">Tidak ada transaksi untuk filter ini.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
@@ -737,55 +723,156 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                     : [];
                   return [...rows, subtotalRow, ...mkPaymentRows(t, inlinePayments, "iph", contrib)];
                 })}
-                {/* Orphan payment rows — payments from transactions outside the date filter */}
-                {(() => {
-                  // Hide orphan payments when item filter is active — orphan payments
-                  // have no item-level breakdown and cannot be attributed to a filtered item.
-                  if (selectedItems.length > 0) return null;
-                  const filteredIds = new Set(filtered.map((t) => t.id));
-                  const orphanRows = transactions.flatMap((t) => {
-                    if (filteredIds.has(t.id)) return [];
-                    const pmts = Array.isArray(t.paymentHistory)
-                      ? t.paymentHistory.filter(visiblePmtFilter)
-                      : [];
-                    return mkPaymentRows(t, pmts, "oph");
-                  });
-                  if (orphanRows.length === 0) return null;
-                  const totalCols = 9 + [colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis].filter(Boolean).length;
-                  return [
-                    <tr key="orphan-sep">
-                      <td colSpan={totalCols} style={{ fontSize: 11, color: "#6b7280", padding: "6px 8px", background: "#f1f5f9", borderTop: "1.5px solid #cbd5e1" }}>
-                        Pembayaran dari transaksi di luar periode ini:
-                      </td>
-                    </tr>,
-                    ...orphanRows,
-                  ];
-                })()}
               </tbody>
             </table>
           </div>
         )}
 
-        {/* Grand total row */}
-        {(filtered.length > 0 || paymentCount > 0) && (
-          <div style={{ padding: "10px 16px", borderTop: "2px solid #e2e8f0", fontSize: 13, color: "#374151", display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ fontWeight: 600 }}>{filtered.length} transaksi</span>
-            {paymentCount > 0 && (
-              <>
-                <span style={{ color: "#6b7280" }}>·</span>
-                <span style={{ color: "#6b7280" }}>{paymentCount} pembayaran</span>
-              </>
-            )}
-            <span style={{ color: "#6b7280" }}>|</span>
-            <span>
-              Grand Total Sudah Dibayar:{" "}
-              <span style={{ fontWeight: 700, color: "#10b981" }}>
-                {fmtIDR(grandTotalPaid)}
-              </span>
-            </span>
-          </div>
-        )}
       </div>
+
+      {/* Transaction table — Table 2: Orphan payments (outside date range) */}
+      {orphanPayments.length > 0 && (
+        <div className="table-card" style={{ marginBottom: 16 }}>
+          <div
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", cursor: "pointer", userSelect: "none", borderBottom: table2Open ? "1px solid #e2e8f0" : "none" }}
+            onClick={() => setTable2Open((v) => !v)}
+            aria-expanded={table2Open}
+          >
+            <strong style={{ fontSize: 13 }}>
+              {table2Open ? "▾" : "▸"} Pembayaran dari Transaksi Luar Periode
+              <span style={{ fontWeight: 400, color: "#6b7280", marginLeft: 8, fontSize: 12 }}>
+                {orphanPayments.reduce((n, { pmts }) => n + pmts.length, 0)} pembayaran
+              </span>
+            </strong>
+          </div>
+
+          {table2Open && (
+            <div style={{ overflowX: "auto" }}>
+              <table className="data-table">
+                <colgroup>
+                  <col style={{ width: 36 }} />
+                  <col style={{ width: 110 }} />
+                  <col style={{ width: 90 }} />
+                  <col style={{ width: 120 }} />
+                  <col />
+                  <col style={{ width: 70 }} />
+                  <col style={{ width: 80 }} />
+                  <col style={{ width: 90 }} />
+                  <col style={{ width: 100 }} />
+                  {colSudahDibayar && <col style={{ width: 110 }} />}
+                  {colTotalNilai   && <col style={{ width: 110 }} />}
+                  {colSisaTagihan  && <col style={{ width: 110 }} />}
+                  {colPiutang      && <col style={{ width: 110 }} />}
+                  {colJenis        && <col style={{ width: 90 }} />}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "center" }}>No</th>
+                    <th>No. Invoice</th>
+                    <th>Tanggal Bayar</th>
+                    <th>Klien</th>
+                    <th>Catatan</th>
+                    <th className="th-right">Krg</th>
+                    <th className="th-right">Berat (Kg)</th>
+                    <th className="th-right">Harga/Kg</th>
+                    <th className="th-right">Subtotal</th>
+                    {colSudahDibayar && <th className="th-right">Sudah Dibayar</th>}
+                    {colTotalNilai   && <th className="th-right">Total Nilai</th>}
+                    {colSisaTagihan  && <th className="th-right">Sisa Tagihan</th>}
+                    {colPiutang      && <th className="th-right">Piutang/Hutang</th>}
+                    {colJenis        && <th className="th-center">Jenis</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {orphanPayments.map(({ t, pmts }, groupIdx) =>
+                    pmts.map((ph, phIdx) => {
+                      const isIncome = t.type === "income";
+                      const phBorderColor = isIncome ? "#10b981" : "#ef4444";
+                      const phBg          = isIncome ? "#f0fdf4" : "#fff1f2";
+                      const phBadgeBg     = isIncome ? "#dcfce7" : "#fee2e2";
+                      const phBadgeFg     = isIncome ? "#065f46" : "#991b1b";
+                      const phBadgeLabel  = isIncome ? "Pembayaran Diterima" : "Pembayaran Dilakukan";
+                      const phAmountColor = isIncome ? "#10b981" : "#ef4444";
+                      return (
+                        <tr
+                          key={`oph-${t.id}-${phIdx}`}
+                          style={{ background: phBg, borderLeft: `3px solid ${phBorderColor}`, cursor: "pointer" }}
+                          onClick={() => setDetailTx(t)}
+                        >
+                          <td style={{ textAlign: "center", color: "#6b7280", fontSize: 12 }}>{groupIdx + 1}</td>
+                          <td style={{ fontSize: 11, fontWeight: 600, color: isIncome ? "#6366f1" : "#374151", fontFamily: "monospace", whiteSpace: "nowrap" }}>
+                            {t.txnId || <span style={{ color: "#d1d5db" }}>—</span>}
+                          </td>
+                          <td className="td-date" style={{ fontSize: 11, color: "#6b7280" }}>{fmtDate(ph.date)}</td>
+                          <td className="td-name" style={{ fontSize: 11, color: "#6b7280" }}>{t.counterparty}</td>
+                          <td style={{ fontSize: 11 }}>
+                            <div>
+                              <span style={{ background: phBadgeBg, color: phBadgeFg, borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>
+                                {phBadgeLabel}
+                              </span>
+                              {ph.note ? <span style={{ marginLeft: 4, color: "#374151" }}>{ph.note}</span> : null}
+                            </div>
+                            {(ph.outstandingBefore != null || ph.outstandingAfter != null) && (
+                              <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2 }}>
+                                Sisa: {fmtIDR(ph.outstandingBefore ?? 0)} → {fmtIDR(ph.outstandingAfter ?? 0)}
+                                {Number(ph.outstandingAfter) === 0 && <span style={{ color: "#10b981", fontWeight: 600 }}> ✓ Lunas</span>}
+                              </div>
+                            )}
+                          </td>
+                          <td /><td /><td /><td />
+                          {colSudahDibayar && (
+                            <td className="td-right" style={{ color: phAmountColor, fontWeight: 700, fontSize: 12 }}>
+                              {isIncome ? "+" : "-"}{fmtIDR(ph.amount)}
+                            </td>
+                          )}
+                          {colTotalNilai  && <td />}
+                          {colSisaTagihan && (
+                            <td className="td-right" style={{ fontSize: 11 }}>
+                              {Number(ph.outstandingAfter) > 0
+                                ? <span style={{ color: "#f59e0b" }}>{fmtIDR(ph.outstandingAfter)}</span>
+                                : <span style={{ color: "#10b981", fontWeight: 600 }}>Lunas ✓</span>}
+                            </td>
+                          )}
+                          {colPiutang && <td />}
+                          {colJenis   && <td />}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Grand total — standalone below both tables */}
+      {(filtered.length > 0 || paymentCount > 0 || orphanPayments.length > 0) && (
+        <div style={{ padding: "10px 16px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#374151", display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontWeight: 600 }}>{filtered.length} transaksi</span>
+          {paymentCount > 0 && (
+            <>
+              <span style={{ color: "#6b7280" }}>·</span>
+              <span style={{ color: "#6b7280" }}>{paymentCount} pembayaran</span>
+            </>
+          )}
+          {orphanPayments.length > 0 && (
+            <>
+              <span style={{ color: "#6b7280" }}>·</span>
+              <span style={{ color: "#6b7280" }}>
+                {orphanPayments.reduce((n, { pmts }) => n + pmts.length, 0)} pembayaran luar periode
+              </span>
+            </>
+          )}
+          <span style={{ color: "#6b7280" }}>|</span>
+          <span>
+            Grand Total Sudah Dibayar:{" "}
+            <span style={{ fontWeight: 700, color: grandTotalPaid >= 0 ? "#10b981" : "#ef4444" }}>
+              {fmtIDR(grandTotalPaid)}
+            </span>
+          </span>
+        </div>
+      )}
 
       {detailTx && <TransactionDetailModal transaction={detailTx} onClose={() => setDetailTx(null)} />}
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}

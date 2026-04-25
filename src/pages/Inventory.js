@@ -16,10 +16,8 @@ import Icon               from "../components/Icon";
 import QtyInput           from "../components/QtyInput";
 import StockChip          from "../components/StockChip";
 import Toast              from "../components/Toast";
-import CategoryModal      from "../components/CategoryModal";
 import { fmtDate, fmtQty, generateId, today, addDays, normalizeTitleCase, normItem, nowTime } from "../utils/idGenerators";
 import { computeStockMapForDate } from "../utils/stockUtils";
-import { autoDetectCategories, getCategoryForItem } from "../utils/categoryUtils";
 
 /** Full Indonesian date format: "Sabtu, 15 Maret 2026" */
 const fmtDateLong = (d) => {
@@ -45,8 +43,6 @@ const fmtDateLong = (d) => {
  *   onRenameItem?: (oldName: string, newName: string) => void,
  *   onDeleteItem?: (itemName: string) => void,
  *   onDeleteAdjustment?: (adjustmentId: string) => void,
- *   itemCategories?: Array,
- *   onUpdateCategories?: (categories: Array) => void,
  *   transactions?: Array,
  *   stockAdjustments?: Array,
  *   onStockReport?: () => void,
@@ -65,8 +61,6 @@ const Inventory = ({
   onRenameSubtype       = () => {},
   onDeleteItem          = () => {},
   onDeleteAdjustment    = () => {},
-  itemCategories        = [],
-  onUpdateCategories    = () => {},
   transactions          = [],
   stockAdjustments      = [],
   onStockReport         = () => {},
@@ -84,8 +78,6 @@ const Inventory = ({
   const [search,  setSearch]  = useState("");
   const [sortBy,  setSortBy]  = useState("name");
   const [sortDir, setSortDir] = useState("asc");
-
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
 
   // Date navigation
   const [inventoryDate, setInventoryDate] = useState(today);
@@ -137,8 +129,6 @@ const Inventory = ({
   //                       | { type: "subtype", subtypeName, parentCatalogItem, displayName }
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
-  // Inline category group name/code edit state (main page, today-only)
-
   // Stock ledger state
   const [expandedStockItem, setExpandedStockItem] = useState(null);
   const [ledgerTypeFilter,  setLedgerTypeFilter]  = useState("all");
@@ -183,12 +173,11 @@ const Inventory = ({
       if (adjDeleteConfirm)  { setAdjDeleteConfirm(null); return; }
       if (addSubtypeTarget)  { setAddSubtypeTarget(null); setAddSubtypeInput(""); setAddSubtypeError(""); return; }
       if (expandedStockItem) { setExpandedStockItem(null); return; }
-      if (showCategoryModal) { setShowCategoryModal(false); return; }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [catalogForm, deleteConfirm, adjTarget, renameTarget, deleteTarget, adjDeleteConfirm,
-      addSubtypeTarget, expandedStockItem, showCategoryModal]);
+      addSubtypeTarget, expandedStockItem]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -465,13 +454,9 @@ const Inventory = ({
     };
   }, [expandedStockItem, activeStockMap]);
 
-  // Flat item rows grouped by category — replaces catalogWithStock + uncatalogedItems
+  // Flat item rows grouped by catalog entry — each catalog entry is its own group
   const tableGroups = useMemo(() => {
-    // 1. Auto-detect categories (merges user-configured itemCategories with any
-    //    uncategorized items currently in activeStockMap)
-    const detectedCategories = autoDetectCategories(activeStockMap, itemCategories);
-
-    // 2. Build flat item rows from catalog (base + each subtype)
+    // 1. Build flat item rows from catalog (base + each subtype)
     const coveredKeys = new Set();
     const flatRows = [];
 
@@ -546,42 +531,29 @@ const Inventory = ({
       ? flatRows.filter((r) => r.displayName.toLowerCase().includes(q))
       : flatRows;
 
-    // 5. Group items by category
-    const groupMap = {}; // key → { groupName, code, items[] }
+    // 5. Group items by catalog entry (base item = group, subtypes = members of same group)
+    const groupMap = {}; // groupName → { groupName, code, items[] }
 
     for (const row of filtered) {
-      let cat = getCategoryForItem(row.key, detectedCategories);
-
-      // Fallback: catalog base items with 0 stock are never added to category items[]
-      // by auto-detect (not in stockMap), so try matching by groupName prefix.
-      // Longest match wins to avoid "Bawang" matching before "Bawang Tunggal".
-      if (!cat) {
-        const normDisplay = normItem(row.displayName);
-        let bestMatch = null;
-        let bestLen = -1;
-        for (const c of detectedCategories) {
-          const normGroup = normItem(c.groupName);
-          if (
-            (normDisplay === normGroup || normDisplay.startsWith(normGroup + " ")) &&
-            normGroup.length > bestLen
-          ) {
-            bestMatch = c;
-            bestLen = normGroup.length;
-          }
-        }
-        cat = bestMatch;
+      let groupName;
+      if (row.catalogItem) {
+        groupName = row.catalogItem.name;
+      } else if (row.isSubtype) {
+        groupName = row.parentCatalogItem.name;
+      } else {
+        groupName = "__unc__";
       }
 
-      if (cat) {
-        if (!groupMap[cat.groupName]) {
-          groupMap[cat.groupName] = { groupName: cat.groupName, code: cat.code || "", items: [] };
-        }
-        groupMap[cat.groupName].items.push(row);
-      } else {
+      if (groupName === "__unc__") {
         if (!groupMap["__unc__"]) {
           groupMap["__unc__"] = { groupName: "Lainnya", code: "UNC", items: [] };
         }
         groupMap["__unc__"].items.push(row);
+      } else {
+        if (!groupMap[groupName]) {
+          groupMap[groupName] = { groupName, code: "", items: [] };
+        }
+        groupMap[groupName].items.push(row);
       }
     }
 
@@ -606,7 +578,7 @@ const Inventory = ({
     }
 
     return sortedGroups;
-  }, [itemCatalog, activeStockMap, itemCategories, search, sortBy, sortDir]);
+  }, [itemCatalog, activeStockMap, search, sortBy, sortDir]);
 
   // ── Catalog helpers ───────────────────────────────────────────────────────────
 
@@ -691,8 +663,12 @@ const Inventory = ({
         displayName:       row.displayName,
       });
     } else {
-      // Base item: hasTx checks ONLY base key transactions — subtypes are archived independently
-      const hasTx = (txCountMap[row.key] || 0) > 0;
+      // Base item: hasTx checks base key AND all subtype keys — subtypes must be considered
+      // because if any subtype has transactions, deleting the base should show Archive, not Delete.
+      const hasTx = (txCountMap[row.key] || 0) > 0 ||
+        (row.catalogItem?.subtypes || []).some(
+          (s) => (txCountMap[normItem(`${row.catalogItem.name} ${s}`)] || 0) > 0
+        );
       setDeleteConfirm({
         type:        hasTx ? "archiveCatalog" : "catalog",
         catalogItem: row.catalogItem,
@@ -712,7 +688,6 @@ const Inventory = ({
       setToast(`Tipe ${confirm.subtypeName} diarsipkan`);
     } else if (confirm.type === "catalog") {
       onDeleteCatalogItem(confirm.catalogItem.id);
-      onUpdateCategories(itemCategories.filter((c) => normItem(c.groupName) !== normItem(confirm.catalogItem.name)));
       setToast(`${confirm.displayName} berhasil dihapus dari katalog`);
     } else {
       const parent = confirm.parentCatalogItem;
@@ -1288,9 +1263,6 @@ const Inventory = ({
               📦 Arsip ({archivedCount})
             </button>
           )}
-          <button onClick={() => setShowCategoryModal(true)} className="btn btn-outline" aria-label="Kelola kategori barang">
-            <Icon name="adjust" size={14} color="#007bff" /> Kelola Kategori
-          </button>
           <button onClick={onStockReport} className="btn btn-outline" aria-label="Cetak laporan stok">
             <Icon name="reports" size={14} color="#007bff" /> Laporan Stok
           </button>
@@ -1677,17 +1649,6 @@ const Inventory = ({
       )}
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
-
-      {/* ── Category Modal ── */}
-      {showCategoryModal && (
-        <CategoryModal
-          categories={itemCategories}
-          stockMap={stockMap}
-          itemCatalog={itemCatalog}
-          onSave={onUpdateCategories}
-          onClose={() => setShowCategoryModal(false)}
-        />
-      )}
     </div>
   );
 };

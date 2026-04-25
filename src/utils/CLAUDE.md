@@ -239,83 +239,23 @@ example:  computeStockMapForDate(data.transactions, "2026-03-01", data.stockAdju
 
 ---
 
-### `src/utils/categoryUtils.js` (310 lines)
+### `src/utils/reportUtils.js` (46 lines)
 
 ```
-function: generateCode(groupName)
-params:   groupName: string
-returns:  string — short uppercase code. e.g. "BP" for "Bawang Putih"
+function: getMultiItemContribution(t, selItems)
+params:   t: transaction object, selItems: string[] (active item filter names)
+returns:  { filteredItems, otherItems, combinedSubtotal, combinedProportionalOutstanding,
+            combinedCashValue, totalTransactionValue, totalOutstanding } | null
 throws:   never
-rules:    Multi-word: first letter of each word. Single-word: consonants, capped at 4.
-          For parent-child-aware codes across multiple groups, use generateCodes() instead.
-example:  generateCode("Bawang Putih") → "BP"
-          generateCode("Ketumbar")     → "KTMB"
-```
-
-```
-function: generateCodes(groupNames)
-params:   groupNames: string[] — array of group name strings
-returns:  Object — { [groupName]: code } map with parent-child awareness
-throws:   never
-rules:    If "Lada Mulya" has parent "Lada", child code = parent code + suffix letters.
-          Process all groups together for consistent results.
-example:  generateCodes(["Lada", "Lada Mulya"]) → { "Lada": "LD", "Lada Mulya": "LDM" }
-```
-
-```
-function: autoDetectCategories(stockMap, existingCategories = [])
-params:   stockMap: Object (keyed by normalized item name, values have .displayName),
-          existingCategories: Array (default [])
-returns:  Array — merged categories: existing (updated) + new auto-detected
-throws:   never
-rules:    Groups uncategorized items by shared word-level prefix (capped at 2 words).
-          Words are cleaned (quotes/parens stripped) before prefix comparison.
-          Merges into existing categories when group name matches.
-          Preserves user overrides in existingCategories.
-          Multi-member 1-word prefix groups may be promoted to 2-word sub-groups.
-example:  autoDetectCategories(stockMap, []) → [{ id, groupName: "Bawang Merah", code: "BM", items: [...] }, ...]
-```
-
-```
-function: getCategoryForItem(normalizedItemName, categories)
-params:   normalizedItemName: string (output of normItem()),
-          categories: Array
-returns:  Object | null — matching category, or null if uncategorized
-throws:   never
-rules:    Linear scan through categories[].items. Returns first match.
-example:  getCategoryForItem("bawang putih kating", categories) → { id, groupName: "Bawang Putih", ... }
-```
-
-```
-function: isDuplicateCategoryName(categories, catId, name)
-params:   categories: Array, catId: string (id to exclude from check), name: string (raw input)
-returns:  boolean — true if another category (not catId) has the same normItem(name)
-throws:   never
-rules:    Returns false for empty/blank names (never duplicate). Used in commitName validation
-          (CategoryModal) and commitGroupName (Inventory inline edit).
-example:  isDuplicateCategoryName(cats, "id-123", "Bawang Merah") → true if another group has that name
-```
-
-```
-function: isDuplicateCategoryCode(categories, catId, code)
-params:   categories: Array, catId: string (id to exclude), code: string (raw input)
-returns:  boolean — true if another category (not catId) already uses this code (uppercased)
-throws:   never
-rules:    Returns false for empty codes (multiple empty codes allowed). Used in commitCode
-          (CategoryModal) and commitGroupCode (Inventory inline edit).
-example:  isDuplicateCategoryCode(cats, "id-123", "BM") → true if another group uses "BM"
-```
-
-```
-function: cascadeCodeUpdate(categories, editedCatId, newCode)
-params:   categories: Array, editedCatId: string, newCode: string (raw input)
-returns:  Array — new categories array with updated code + cascaded child codes
-throws:   never
-rules:    Pure function — does NOT mutate input, does NOT touch codeManuallyEdited ref.
-          Caller (CategoryModal commitCode) is responsible for ref cleanup on children.
-          Child detection: normItem(child.groupName).startsWith(normItem(parent.groupName) + " ").
-          Child new code = newCode.trim().toUpperCase() + first-letter suffix of remaining words.
-example:  cascadeCodeUpdate(cats, parentId, "BW") → "Bawang Merah" code becomes "BWM"
+rules:    Returns null when: selItems is empty, transaction has ≤1 item, all items match filter,
+          or no items match filter. Only returns non-null when there is a genuine MIX
+          (some items match, some don't). Division guarded: totalTransactionValue > 0 ? ... : 0.
+          Used by Reports.js (screen table) and ReportModal.js (print modal) — shared utility
+          to avoid duplication across page and component layers.
+example:  getMultiItemContribution(t, ["Bawang Putih Goodfarmer"])
+          → { combinedSubtotal: 900000, combinedCashValue: 900000, totalTransactionValue: 11900000, ... }
+          getMultiItemContribution(t, [])  → null
+          getMultiItemContribution(singleItemTx, ["Item"])  → null
 ```
 
 ---
@@ -427,7 +367,6 @@ return [
   - Status → `statusUtils.js`
   - Balance/AR/AP → `balanceUtils.js`
   - Stock → `stockUtils.js`
-  - Category/grouping → `categoryUtils.js`
   - Payment progress → `paymentUtils.js`
   - Print → `printUtils.js`
 - [ ] Pure function — **no React imports, no component imports**

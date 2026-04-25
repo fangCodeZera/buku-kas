@@ -7,15 +7,15 @@
  * CSS class references would not survive this capture.
  */
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { today, fmtDate, normalizeTitleCase } from "../utils/idGenerators";
-import { autoDetectCategories } from "../utils/categoryUtils";
+import { today, fmtDate, normalizeTitleCase, normItem } from "../utils/idGenerators";
 import { computeStockMapForDate } from "../utils/stockUtils";
 import { printWithPortal } from "../utils/printUtils";
+import ToggleSwitch from "./ToggleSwitch";
 
 /**
  * @param {{
  *   stockMap: Object,
- *   categories: Array,
+ *   itemCatalog: Array,
  *   settings: Object,
  *   transactions: Array,
  *   stockAdjustments: Array,
@@ -24,7 +24,7 @@ import { printWithPortal } from "../utils/printUtils";
  */
 const StockReportModal = ({
   stockMap,
-  categories,
+  itemCatalog = [],
   settings,
   transactions,
   stockAdjustments,
@@ -51,33 +51,58 @@ const StockReportModal = ({
   const groupedData = useMemo(() => {
     if (!effectiveStockMap || Object.keys(effectiveStockMap).length === 0) return [];
 
-    const cats = autoDetectCategories(effectiveStockMap, categories);
-    const categorizedItems = new Set();
     const groups = [];
+    const categorized = new Set();
 
-    for (const cat of cats) {
+    // Build groups from itemCatalog: base item = group header, subtypes = members
+    const activeCatalog = (itemCatalog || []).filter((cat) => !cat.archived);
+
+    for (const cat of activeCatalog) {
       const items = [];
-      for (const normName of cat.items || []) {
-        const entry = effectiveStockMap[normName] || null;
-        if (!entry && !showZeroStock) continue;
-        if (entry && !showZeroStock && entry.qty === 0) continue;
-        categorizedItems.add(normName);
-        items.push({
-          displayName: entry ? (entry.displayName || normalizeTitleCase(normName)) : normalizeTitleCase(normName),
-          qty: entry ? entry.qty : 0,
-          unit: entry ? (entry.unit || "karung") : "karung",
-        });
+
+      // Base item (no subtype)
+      const baseKey = normItem(cat.name);
+      const baseEntry = effectiveStockMap[baseKey];
+      if (baseEntry) {
+        if (showZeroStock || baseEntry.qty !== 0) {
+          items.push({
+            displayName: baseEntry.displayName || normalizeTitleCase(cat.name),
+            qty: baseEntry.qty,
+            unit: baseEntry.unit || "karung",
+          });
+        }
+        categorized.add(baseKey);
       }
+
+      // Subtypes (active only)
+      const activeSubtypes = (cat.subtypes || []).filter(
+        (s) => !(cat.archivedSubtypes || []).map(normItem).includes(normItem(s))
+      );
+      for (const sub of activeSubtypes) {
+        const subKey = normItem(`${cat.name} ${sub}`);
+        const subEntry = effectiveStockMap[subKey];
+        if (subEntry) {
+          if (showZeroStock || subEntry.qty !== 0) {
+            items.push({
+              displayName: subEntry.displayName || normalizeTitleCase(`${cat.name} ${sub}`),
+              qty: subEntry.qty,
+              unit: subEntry.unit || "karung",
+            });
+          }
+          categorized.add(subKey);
+        }
+      }
+
       if (items.length > 0) {
         items.sort((a, b) => a.displayName.localeCompare(b.displayName, "id"));
-        groups.push({ groupName: cat.groupName, code: cat.code, items });
+        groups.push({ groupName: cat.name, items });
       }
     }
 
-    // Catch any items not in any category
+    // Catch uncatalogued items (in stockMap but not in any catalog entry)
     const uncatItems = [];
     for (const [normName, entry] of Object.entries(effectiveStockMap)) {
-      if (categorizedItems.has(normName)) continue;
+      if (categorized.has(normName)) continue;
       if (!showZeroStock && entry.qty === 0) continue;
       uncatItems.push({
         displayName: entry.displayName || normName,
@@ -87,12 +112,16 @@ const StockReportModal = ({
     }
     if (uncatItems.length > 0) {
       uncatItems.sort((a, b) => a.displayName.localeCompare(b.displayName, "id"));
-      groups.push({ groupName: "Uncategorized", code: "UNC", items: uncatItems });
+      groups.push({ groupName: "Lainnya", items: uncatItems });
     }
 
-    groups.sort((a, b) => a.groupName.localeCompare(b.groupName));
+    groups.sort((a, b) => {
+      if (a.groupName === "Lainnya") return 1;
+      if (b.groupName === "Lainnya") return -1;
+      return a.groupName.localeCompare(b.groupName, "id");
+    });
     return groups;
-  }, [effectiveStockMap, categories, showZeroStock]);
+  }, [effectiveStockMap, itemCatalog, showZeroStock]);
 
   // ── Guard: no stockMap → render nothing ────────────────────────────────────
   if (!stockMap) return null;
@@ -232,14 +261,11 @@ const StockReportModal = ({
               }}
             />
           </label>
-          <label style={{ fontSize: 12, color: "#475569", display: "flex", alignItems: "center", gap: 6 }}>
-            <input
-              type="checkbox"
-              checked={showZeroStock}
-              onChange={(e) => setShowZeroStock(e.target.checked)}
-            />
-            Tampilkan stok kosong
-          </label>
+          <ToggleSwitch
+            checked={showZeroStock}
+            onChange={setShowZeroStock}
+            label="Tampilkan stok kosong"
+          />
         </div>
 
         {/* ── Table ── */}
@@ -268,7 +294,7 @@ const StockReportModal = ({
                     {/* Group header row */}
                     <tr>
                       <td colSpan={3} style={{ ...s.td, ...s.groupRow, padding: "7px 10px" }}>
-                        {group.groupName.toUpperCase()} - {group.code}
+                        {group.groupName.toUpperCase()}
                       </td>
                     </tr>
                     {/* Item rows */}

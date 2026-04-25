@@ -50,7 +50,6 @@ import {
   deleteContact as sbDeleteContact,
   saveStockAdjustment as sbSaveStockAdjustment,
   deleteStockAdjustment as sbDeleteStockAdjustment,
-  saveItemCategories as sbSaveItemCategories,
   saveItemCatalogItem as sbSaveItemCatalogItem,
   deleteItemCatalogItem as sbDeleteItemCatalogItem,
   saveSettings as sbSaveSettings,
@@ -73,7 +72,6 @@ import { computeStockMap }         from "./utils/stockUtils";
 import { computeARandAP }          from "./utils/balanceUtils";
 import { generateId, generateTxnId, fmtIDR, normItem, normalizeTitleCase, addDays, today, nowTime } from "./utils/idGenerators";
 import { deriveStatus }            from "./utils/statusUtils";
-import { generateCode }           from "./utils/categoryUtils";
 
 // ─── Edit Modal ───────────────────────────────────────────────────────────────
 /**
@@ -296,7 +294,7 @@ export default function App() {
   const [data, setData] = useState(() =>
     USE_SUPABASE ? {
       transactions: [], contacts: [], stockAdjustments: [],
-      itemCategories: [], itemCatalog: [],
+      itemCatalog: [],
       settings: {
         businessName: "Usaha Keluarga Saya", address: "", phone: "",
         lowStockThreshold: 10, bankAccounts: [], maxBankAccountsOnInvoice: 1,
@@ -1096,7 +1094,6 @@ export default function App() {
     const contactPromises = (importedData.contacts         || []).map((c)   => sbSaveContact(c, user.id));
     const adjPromises     = (importedData.stockAdjustments || []).map((adj) => sbSaveStockAdjustment(adj, user.id));
     const catalogPromises = (importedData.itemCatalog      || []).map((item)=> sbSaveItemCatalogItem(item, user.id));
-    const catPromise      = sbSaveItemCategories(importedData.itemCategories || []);
     // NOTE: importedData.settings intentionally NOT synced — app_settings managed separately
 
     const results = await Promise.allSettled([
@@ -1104,7 +1101,6 @@ export default function App() {
       ...contactPromises,
       ...adjPromises,
       ...catalogPromises,
-      catPromise,
     ]);
 
     const failed    = results.filter((r) => r.status === "rejected").length;
@@ -1140,22 +1136,13 @@ export default function App() {
       ])
     );
 
-  // ── Replace entire itemCategories array (called from Inventory category UI) ─
-  const updateItemCategories = (categories) =>
-    update(
-      (d) => ({ ...d, itemCategories: categories }),
-      () => sbSaveItemCategories(categories, user.id)
-    );
-
   // ── Item Catalog CRUD ────────────────────────────────────────────────────────
   const addCatalogItem = (item) =>
     update((d) => {
       const catalog = d.itemCatalog || [];
-      const categories = d.itemCategories || [];
       const normalizedName = normalizeTitleCase(item.name);
 
       let newCatalog;
-      let catalogItemName;
 
       const existing = catalog.find((c) => normItem(c.name) === normItem(item.name));
       if (existing) {
@@ -1166,7 +1153,6 @@ export default function App() {
           ...(item.subtypes || []).filter((s) => !existingNorm.has(normItem(s))),
         ];
         newCatalog = catalog.map((c) => c.id === existing.id ? { ...c, subtypes: merged } : c);
-        catalogItemName = existing.name;
       } else {
         newCatalog = [...catalog, {
           id:              generateId(),
@@ -1176,35 +1162,14 @@ export default function App() {
           archived:        false,
           archivedSubtypes: [],
         }];
-        catalogItemName = normalizedName;
       }
 
-      // Auto-create a matching itemCategories entry if none exists for this item
-      const hasCat = categories.some((c) => normItem(c.groupName) === normItem(catalogItemName));
-      let newCategories = categories;
-      if (!hasCat) {
-        const existingCodes = new Set(categories.map((c) => c.code));
-        let code = generateCode(catalogItemName);
-        let suffix = 2;
-        while (existingCodes.has(code)) {
-          code = generateCode(catalogItemName) + suffix;
-          suffix++;
-        }
-        newCategories = [...categories, {
-          id:        generateId(),
-          groupName: catalogItemName,
-          code,
-          items:     [normItem(catalogItemName)],
-        }];
-      }
-
-      return { ...d, itemCatalog: newCatalog, itemCategories: newCategories };
+      return { ...d, itemCatalog: newCatalog };
     },
     (nd) => {
       const savedItem = nd.itemCatalog.find((c) => normItem(c.name) === normItem(item.name));
       return Promise.all([
         savedItem ? sbSaveItemCatalogItem(savedItem, user.id) : Promise.resolve(),
-        sbSaveItemCategories(nd.itemCategories, user.id),
         savedItem ? logActivity('create', 'catalog_item', savedItem.id, { name: savedItem.name }) : Promise.resolve(),
       ]);
     }
@@ -1214,17 +1179,10 @@ export default function App() {
     update(
       (d) => {
         const newCatalog = (d.itemCatalog || []).map((c) => c.id === updatedItem.id ? updatedItem : c);
-        const newCategories = (d.itemCategories || []).map((cat) => {
-          if (normItem(cat.groupName) !== normItem(updatedItem.name)) return cat;
-          const baseKey = normItem(updatedItem.name);
-          const subKeys = (updatedItem.subtypes || []).map((sub) => normItem(`${updatedItem.name} ${sub}`));
-          return { ...cat, items: [baseKey, ...subKeys] };
-        });
-        return { ...d, itemCatalog: newCatalog, itemCategories: newCategories };
+        return { ...d, itemCatalog: newCatalog };
       },
-      (nd) => Promise.all([
+      () => Promise.all([
         sbSaveItemCatalogItem(updatedItem, user.id),
-        sbSaveItemCategories(nd.itemCategories, user.id),
         logActivity('edit', 'catalog_item', updatedItem.id, { name: updatedItem.name }),
       ])
     );
@@ -1249,7 +1207,6 @@ export default function App() {
         return {
           ...d,
           itemCatalog:      (d.itemCatalog || []).filter((c) => c.id !== itemId),
-          itemCategories:   (d.itemCategories || []).filter((c) => normItem(c.groupName) !== normItem(cat.name)),
           stockAdjustments: (d.stockAdjustments || []).filter(
             (a) => !allNames.some((n) => normItem(n) === normItem(a.itemName))
           ),
@@ -1259,7 +1216,6 @@ export default function App() {
         if (nd.itemCatalog.some((it) => it.id === itemId)) return Promise.resolve(); // guard blocked deletion
         return Promise.all([
           sbDeleteItemCatalogItem(itemId),
-          sbSaveItemCategories(nd.itemCategories, user.id),
           ...adjIdsToDelete.map((id) => sbDeleteStockAdjustment(id)),
           logActivity('delete', 'catalog_item', itemId),
         ]);
@@ -1369,19 +1325,6 @@ export default function App() {
           return mapped !== undefined ? mapped : name;
         };
 
-        // Update itemCategories to reflect the catalog rename
-        // groupName must change + items[] rebuilt with new base key and new subtype combined keys
-        const newCategories = catalogMatch
-          ? (d.itemCategories || []).map((cat) => {
-              if (normItem(cat.groupName) !== normItem(oldName)) return cat;
-              const newBaseKey = normItem(newName);
-              const newSubKeys = subtypeList.map((sub) =>
-                normItem(`${newName} ${sub}`)
-              );
-              return { ...cat, groupName: newName, items: [newBaseKey, ...newSubKeys] };
-            })
-          : d.itemCategories;
-
         return {
           ...d,
           transactions: d.transactions.map((t) => ({
@@ -1400,7 +1343,6 @@ export default function App() {
                 c.id === catalogMatch.id ? { ...c, name: newName } : c
               )
             : d.itemCatalog,
-          itemCategories: newCategories,
         };
       },
       (nd) => {
@@ -1428,7 +1370,6 @@ export default function App() {
             .filter((a) => matchesNew(a.itemName))
             .map((adj) => sbSaveStockAdjustment(adj, user.id)),
           renamedCatalog ? sbSaveItemCatalogItem(renamedCatalog, user.id) : Promise.resolve(),
-          catalogMatchId ? sbSaveItemCategories(nd.itemCategories, user.id) : Promise.resolve(),
         ]);
       }
     );
@@ -1470,20 +1411,6 @@ export default function App() {
               ),
             };
           }),
-          // Update itemCategories — groupName stays the same (parent name unchanged),
-          // but items[] must be rebuilt with the renamed combined key.
-          // Use updatedSubtypes (post-rename list) NOT parent.subtypes (pre-rename ref).
-          itemCategories: (d.itemCategories || []).map((cat) => {
-            if (normItem(cat.groupName) !== normItem(parent.name)) return cat;
-            const baseKey = normItem(parent.name);
-            const updatedSubtypes = (parent.subtypes || []).map((s) =>
-              normItem(s) === normItem(oldSub) ? newSub : s
-            );
-            const newSubKeys = updatedSubtypes.map((sub) =>
-              normItem(`${parent.name} ${sub}`)
-            );
-            return { ...cat, items: [baseKey, ...newSubKeys] };
-          }),
         };
       },
       (nd) => {
@@ -1503,7 +1430,6 @@ export default function App() {
             .filter((a) => matchesNew(a.itemName))
             .map((adj) => sbSaveStockAdjustment(adj, user.id)),
           sbSaveItemCatalogItem(parent, user.id),
-          sbSaveItemCategories(nd.itemCategories, user.id),
         ]);
       }
     );
@@ -1876,8 +1802,6 @@ export default function App() {
             onRenameSubtype={renameSubtype}
             onDeleteItem={deleteInventoryItem}
             onDeleteAdjustment={deleteStockAdjustment}
-            itemCategories={data.itemCategories || []}
-            onUpdateCategories={updateItemCategories}
             transactions={data.transactions}
             stockAdjustments={data.stockAdjustments || []}
             onStockReport={() => setShowStockReport(true)}
@@ -2043,6 +1967,7 @@ export default function App() {
           settings={data.settings}
           dateFrom={reportState.dateFrom}
           dateTo={reportState.dateTo}
+          selectedItems={reportState.selectedItems}
           colSudahDibayar={reportState.colSudahDibayar}
           colTotalNilai={reportState.colTotalNilai}
           colSisaTagihan={reportState.colSisaTagihan}
@@ -2054,7 +1979,7 @@ export default function App() {
       {showStockReport && (
         <StockReportModal
           stockMap={stockMap}
-          categories={data.itemCategories || []}
+          itemCatalog={data.itemCatalog || []}
           settings={data.settings}
           transactions={data.transactions}
           stockAdjustments={data.stockAdjustments || []}

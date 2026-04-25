@@ -14,6 +14,8 @@
 import React, { useRef, useEffect, useState } from "react";
 import { fmtIDR, fmtDate, fmtQty, today } from "../utils/idGenerators";
 import { printWithPortal } from "../utils/printUtils";
+import { getMultiItemContribution } from "../utils/reportUtils";
+import ToggleSwitch from "./ToggleSwitch";
 
 const EDIT_NOTES = new Set(["Detail Perubahan", "Transaksi diedit — nilai diperbarui"]);
 
@@ -23,6 +25,7 @@ const ReportModal = ({
   settings,
   dateFrom,
   dateTo,
+  selectedItems = [],
   colSudahDibayar = true,
   colTotalNilai = false,
   colSisaTagihan = false,
@@ -31,8 +34,11 @@ const ReportModal = ({
   onClose,
 }) => {
   const [showCompanyName, setShowCompanyName] = useState(true);
-  const [showOrphanPayments, setShowOrphanPayments] = useState(true);
   const [showSummary, setShowSummary] = useState(true);
+  const [table1Open, setTable1Open] = useState(true);
+  const [table2Open, setTable2Open] = useState(true);
+  const [printTable1, setPrintTable1] = useState(true);
+  const [printTable2, setPrintTable2] = useState(true);
   const docRef = useRef(null);
 
   useEffect(() => {
@@ -42,8 +48,14 @@ const ReportModal = ({
   }, [onClose]);
 
   // Cash-basis summary (value - outstanding = money actually received/paid)
-  const totalIncome  = transactions.filter((t) => t.type === "income").reduce((a, t) => a + ((t.value || 0) - (t.outstanding || 0)), 0);
-  const totalExpense = transactions.filter((t) => t.type === "expense").reduce((a, t) => a + ((t.value || 0) - (t.outstanding || 0)), 0);
+  const totalIncome = transactions.filter((t) => t.type === "income").reduce((a, t) => {
+    const contrib = getMultiItemContribution(t, selectedItems);
+    return a + (contrib ? contrib.combinedCashValue : (t.value || 0) - (t.outstanding || 0));
+  }, 0);
+  const totalExpense = transactions.filter((t) => t.type === "expense").reduce((a, t) => {
+    const contrib = getMultiItemContribution(t, selectedItems);
+    return a + (contrib ? contrib.combinedCashValue : (t.value || 0) - (t.outstanding || 0));
+  }, 0);
   const netProfit    = totalIncome - totalExpense;
 
   // Payment filter: amount > 0, not an edit note, date within range
@@ -57,21 +69,30 @@ const ReportModal = ({
   const filteredTxIds = new Set(transactions.map((t) => t.id));
   const grandTotalPaid =
     transactions.reduce((sum, t) => {
-      const cash = Number(t.value) - (Number(t.outstanding) || 0);
+      const contrib = getMultiItemContribution(t, selectedItems);
+      const cash = contrib
+        ? contrib.combinedCashValue
+        : Number(t.value) - (Number(t.outstanding) || 0);
       return t.type === "income" ? sum + cash : sum - cash;
     }, 0) +
-    allTransactions.reduce((sum, t) => {
+    // Orphan payments: excluded when item filter active (no item-level breakdown possible)
+    (selectedItems.length > 0 ? 0 : allTransactions.reduce((sum, t) => {
       if (filteredTxIds.has(t.id)) return sum; // already in filteredNet above
       if (!Array.isArray(t.paymentHistory)) return sum;
       const pmtSum = t.paymentHistory
         .filter(visiblePmtFilter)
         .reduce((s, ph) => s + Number(ph.amount), 0);
       return t.type === "income" ? sum + pmtSum : sum - pmtSum;
-    }, 0);
+    }, 0));
 
   const filteredIds = new Set(transactions.map((t) => t.id));
-  const optColCount = [colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis].filter(Boolean).length;
-  const totalCols = 8 + optColCount;
+
+  const orphanPaymentGroups = allTransactions.flatMap((t) => {
+    if (filteredIds.has(t.id)) return [];
+    const pmts = Array.isArray(t.paymentHistory) ? t.paymentHistory.filter(visiblePmtFilter) : [];
+    if (pmts.length === 0) return [];
+    return [{ t, pmts }];
+  });
 
   const s = {
     overlay: {
@@ -135,16 +156,17 @@ const ReportModal = ({
 
   // Optional column cells for subtotal/single-item rows
   // isSubtotal=true: Sudah Dibayar green+bold, value navy
-  const optCellsForRow = (t, isSubtotal = false) => {
-    const paid = Number(t.value) - (Number(t.outstanding) || 0);
-    const outstanding = Number(t.outstanding) || 0;
+  const optCellsForRow = (t, isSubtotal = false, contrib = null) => {
+    const effectivePaid        = contrib ? contrib.combinedCashValue : Number(t.value) - (Number(t.outstanding) || 0);
+    const effectiveOutstanding = contrib ? contrib.combinedProportionalOutstanding : Number(t.outstanding) || 0;
     return (
       <>
-        {colSudahDibayar && <td style={{ ...s.td, ...s.tdR, fontWeight: isSubtotal ? 700 : 600, color: isSubtotal ? "#10b981" : undefined }}>{fmtIDR(paid)}</td>}
-        {colTotalNilai   && <td style={{ ...s.td, ...s.tdR, fontWeight: 600 }}>{fmtIDR(t.value)}</td>}
-        {colSisaTagihan  && <td style={{ ...s.td, ...s.tdR }}>{outstanding > 0 ? fmtIDR(outstanding) : "Lunas"}</td>}
+        {colSudahDibayar && <td style={{ ...s.td, ...s.tdR, fontWeight: isSubtotal ? 700 : 600, color: isSubtotal ? "#10b981" : undefined }}>{fmtIDR(effectivePaid)}</td>}
+        {colTotalNilai   && <td style={{ ...s.td, ...s.tdR, fontWeight: 600 }}>{fmtIDR(contrib ? contrib.combinedSubtotal : t.value)}</td>}
+        {colSisaTagihan  && <td style={{ ...s.td, ...s.tdR }}>{effectiveOutstanding > 0 ? fmtIDR(effectiveOutstanding) : "Lunas"}</td>}
         {colPiutang      && <td style={{ ...s.td, ...s.tdC }}>
-          {outstanding > 0
+          {/* Piutang/Hutang badge uses raw outstanding — transaction-level status */}
+          {Number(t.outstanding) > 0
             ? (t.type === "income" ? "Piutang" : "Hutang")
             : "Lunas"}
         </td>}
@@ -166,7 +188,7 @@ const ReportModal = ({
 
   // Render payment rows — print-friendly (no background colors)
   // isInline: adds border-top on first row to visually separate from parent transaction
-  const mkPaymentRows = (t, payments, keyPrefix, isInline) => {
+  const mkPaymentRows = (t, payments, keyPrefix, _isInline, contrib = null) => {
     const isIncome = t.type === "income";
     return payments.map((ph, phIdx) => (
       <tr key={`${keyPrefix}-${t.id}-${phIdx}`}
@@ -186,6 +208,11 @@ const ReportModal = ({
             <div style={{ fontSize: 9, color: "#94a3b8", fontStyle: "italic", marginTop: 2 }}>
               Sisa: {fmtIDR(ph.outstandingBefore ?? 0)} → {fmtIDR(ph.outstandingAfter ?? 0)}
               {Number(ph.outstandingAfter) === 0 ? " ✓ Lunas" : ""}
+            </div>
+          )}
+          {contrib && (
+            <div style={{ fontSize: 9, color: "#9ca3af", fontStyle: "italic", marginTop: 2 }}>
+              Pembayaran untuk seluruh transaksi ({fmtIDR(t.value)})
             </div>
           )}
         </td>
@@ -214,19 +241,57 @@ const ReportModal = ({
         <button onClick={onClose} style={s.closeBtn} aria-label="Tutup laporan">✕</button>
 
         {/* ── Print options (not captured in print) ── */}
-        <div style={{ padding: "10px 32px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
-          <label style={{ fontSize: 13, color: "#374151", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}>
-            <input type="checkbox" checked={showCompanyName} onChange={(e) => setShowCompanyName(e.target.checked)} />
-            Tampilkan nama perusahaan
-          </label>
-          <label style={{ fontSize: 13, color: "#374151", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}>
-            <input type="checkbox" checked={showOrphanPayments} onChange={(e) => setShowOrphanPayments(e.target.checked)} />
-            Tampilkan pembayaran di luar periode
-          </label>
-          <label style={{ fontSize: 13, color: "#374151", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}>
-            <input type="checkbox" checked={showSummary} onChange={(e) => setShowSummary(e.target.checked)} />
-            Tampilkan ringkasan laba/rugi
-          </label>
+        <div style={{
+          padding: "12px 32px",
+          borderBottom: "1px solid #e2e8f0",
+          background: "#f8fafc",
+          display: "flex",
+          gap: 20,
+          flexWrap: "wrap",
+          alignItems: "flex-start",
+        }}>
+          {/* Group 1: Tampilan */}
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+              Tampilan
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <ToggleSwitch
+                checked={showCompanyName}
+                onChange={setShowCompanyName}
+                label="Nama perusahaan"
+              />
+              <ToggleSwitch
+                checked={showSummary}
+                onChange={setShowSummary}
+                label="Ringkasan laba/rugi"
+              />
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: 1, background: "#e2e8f0", alignSelf: "stretch", margin: "0 4px" }} />
+
+          {/* Group 2: Cetak */}
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+              Sertakan saat cetak
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <ToggleSwitch
+                checked={printTable1}
+                onChange={setPrintTable1}
+                label="Transaksi periode ini"
+              />
+              {orphanPaymentGroups.length > 0 && (
+                <ToggleSwitch
+                  checked={printTable2}
+                  onChange={setPrintTable2}
+                  label="Pembayaran luar periode"
+                />
+              )}
+            </div>
+          </div>
         </div>
 
         <div ref={docRef}>
@@ -262,9 +327,20 @@ const ReportModal = ({
           </div>
         </div>
 
-        {/* ── Transaction Table ── */}
-        <div style={s.section}>
-          <table style={s.table}>
+        {/* ── Transaction Table — Table 1 ── */}
+        {printTable1 && <div style={s.section}>
+          {/* Table 1 collapse header */}
+          <div
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", cursor: "pointer", userSelect: "none", borderBottom: table1Open ? "1px solid #e2e8f0" : "none", marginBottom: 4 }}
+            onClick={() => setTable1Open((v) => !v)}
+            aria-expanded={table1Open}
+          >
+            <strong style={{ fontSize: 12, color: "#1e3a5f" }}>
+              {table1Open ? "▾" : "▸"} Transaksi Periode Ini
+            </strong>
+            <span style={{ fontSize: 11, color: "#6b7280" }}>{transactions.length} transaksi</span>
+          </div>
+          {!table1Open ? null : <table style={s.table}>
             <colgroup>
               <col style={{ width: "4%" }} />
               <col style={{ width: "10%" }} />
@@ -332,11 +408,16 @@ const ReportModal = ({
                 }
 
                 // Multi-item: one row per item + subtotal row
+                const contrib = getMultiItemContribution(t, selectedItems);
                 const rows = items.map((it, itIdx) => {
                   const isFirst = itIdx === 0;
+                  const isFiltered = selectedItems.length === 0 || selectedItems.includes(it.itemName);
                   const beratHarga = `${it.weightKg ? `${fmtQty(it.weightKg)} Kg` : "—"} @ ${it.pricePerKg ? fmtQty(it.pricePerKg) : "—"}`;
                   return (
-                    <tr key={`${t.id}-${itIdx}`} style={isFirst ? firstRowStyle : { background: "#fff" }}>
+                    <tr key={`${t.id}-${itIdx}`} style={{
+                      ...(isFirst ? firstRowStyle : { background: "#fff" }),
+                      ...(!isFiltered && contrib ? { opacity: 0.4, color: "#9ca3af" } : {}),
+                    }}>
                       <td style={{ ...s.td, ...s.tdC }}>{isFirst ? txNo : ""}</td>
                       <td style={{ ...s.td, fontFamily: "monospace", fontSize: 11, color: "#6366f1", fontWeight: 600 }}>
                         {isFirst ? (t.txnId || "—") : ""}
@@ -354,41 +435,94 @@ const ReportModal = ({
 
                 const subtotalRow = (
                   <tr key={`${t.id}-sub`} style={{ background: "#f1f5f9", borderTop: "1px solid #e2e8f0" }}>
-                    <td colSpan={7} style={{ ...s.td, textAlign: "right", fontStyle: "italic", color: "#64748b", fontSize: 10, paddingRight: 8 }}>Total:</td>
-                    <td style={{ ...s.td, ...s.tdR, fontWeight: 700, color: "#1e3a5f" }}>{fmtIDR(t.value)}</td>
-                    {optCellsForRow(t, true)}
+                    <td colSpan={7} style={{ ...s.td, textAlign: "right", fontStyle: "italic", color: "#64748b", fontSize: 10, paddingRight: 8 }}>
+                      {contrib
+                        ? <>Total: {fmtIDR(contrib.combinedSubtotal)}{" "}
+                            <span style={{ color: "#9ca3af", fontWeight: 400, fontSize: 9 }}>
+                              (dari {fmtIDR(contrib.totalTransactionValue)})
+                            </span>
+                          </>
+                        : "Total:"}
+                    </td>
+                    <td style={{ ...s.td, ...s.tdR, fontWeight: 700, color: "#1e3a5f" }}>
+                      {contrib ? fmtIDR(contrib.combinedSubtotal) : fmtIDR(t.value)}
+                    </td>
+                    {optCellsForRow(t, true, contrib)}
                   </tr>
                 );
 
-                return [...rows, subtotalRow, ...mkPaymentRows(t, inlinePayments, "iph", true)];
+                return [...rows, subtotalRow, ...mkPaymentRows(t, inlinePayments, "iph", true, contrib)];
               })}
 
-              {/* Orphan payment rows — payments from transactions outside the date filter */}
-              {showOrphanPayments && (() => {
-                const orphanRows = allTransactions.flatMap((t) => {
-                  if (filteredIds.has(t.id)) return [];
-                  const pmts = Array.isArray(t.paymentHistory)
-                    ? t.paymentHistory.filter(visiblePmtFilter)
-                    : [];
-                  return mkPaymentRows(t, pmts, "oph", false);
-                });
-                if (orphanRows.length === 0) return null;
-                return [
-                  <tr key="orphan-sep">
-                    <td colSpan={totalCols} style={{ ...s.td, fontSize: 10, color: "#854d0e", fontStyle: "italic", padding: "4px 8px", background: "#fef9c3", borderTop: "1.5px solid #cbd5e1" }}>
-                      Pembayaran dari transaksi di luar periode ini:
-                    </td>
-                  </tr>,
-                  ...orphanRows,
-                ];
-              })()}
             </tbody>
-          </table>
+          </table>}
 
-          {/* Grand total */}
+        </div>}
+
+        {/* ── Orphan payments — Table 2 ── */}
+        {orphanPaymentGroups.length > 0 && printTable2 && (
+          <div style={s.section}>
+            <div
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", cursor: "pointer", userSelect: "none", borderBottom: table2Open ? "1px solid #e2e8f0" : "none", marginBottom: 4 }}
+              onClick={() => setTable2Open((v) => !v)}
+              aria-expanded={table2Open}
+            >
+              <strong style={{ fontSize: 12, color: "#1e3a5f" }}>
+                {table2Open ? "▾" : "▸"} Pembayaran dari Transaksi Luar Periode
+              </strong>
+              <span style={{ fontSize: 11, color: "#6b7280" }}>
+                {orphanPaymentGroups.reduce((n, { pmts }) => n + pmts.length, 0)} pembayaran
+              </span>
+            </div>
+            {table2Open && (
+              <table style={s.table}>
+                <colgroup>
+                  <col style={{ width: "4%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "8%" }} />
+                  <col style={{ width: "11%" }} />
+                  <col />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "5%" }} />
+                  <col style={{ width: "9%" }} />
+                  {colSudahDibayar && <col style={{ width: "9%" }} />}
+                  {colTotalNilai   && <col style={{ width: "9%" }} />}
+                  {colSisaTagihan  && <col style={{ width: "9%" }} />}
+                  {colPiutang      && <col style={{ width: "8%" }} />}
+                  {colJenis        && <col style={{ width: "7%" }} />}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th style={{ ...s.th, ...s.thC }}>No</th>
+                    <th style={s.th}>No. Invoice</th>
+                    <th style={s.th}>Tanggal Bayar</th>
+                    <th style={s.th}>Klien</th>
+                    <th style={s.th}>Catatan</th>
+                    <th style={s.th}>Berat Kg @ Harga</th>
+                    <th style={{ ...s.th, ...s.thR }}>Krg</th>
+                    <th style={{ ...s.th, ...s.thR }}>Subtotal</th>
+                    {colSudahDibayar && <th style={{ ...s.th, ...s.thR }}>Sudah Dibayar</th>}
+                    {colTotalNilai   && <th style={{ ...s.th, ...s.thR }}>Total Nilai</th>}
+                    {colSisaTagihan  && <th style={{ ...s.th, ...s.thR }}>Sisa Tagihan</th>}
+                    {colPiutang      && <th style={{ ...s.th, ...s.thR }}>Piutang/Hutang</th>}
+                    {colJenis        && <th style={{ ...s.th, ...s.thC }}>Jenis</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {orphanPaymentGroups.map(({ t, pmts }) =>
+                    mkPaymentRows(t, pmts, "oph", false)
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* Grand total */}
+        <div style={s.section}>
           <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: 8, color: "#1e3a5f", borderTop: "2px solid #1e3a5f" }}>
             Grand Total IDR{" "}
-            <span style={{ color: "#10b981", fontWeight: 700 }}>{fmtIDR(grandTotalPaid)}</span>
+            <span style={{ color: grandTotalPaid >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>{fmtIDR(grandTotalPaid)}</span>
           </div>
         </div>
 

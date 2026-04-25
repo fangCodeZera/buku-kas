@@ -36,8 +36,6 @@ src/
                                         fmtQty: formats numeric qty/weight with id-ID locale (dot thousands separator).
                                         Returns "-" for null/undefined. Use for all read-only stock qty display.
     statusUtils.js                  54  STATUS constants, deriveStatus, isUnpaid, LEGACY_STATUS_MAP
-    categoryUtils.js               375  generateCode, generateCodes, autoDetectCategories, getCategoryForItem,
-                                        isDuplicateCategoryName, isDuplicateCategoryCode, cascadeCodeUpdate
     paymentUtils.js                 20  computePaymentProgress
     balanceUtils.js                 72  computeARandAP, computeCashIncome, computeCashExpense, computeNetCash
     printUtils.js                   47  printWithPortal, escapeHtml
@@ -53,7 +51,7 @@ src/
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
-    Inventory.js                  1655  Stock inventory with catalog table + ledger
+    Inventory.js                  ~1640  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories)
     Contacts.js                    639  Contact list + detail panel + transaction history
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
     Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table)
@@ -72,10 +70,10 @@ src/
     InvoiceModal.js                337  Printable A4 invoice
     SuratJalanModal.js             289  Printable A4 delivery note
     DotMatrixPrintModal.js         122  Dot matrix preview + print modal (invoice & surat jalan)
-    ReportModal.js                 ~450 Printable landscape report modal — 3-col header (biz/title/meta), 8 fixed cols (NO|NO.INVOICE|TANGGAL|KLIEN|BARANG|BERAT KG @ HARGA|KRG|SUBTOTAL) + 5 optional cols, per-item rows, payment rows (inline+orphan), 3 print-option toggles (company name / orphan payments / summary), Grand Total IDR
+    ToggleSwitch.js                 65  Reusable toggle switch — track+thumb, #007bff/#cbd5e1, keyboard accessible (role=switch, Space/Enter)
+    ReportModal.js                 580  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR
     StockWarningModal.js            77  Negative-stock warning
-    CategoryModal.js               382  Category view + inline rename + archive toggle. Commit-immediately semantics — no local staging. `itemCatalog` prop required for archive-aware filter sets.
-    StockReportModal.js            330  Printable stock report
+    StockReportModal.js            330  Printable stock report — derives groupings from itemCatalog prop (active entries = groups, active subtypes = members, uncatalogued → "Lainnya")
     Badge.js                       113  StatusBadge, TypeBadge (named exports)
     DueBadge.js                     32  Due date status badge
     ErrorBoundary.js                89  React class error boundary — catches unhandled render errors, shows Indonesian fallback UI with "Muat Ulang" reload button
@@ -207,7 +205,7 @@ const [sidebarOpen,           setSidebarOpen]           = useState(() => window.
 const [reportItemFilter,      setReportItemFilter]      = useState(null);   // item name pre-filter from Inventory "Lihat"
 const [outstandingHighlight,  setOutstandingHighlight]  = useState(null);   // tx ID array to highlight on Outstanding page
 const [txPageHighlight,       setTxPageHighlight]       = useState(null);   // { txId, date } — highlight a tx on Penjualan/Pembelian from ActivityLog "Lihat"
-const [reportState,           setReportState]           = useState(null);   // { transactions, allTransactions, dateFrom, dateTo, colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis } — opens ReportModal
+const [reportState,           setReportState]           = useState(null);   // { transactions, allTransactions, dateFrom, dateTo, selectedItems, colSudahDibayar, colTotalNilai, colSisaTagihan, colPiutang, colJenis } — opens ReportModal
 
 // UI state
 const [backupBannerDismissed, setBackupBannerDismissed] = useState(false);
@@ -404,17 +402,6 @@ quickExport  — useCallback; immediate JSON backup download from backup reminde
 Stock rules: expense = `+qty` (purchase adds stock), income = `−qty` (sale removes stock).
 Always pass BOTH arguments — never omit `stockAdjustments`.
 
-### src/utils/categoryUtils.js
-| Function | Notes |
-|----------|-------|
-| `generateCode(groupName)` | Single group — no parent-child awareness |
-| `generateCodes(groupNames[])` | All groups together — parent-child aware codes |
-| `autoDetectCategories(stockMap, existingCategories)` | Groups uncategorized items by shared 2-word prefix |
-| `getCategoryForItem(normName, categories)` | Returns category object or null |
-| `isDuplicateCategoryName(categories, catId, name)` | Returns true if another cat (not catId) has same normItem(name). False for blank. |
-| `isDuplicateCategoryCode(categories, catId, code)` | Returns true if another cat (not catId) uses same code (uppercased). False for empty. |
-| `cascadeCodeUpdate(categories, editedCatId, newCode)` | Pure — updates code for editedCatId and cascades to name-prefix children. No ref side-effects. |
-
 ### src/utils/paymentUtils.js
 `computePaymentProgress(value, outstanding)` → `{ percent }` or `null` if value=0.
 
@@ -522,11 +509,11 @@ onNavigateToArchive?
 
 **Layout:** Table grouped by category. Group header rows (dark navy). Base item rows + indented subtype rows. "LAINNYA — UNC" group catches uncataloged items. Items with 0 stock still show if in catalog.
 
-**Key local state:** `search`, `sortBy`, `sortDir`, `inventoryDate`, `showCategoryModal`, `expandedStockItem`, `ledgerTypeFilter`, `ledgerDateFrom`, `ledgerDateTo`, `adjDeleteConfirm`, plus adjustment/rename/delete/catalog modal states.
+**Key local state:** `search`, `sortBy`, `sortDir`, `inventoryDate`, `expandedStockItem`, `ledgerTypeFilter`, `ledgerDateFrom`, `ledgerDateTo`, `adjDeleteConfirm`, plus adjustment/rename/delete/catalog modal states.
 
 **Key useMemos:**
 - `activeStockMap` — `stockMap` (today) or `computeStockMapForDate(...)` for historical dates
-- `tableGroups` — flat rows from catalog + uncataloged, grouped, with groupName-prefix fallback for zero-stock items
+- `tableGroups` — flat rows from catalog + uncataloged, grouped by catalog entry (base = group header, subtypes = members, uncatalogued → "Lainnya"). No longer depends on `itemCategories`.
 
 **Ledger:** Expandable per-item panel with transaction history, running totals, date filter, type filter, PERIODE quick-select (Hari Ini / Minggu Ini / Bulan Ini / Semua) with active state.
 
@@ -743,13 +730,9 @@ Note: Uses manual `replace(/&/g, ...)` chain in `handlePrint` rather than `escap
 **Props:** `data: { items[], item?, current?, selling?, onConfirm, onCancel? } | null, onClose`
 Multi-item: renders bullet list. Single-item: renders prose. Always-mounted — guards Escape.
 
-### CategoryModal.js
-**Props:** `categories, stockMap, onSave, onClose, itemCatalog?`
-Commit-immediately — no local staging. `displayCategories` useMemo (`autoDetectCategories(stockMap, categories)`). Click name/code → inline input; Enter/blur persists via `onSave()` immediately. Duplicate name/code validation stays in edit mode with inline error. Code edits cascade to children by prefix match via `cascadeCodeUpdate()`. Archive toggle hides archived pills + empty groups. Footer: single "Tutup" button. Inventory.js passes `onSave={onUpdateCategories}` (modal stays open). Escape key: no guard (conditionally mounted).
-
 ### StockReportModal.js
-**Props:** `stockMap, categories, settings, transactions, stockAdjustments, onClose`
-Date picker for historical snapshots. Toggle for zero-stock items. Guard: renders null if stockMap falsy. Escape key: no guard (conditionally mounted).
+**Props:** `stockMap, itemCatalog, settings, transactions, stockAdjustments, onClose`
+Date picker for historical snapshots. Toggle for zero-stock items. Groups derived from `itemCatalog`: active catalog entries = group headers, active subtypes = members, items not in any catalog entry → "Lainnya". Archived catalog items and archived subtypes excluded. Guard: renders null if stockMap falsy. Escape key: no guard (conditionally mounted).
 
 ### Badge.js
 - `StatusBadge({ status })` — colored pill. Valid: `STATUS.LUNAS` (green), `STATUS.PARTIAL_INCOME` (amber), `STATUS.PARTIAL_EXPENSE` (red). Also handles legacy v1/v2 strings.
@@ -920,6 +903,73 @@ Always search `styles.css` before adding a new class.
 ## 12. Known Issues & Fixed Bugs
 
 See Section 9 of `CLAUDE.md` for full bug fix history.
+
+### T16 — Remove Kelola Kategori / itemCategories (2026-04-25)
+
+**Phase 1 (App.js):** Removed `itemCategories` state, `updateItemCategories` handler, all `sbSaveItemCategories` calls, and `generateCode` import. `addCatalogItem`, `updateCatalogItem`, `deleteCatalogItem`, `renameInventoryItem`, `renameSubtype`, and `handleImport` no longer read or write `itemCategories`. `<Inventory>` and `<StockReportModal>` render props cleaned up.
+
+**Phase 2:** Deleted `src/components/CategoryModal.js` and `src/utils/categoryUtils.js` entirely (zero remaining code imports). Removed from `Inventory.js`: `CategoryModal` import, `showCategoryModal` state, `itemCategories`/`onUpdateCategories` props, "Kelola Kategori" button. `tableGroups` useMemo now groups directly by `itemCatalog` entry — base item name = group header, subtypes = group members, uncatalogued items → "Lainnya". `handleConfirmDelete` no longer calls `onUpdateCategories`. `StockReportModal.js` now receives `itemCatalog` prop and derives groupings from it — archived entries excluded, active subtypes listed, uncatalogued items in "Lainnya".
+
+**Fixed audit F5:** `handleDeleteRow` in Inventory.js now checks subtype transaction counts (via `txCountMap[normItem(\`${row.catalogItem.name} ${s}\`)]`) when deciding archive vs delete for base catalog rows.
+
+**Files:** `src/App.js`, `src/pages/Inventory.js`, `src/components/StockReportModal.js`, deleted `src/components/CategoryModal.js`, deleted `src/utils/categoryUtils.js`. Bundle: 186.27 kB (−2.48 kB vs previous).
+
+---
+
+### T15 — ToggleSwitch component + checkbox replacement (2026-04-25)
+
+**New component:** `src/components/ToggleSwitch.js` — props: `checked`, `onChange`, `label`, `hint?`. Fully keyboard accessible (`role="switch"`, `tabIndex=0`, Space/Enter keys). Track 44×24px, thumb 18×18px with ✓/✕ icon. Colors: `#007bff` active, `#cbd5e1` inactive.
+
+**Checkboxes replaced:**
+- `ReportModal.js`: `showCompanyName`, `showSummary`
+- `StockReportModal.js`: `showZeroStock`
+**New state in ReportModal.js:** `printTable1` (default true), `printTable2` (default true). Control DOM inclusion inside `docRef` — when false the section is absent from `outerHTML` captured by `printWithPortal`. Table 1 wrapped in `{printTable1 && <div...>}`. Table 2 condition: `orphanPaymentGroups.length > 0 && printTable2`. Print options bar reorganised into two labeled groups: "Tampilan" and "Sertakan saat cetak".
+
+**Excluded:** `Settings.js` bank account `showOnInvoice` checkbox — intentional, different semantics (per-item data field, not a UI toggle).
+
+**Files:** `src/components/ToggleSwitch.js` (new, ~65 lines), `src/components/ReportModal.js`, `src/components/StockReportModal.js`
+
+---
+
+### T14 — Reports two-table layout (2026-04-24)
+
+**Problem:** Orphan payment rows (payments made today on transactions outside the date filter) appeared at the bottom of a single combined table with only a separator row. Users had no way to collapse them separately from transaction rows.
+
+**Fix:** Split into two independent collapsible cards:
+- **Table 1**: transactions within date filter with nested inline payment rows (`table1Open` state, default true)
+- **Table 2**: orphan payments only, shown conditionally when `orphanPayments.length > 0` (`table2Open` state, default true)
+- `orphanPayments` is a named `useMemo` (not inline IIFE) so grand total footer and Table 2 both reference it
+- Orphan rows in Table 2 are clickable → `onClick={() => setDetailTx(t)}` opens TransactionDetailModal for the parent transaction
+- Grand total footer standalone below both tables; color conditional: `grandTotalPaid >= 0 ? "#10b981" : "#ef4444"`
+
+**ReportModal mirrors same structure:**
+- `table1Open`/`table2Open` state vars; `orphanPaymentGroups` computed variable (replaces inline IIFE)
+- `showOrphanPayments` checkbox removed — collapse toggle replaces it
+- No `onClick` on orphan rows (print modal cannot open TransactionDetailModal)
+- Removed unused `totalCols`, `optColCount`, renamed `isInline` → `_isInline` to fix `CI=true` build warnings
+
+**Files:** `src/pages/Reports.js`, `src/components/ReportModal.js`
+
+---
+
+### T13 — Multi-item filter math fix (2026-04-22)
+
+**Problem:** When an item filter was active on the Laporan page and a transaction contained multiple items (some matching the filter, some not), `grandTotalPaid`, subtotal rows, `optCells`/`optCellsForRow`, and CSV export all used the raw `t.value - t.outstanding` instead of the filtered item's proportional contribution. The print modal (ReportModal) had the same bug.
+
+**Fix:** `getMultiItemContribution(t, selectedItems)` extracted to `src/utils/reportUtils.js` (shared). Both `Reports.js` and `ReportModal.js` import and use it.
+
+**Locations fixed:**
+- `grandTotalPaid` useMemo — uses `contrib.combinedCashValue` for filtered transactions; orphan payments excluded when filter active
+- `optCells` / `optCellsForRow` — `contrib` param added; `effectivePaid` / `effectiveOutstanding` used when contrib present
+- Multi-item subtotal row — shows "Total: Rp X (dari Rp Y)" label + `contrib.combinedSubtotal` value
+- Non-filtered item rows — dimmed (opacity 0.4, grey text) when contrib present
+- `mkPaymentRows` — context note "Pembayaran untuk seluruh transaksi" when contrib present
+- Orphan payment rows — hidden (both screen and print) when `selectedItems.length > 0`
+- CSV export `sudahDibayar` — uses `contrib.combinedCashValue` when contrib present
+- `totalIncome` / `totalExpense` in ReportModal — same fix
+- "Tampilkan pembayaran di luar periode" checkbox — hidden in ReportModal when filter active
+
+**`selectedItems` passthrough:** `onReport({...selectedItems})` → `reportState.selectedItems` → `<ReportModal selectedItems={...}>`.
 
 Key patterns to never reintroduce:
 - UTC off-by-1: never use `new Date(dateStr + "T00:00:00")` (no Z) for date arithmetic
