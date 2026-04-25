@@ -465,13 +465,10 @@ const Inventory = ({
       coveredKeys.add(baseKey);
       const baseStock = activeStockMap[baseKey];
 
-      // Base row: hidden when archived OR (has subtypes AND 0 stock AND 0 transactions).
+      // Base row: hidden only when archived.
       // Each item — base and each subtype — is archived independently; archiving the base
       // does NOT hide subtypes. Standalone items (no subtypes) are always shown.
-      const hasSubtypes = (cat.subtypes || []).length > 0;
-      const baseQty     = baseStock?.qty    ?? 0;
-      const baseTxCount = baseStock?.txCount || 0;
-      if (!cat.archived && (!hasSubtypes || baseQty > 0 || baseTxCount > 0)) {
+      if (!cat.archived) {
         flatRows.push({
           key:         baseKey,
           displayName: cat.name,

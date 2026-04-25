@@ -32,6 +32,7 @@ const StockReportModal = ({
 }) => {
   const [reportDate, setReportDate] = useState(today());
   const [showZeroStock, setShowZeroStock] = useState(false);
+  const [showCompanyName, setShowCompanyName] = useState(true);
   const docRef = useRef(null);
 
   useEffect(() => {
@@ -54,24 +55,33 @@ const StockReportModal = ({
     const groups = [];
     const categorized = new Set();
 
-    // Build groups from itemCatalog: base item = group header, subtypes = members
-    const activeCatalog = (itemCatalog || []).filter((cat) => !cat.archived);
-
-    for (const cat of activeCatalog) {
+    // Build groups from itemCatalog: base item = group header, subtypes = members.
+    // Use ALL catalog entries for grouping — even archived base items still parent their subtypes.
+    // Only the base row itself is excluded when cat.archived is true.
+    for (const cat of (itemCatalog || [])) {
       const items = [];
 
-      // Base item (no subtype)
+      // Base item row — only include if base item is not archived
       const baseKey = normItem(cat.name);
       const baseEntry = effectiveStockMap[baseKey];
-      if (baseEntry) {
-        if (showZeroStock || baseEntry.qty !== 0) {
+      categorized.add(baseKey);
+      if (!cat.archived) {
+        if (baseEntry) {
+          if (showZeroStock || baseEntry.qty !== 0) {
+            items.push({
+              displayName: baseEntry.displayName || normalizeTitleCase(cat.name),
+              qty: baseEntry.qty,
+              unit: baseEntry.unit || "karung",
+            });
+          }
+        } else if (showZeroStock) {
+          // Item exists in catalog but has no stock history at all — show as 0
           items.push({
-            displayName: baseEntry.displayName || normalizeTitleCase(cat.name),
-            qty: baseEntry.qty,
-            unit: baseEntry.unit || "karung",
+            displayName: normalizeTitleCase(cat.name),
+            qty: 0,
+            unit: "karung",
           });
         }
-        categorized.add(baseKey);
       }
 
       // Subtypes (active only)
@@ -81,6 +91,7 @@ const StockReportModal = ({
       for (const sub of activeSubtypes) {
         const subKey = normItem(`${cat.name} ${sub}`);
         const subEntry = effectiveStockMap[subKey];
+        categorized.add(subKey);
         if (subEntry) {
           if (showZeroStock || subEntry.qty !== 0) {
             items.push({
@@ -89,7 +100,13 @@ const StockReportModal = ({
               unit: subEntry.unit || "karung",
             });
           }
-          categorized.add(subKey);
+        } else if (showZeroStock) {
+          // Subtype exists in catalog but has no stock history — show as 0
+          items.push({
+            displayName: normalizeTitleCase(`${cat.name} ${sub}`),
+            qty: 0,
+            unit: "karung",
+          });
         }
       }
 
@@ -236,10 +253,12 @@ const StockReportModal = ({
 
         {/* ── Header ── */}
         <div style={s.headerSection}>
-          <div>
-            <h3 style={s.bizName}>{settings.businessName}</h3>
-            {settings.address && <div style={s.bizDetail}>{settings.address}</div>}
-          </div>
+          {showCompanyName && (
+            <div>
+              <h3 style={s.bizName}>{settings.businessName}</h3>
+              {settings.address && <div style={s.bizDetail}>{settings.address}</div>}
+            </div>
+          )}
           <h2 id="stock-report-title" style={s.reportTitle}>
             Stock Report (without Price)
           </h2>
@@ -265,6 +284,11 @@ const StockReportModal = ({
             checked={showZeroStock}
             onChange={setShowZeroStock}
             label="Tampilkan stok kosong"
+          />
+          <ToggleSwitch
+            checked={showCompanyName}
+            onChange={setShowCompanyName}
+            label="Nama perusahaan"
           />
         </div>
 

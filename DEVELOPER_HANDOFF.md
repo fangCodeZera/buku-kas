@@ -73,10 +73,10 @@ src/
     ToggleSwitch.js                 65  Reusable toggle switch — track+thumb, #007bff/#cbd5e1, keyboard accessible (role=switch, Space/Enter)
     ReportModal.js                 580  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR
     StockWarningModal.js            77  Negative-stock warning
-    StockReportModal.js            330  Printable stock report — derives groupings from itemCatalog prop (active entries = groups, active subtypes = members, uncatalogued → "Lainnya")
+    StockReportModal.js            ~370  Printable stock report — derives groupings from itemCatalog prop (active entries = groups, active subtypes = members, uncatalogued → "Lainnya"). Toggles: showZeroStock (includes catalog items with no history as qty 0), showCompanyName
     Badge.js                       113  StatusBadge, TypeBadge (named exports)
     DueBadge.js                     32  Due date status badge
-    ErrorBoundary.js                89  React class error boundary — catches unhandled render errors, shows Indonesian fallback UI with "Muat Ulang" reload button
+    ErrorBoundary.js               118  React class error boundary — catches unhandled render errors, auto-retries up to 3× (3s delay each); shows "Coba Lagi" + "Muat Ulang" buttons
     MultiSelect.js                 151  Zero-dep multi-select dropdown
     RupiahInput.js                 107  Comma-formatted Rupiah currency input
     QtyInput.js                     87  Decimal quantity input — live id-ID locale formatting on keystroke, dot thousands, comma decimal, trailing comma preserved
@@ -913,6 +913,48 @@ See Section 9 of `CLAUDE.md` for full bug fix history.
 **Fixed audit F5:** `handleDeleteRow` in Inventory.js now checks subtype transaction counts (via `txCountMap[normItem(\`${row.catalogItem.name} ${s}\`)]`) when deciding archive vs delete for base catalog rows.
 
 **Files:** `src/App.js`, `src/pages/Inventory.js`, `src/components/StockReportModal.js`, deleted `src/components/CategoryModal.js`, deleted `src/utils/categoryUtils.js`. Bundle: 186.27 kB (−2.48 kB vs previous).
+
+---
+
+### T20 — ErrorBoundary auto-recovery (2026-04-25)
+
+**Improvement:** ErrorBoundary now attempts silent auto-recovery before requiring user action.
+
+- `retryCount` state (initial 0) + `_retryTimer` instance variable
+- `componentDidCatch`: if `retryCount < 3`, schedules `setTimeout(3000)` to reset `hasError: false` and increment `retryCount`
+- Transient errors (Supabase reconnect, realtime timeout, momentary render failure) recover silently without the user ever seeing the error screen
+- Persistent errors re-throw and the screen reappears; after 3 failed attempts the subtitle changes to "Silakan coba lagi atau muat ulang halaman."
+- `handleManualRetry`: class property arrow function, clears pending timer + calls `setState({ hasError: false })` — no page reload
+- `componentWillUnmount`: clears `_retryTimer` to prevent setState-after-unmount
+- Two buttons: "Coba Lagi" (blue, manual retry) + "Muat Ulang" (white/grey, page reload)
+
+**File:** `src/components/ErrorBoundary.js`. Bundle: 186.50 kB (+190 B).
+
+---
+
+### T19 — StockReportModal subtype grouping fix when base is archived (2026-04-25)
+
+**Bug fix:** Archiving a base catalog item broke subtype grouping in `StockReportModal` — active subtypes fell into "Lainnya" because the old code filtered out the entire catalog entry. Fix: replaced `activeCatalog` filter with full iteration over `(itemCatalog || [])`. Only the base row push is gated on `if (!cat.archived)`. Subtypes block unchanged — filtered by `archivedSubtypes[]` independently.
+
+**File:** `src/components/StockReportModal.js`.
+
+---
+
+### T18 — Inventory.js base row always shown for active catalogued items (2026-04-25)
+
+**Bug fix:** Base item rows disappeared from Inventory `tableGroups` after a subtype was added, if the base item had 0 stock and 0 transactions. The compound condition `!cat.archived && (!hasSubtypes || baseQty > 0 || baseTxCount > 0)` hid base rows unnecessarily. Fix: replaced with simply `if (!cat.archived)`. Removed unused `hasSubtypes`, `baseQty`, `baseTxCount` variable declarations.
+
+**File:** `src/pages/Inventory.js`.
+
+---
+
+### T17 — StockReportModal zero-stock fix + company name toggle (2026-04-25)
+
+**Bug fix — showZeroStock:** Catalog items with no stock history (no transactions, no adjustments) were invisible even when "Tampilkan stok kosong" was on because `effectiveStockMap` only contains items that have been traded. Fix: `categorized.add(key)` now runs unconditionally before the `if (entry)` check. Added `else if (showZeroStock)` branch for both base items and subtypes — pushes `{ displayName, qty: 0, unit: "karung" }` when no stockMap entry exists.
+
+**New toggle — showCompanyName:** `useState(true)`. Company name + address block in header wrapped in `{showCompanyName && (...)}`. Toggle rendered in controls bar alongside `showZeroStock` toggle.
+
+**File:** `src/components/StockReportModal.js`. Bundle: 186.31 kB (+41 B).
 
 ---
 
