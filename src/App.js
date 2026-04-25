@@ -73,6 +73,15 @@ import { computeARandAP }          from "./utils/balanceUtils";
 import { generateId, generateTxnId, fmtIDR, normItem, normalizeTitleCase, addDays, today, nowTime } from "./utils/idGenerators";
 import { deriveStatus }            from "./utils/statusUtils";
 
+/** Generate a short code from an item name. Multi-word: initials uppercase. Single-word: consonants, max 4 chars. */
+const generateItemCode = (name) => {
+  if (!name || !name.trim()) return '';
+  const words = name.trim().split(/\s+/);
+  if (words.length > 1) return words.map((w) => w.charAt(0).toUpperCase()).join('');
+  const consonants = words[0].replace(/[aeiouAEIOU]/g, '').toUpperCase();
+  return consonants.length > 1 ? consonants.slice(0, 4) : words[0].slice(0, 2).toUpperCase();
+};
+
 // ─── Edit Modal ───────────────────────────────────────────────────────────────
 /**
  * Wraps TransactionForm in a modal overlay for editing existing transactions.
@@ -1155,11 +1164,12 @@ export default function App() {
         newCatalog = catalog.map((c) => c.id === existing.id ? { ...c, subtypes: merged } : c);
       } else {
         newCatalog = [...catalog, {
-          id:              generateId(),
-          name:            normalizedName,
-          defaultUnit:     item.defaultUnit || "karung",
-          subtypes:        item.subtypes    || [],
-          archived:        false,
+          id:               generateId(),
+          name:             normalizedName,
+          code:             item.code || generateItemCode(normalizedName),
+          defaultUnit:      item.defaultUnit || "karung",
+          subtypes:         item.subtypes    || [],
+          archived:         false,
           archivedSubtypes: [],
         }];
       }

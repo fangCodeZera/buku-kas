@@ -115,6 +115,13 @@ const Inventory = ({
   // Delete item confirm state
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  // Inline code edit state (group header, today-only)
+  const [editingCodeId,  setEditingCodeId]  = useState(null);
+  const [editingCodeVal, setEditingCodeVal] = useState('');
+  const [codeWarning,    setCodeWarning]    = useState('');
+  const codeWarningRef = useRef('');
+  const setWarning = (msg) => { codeWarningRef.current = msg; setCodeWarning(msg); };
+
   // Submit debounce guard — prevents double-submit across all forms
   const [submitting, setSubmitting] = useState(false);
 
@@ -172,12 +179,13 @@ const Inventory = ({
       if (deleteTarget)      { setDeleteTarget(null); return; }
       if (adjDeleteConfirm)  { setAdjDeleteConfirm(null); return; }
       if (addSubtypeTarget)  { setAddSubtypeTarget(null); setAddSubtypeInput(""); setAddSubtypeError(""); return; }
+      if (editingCodeId)     { setEditingCodeId(null); setWarning(''); return; }
       if (expandedStockItem) { setExpandedStockItem(null); return; }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [catalogForm, deleteConfirm, adjTarget, renameTarget, deleteTarget, adjDeleteConfirm,
-      addSubtypeTarget, expandedStockItem]);
+      addSubtypeTarget, editingCodeId, expandedStockItem]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -696,6 +704,28 @@ const Inventory = ({
     }
     setDeleteConfirm(null);
     setSubmitting(false);
+  };
+
+  const commitCode = (catalogItem, newCode) => {
+    const trimmed = newCode.trim().toUpperCase();
+    if (trimmed === (catalogItem.code || '').toUpperCase()) {
+      // No change — just close
+      setEditingCodeId(null);
+      setWarning('');
+      return;
+    }
+    const isDuplicate = itemCatalog.some(
+      (c) => c.id !== catalogItem.id && (c.code || '').toUpperCase() === trimmed && trimmed !== ''
+    );
+    if (isDuplicate) {
+      // Keep input open — show warning, do not save yet
+      setWarning(`Kode "${trimmed}" sudah dipakai oleh item lain. Tetap simpan?`);
+      return;
+    }
+    // No duplicate — save and close
+    setWarning('');
+    setEditingCodeId(null);
+    onUpdateCatalogItem({ ...catalogItem, code: trimmed });
   };
 
   // ── Display helpers ───────────────────────────────────────────────────────────
@@ -1439,17 +1469,98 @@ const Inventory = ({
               {tableGroups.map((group) => {
                 // Find catalog item matching this group — used for "+ Tambah Tipe" on the header.
                 // Only shown when viewing today (not historical dates).
-                const groupCatalogItem = isToday
-                  ? itemCatalog.find((c) => normItem(c.name) === normItem(group.groupName)) || null
-                  : null;
+                const groupCatalogItem = itemCatalog.find((c) => normItem(c.name) === normItem(group.groupName)) || null;
                 return (
                   <React.Fragment key={group.groupName}>
                     {/* Group header row */}
                     <tr className="inventory-group-header">
                       <td colSpan={5}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span>{group.groupName} — {group.code}</span>
-                          {groupCatalogItem && (
+                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            {group.groupName}
+                            {groupCatalogItem && (
+                              editingCodeId === groupCatalogItem.id ? (
+                                <span style={{ position: "relative" }}>
+                                  <input
+                                    autoFocus
+                                    value={editingCodeVal}
+                                    onChange={(e) => { setEditingCodeVal(e.target.value); setWarning(''); }}
+                                    onBlur={() => { if (!codeWarningRef.current) commitCode(groupCatalogItem, editingCodeVal); }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") commitCode(groupCatalogItem, editingCodeVal);
+                                      if (e.key === "Escape") { setEditingCodeId(null); setWarning(''); }
+                                    }}
+                                    maxLength={6}
+                                    style={{
+                                      width: 64, padding: "1px 6px", fontSize: 11, fontWeight: 700,
+                                      textTransform: "uppercase", border: "1.5px solid #60a5fa",
+                                      borderRadius: 4, background: "#1e3a5f", color: "#fff", outline: "none",
+                                    }}
+                                    aria-label={`Edit kode untuk ${groupCatalogItem.name}`}
+                                  />
+                                  {codeWarning && (
+                                    <span style={{
+                                      position: "absolute", top: "100%", left: 0,
+                                      fontSize: 10, color: "#fbbf24", whiteSpace: "nowrap",
+                                      background: "#1e3a5f", padding: "2px 6px", borderRadius: 4,
+                                      zIndex: 10, marginTop: 2, display: "flex", alignItems: "center", gap: 6,
+                                    }}>
+                                      ⚠ {codeWarning}
+                                      <button
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          const trimmed = editingCodeVal.trim().toUpperCase();
+                                          setWarning('');
+                                          setEditingCodeId(null);
+                                          onUpdateCatalogItem({ ...groupCatalogItem, code: trimmed });
+                                        }}
+                                        style={{
+                                          background: "#f59e0b", color: "#1e3a5f", border: "none",
+                                          borderRadius: 3, padding: "1px 6px", fontSize: 10,
+                                          fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        Tetap Simpan
+                                      </button>
+                                      <button
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          setWarning('');
+                                          setEditingCodeId(null);
+                                        }}
+                                        style={{
+                                          background: "none", color: "#93c5fd", border: "none",
+                                          fontSize: 10, cursor: "pointer", padding: "1px 4px",
+                                        }}
+                                      >
+                                        Batal
+                                      </button>
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span
+                                  onClick={(e) => {
+                                    if (!isToday) return;
+                                    e.stopPropagation();
+                                    setEditingCodeId(groupCatalogItem.id);
+                                    setEditingCodeVal(groupCatalogItem.code || '');
+                                    setWarning('');
+                                  }}
+                                  title={isToday ? "Klik untuk edit kode" : undefined}
+                                  style={{
+                                    fontSize: 11, fontWeight: 700, color: "#93c5fd",
+                                    background: "rgba(255,255,255,0.1)", borderRadius: 4,
+                                    padding: "1px 6px", cursor: isToday ? "pointer" : "default",
+                                    letterSpacing: 0.5, minWidth: 24, display: "inline-block", textAlign: "center",
+                                  }}
+                                >
+                                  {groupCatalogItem.code || '—'}
+                                </span>
+                              )
+                            )}
+                          </span>
+                          {groupCatalogItem && isToday && (
                             <button
                               className="category-add-subtype-btn"
                               onClick={() => {

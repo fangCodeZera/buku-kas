@@ -916,6 +916,39 @@ See Section 9 of `CLAUDE.md` for full bug fix history.
 
 ---
 
+### T21 — Item catalog code field (2026-04-25)
+
+Added a `code` field to catalog items. Code is auto-generated on creation, shown as a clickable pill in Inventory group headers, and editable inline.
+
+**`src/utils/supabaseStorage.js`:**
+- `mapCatalogItem` gains `code: row.code || ''`
+- `saveItemCatalogItem` upserts `code: item.code || ''`
+
+**`src/App.js`:**
+- `generateItemCode(name)` module-level helper: multi-word → uppercase initials; single-word → consonants (max 4 chars), fallback to first 2 chars
+- `addCatalogItem` new-item path: `code: item.code || generateItemCode(normalizedName)`
+- Merge path (existing item) unchanged — no code overwrite on subtype merge
+
+**`src/pages/Inventory.js`:**
+- State: `editingCodeId`, `editingCodeVal`, `codeWarning`
+- `commitCode(catalogItem, newCode)`: trims + uppercases; if no change → close; if duplicate → keeps input open, sets warning with "Tetap Simpan?" text; if clean → saves + closes
+- Warning tooltip: "Tetap Simpan" + "Batal" buttons, both using `onMouseDown` with `e.preventDefault()` to prevent `onBlur` racing before the click
+- `onBlur` guarded: `if (!codeWarning) commitCode(...)` — when warning is showing, blur is a no-op
+- `groupCatalogItem` now derived regardless of `isToday` — code pill visible on historical dates
+- Static code pill: `onClick` guarded by `if (!isToday) return`; `cursor: isToday ? "pointer" : "default"`; `title` only shown on `isToday`
+- `+ Tambah Tipe` button: wrapped in `{groupCatalogItem && isToday && (...)}` — hidden on historical dates
+- Escape handler updated to include `editingCodeId`
+
+**`src/components/StockReportModal.js`:**
+- `groupedData` now pushes `code: cat.code || ''` alongside `groupName`/`items`
+- Group header `<td>` renders code as a grey suffix span when `group.code` is set
+
+**Existing items:** Supabase `code` column defaults to `''`. Shows "—" until user clicks and sets a code.
+
+**Bundle:** 187.19 kB.
+
+---
+
 ### T20 — ErrorBoundary auto-recovery (2026-04-25)
 
 **Improvement:** ErrorBoundary now attempts silent auto-recovery before requiring user action.

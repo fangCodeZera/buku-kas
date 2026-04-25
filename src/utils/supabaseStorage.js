@@ -94,6 +94,7 @@ export const mapStockAdjustment = (row) => ({
 export const mapCatalogItem = (row) => ({
   id:               row.id,
   name:             row.name,
+  code:             row.code             || '',
   defaultUnit:      row.default_unit,
   subtypes:         row.subtypes          || [],
   archived:         row.archived,
@@ -337,6 +338,7 @@ export async function saveItemCatalogItem(item, userId) {
   const { error } = await supabase.from('item_catalog').upsert({
     id:               item.id,
     name:             item.name,
+    code:             item.code             || '',
     default_unit:     item.defaultUnit      || 'karung',
     subtypes:         item.subtypes         || [],
     archived:         item.archived         ?? false,

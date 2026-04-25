@@ -112,7 +112,7 @@ const StockReportModal = ({
 
       if (items.length > 0) {
         items.sort((a, b) => a.displayName.localeCompare(b.displayName, "id"));
-        groups.push({ groupName: cat.name, items });
+        groups.push({ groupName: cat.name, code: cat.code || '', items });
       }
     }
 
@@ -319,6 +319,14 @@ const StockReportModal = ({
                     <tr>
                       <td colSpan={3} style={{ ...s.td, ...s.groupRow, padding: "7px 10px" }}>
                         {group.groupName.toUpperCase()}
+                        {group.code && (
+                          <span style={{
+                            marginLeft: 10, fontSize: 10, fontWeight: 700,
+                            color: "#64748b", letterSpacing: 0.5,
+                          }}>
+                            {group.code}
+                          </span>
+                        )}
                       </td>
                     </tr>
                     {/* Item rows */}
