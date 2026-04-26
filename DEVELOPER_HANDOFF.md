@@ -446,7 +446,7 @@ No(3) + `" | "` + Barang(50) + `" | "` + Jumlah(21) = 80
 
 **Dot matrix Surat Jalan format (current):**
 - Header: only `"SURAT JALAN"` centered — no company name
-- Meta row 1: `KEPADA YTH :` (left 40 chars) + `TANGGAL : [date]` (right 40 chars). Row 2: client name full-width. Row 3: client address left-half (wrapped to 40) + `PLAT MOBIL : [plate]` right-half (always shown). Continuation address lines full-width below if needed.
+- Meta row 1: `KEPADA YTH :` (left 40 chars) + `TANGGAL : [date]` (right 40 chars). Row 2: client name (left 40) + `NO. INVOICE : [txnId]` (right 40); txnId falls back to `"—"`. Row 3: client address line 0 (left 40, wrapped to 40) + `PLAT MOBIL : [plate]` (right 40, always shown). Continuation address lines full-width below if needed.
 - Items table: 3 columns — NO.(3) + ` | ` + JENIS BARANG(50) + ` | ` + JUMLAH BARANG(21) = 80. Header ALL CAPS. JUMLAH BARANG value = `"[qty] [unit]"` (e.g. `"500 karung"`) — no separate Satuan column.
 - Catatan line: only if `catatanPengiriman` non-empty
 - Footer: `TANDA TERIMA,` (left) / `HORMAT KAMI,` (right) with `(                          )` sig lines

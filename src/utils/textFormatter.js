@@ -263,30 +263,25 @@ const formatSuratJalanMeta = (transaction, platNomor = "", contacts = []) => {
   const tglStr   = "TANGGAL : " + (fmtDate(transaction.date) || "—");
   const clientNm = transaction.counterparty || "—";
   const platStr  = "PLAT MOBIL : " + platNomor.trim();
-
-  // Row 1: KEPADA YTH left + TANGGAL right
-  const row1 = padRight("KEPADA YTH :", 40) + padLeft(tglStr, 40);
-  // Row 2: client name (no label)
-  const row2 = padRight(clientNm, LINE_WIDTH);
+  const invStr   = "NO. INVOICE : " + (transaction.txnId || "—");
 
   // Look up client address
   const clientAddr = contacts.find(
     (c) => (c.name || "").toLowerCase() === clientNm.toLowerCase()
   )?.address?.trim();
 
-  const lines = [row1, row2];
+  const lines = [
+    padRight("KEPADA YTH :", 40) + padLeft(tglStr, 40),  // row 1
+    padRight(clientNm, 40)       + padLeft(invStr, 40),   // row 2
+  ];
 
   if (clientAddr) {
-    // Wrap address to 40 chars for left half of row 3
     const addrLines = wrapText(clientAddr, 40);
-    // First address line left + plat right on same row
     lines.push(padRight(addrLines[0] || "", 40) + padLeft(platStr, 40));
-    // Continuation address lines (no plat beside them)
     for (let i = 1; i < addrLines.length; i++) {
       lines.push(padRight(addrLines[i], LINE_WIDTH));
     }
   } else {
-    // No address: blank left + plat right
     lines.push(padRight("", 40) + padLeft(platStr, 40));
   }
 
