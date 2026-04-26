@@ -107,21 +107,20 @@ const getItemsArray = (t) => {
 // ─── Invoice sub-formatters ──────────────────────────────────────────────────
 
 /**
- * Invoice header: "I N V O I C E" centered (left 69 chars) + "Page 1 of 1" right (11 chars).
- * No business name, address, or phone.
+ * Invoice header: "I N V O I C E" centered full 80 columns.
+ * No business name, address, phone, or page number.
  */
 const formatInvoiceHeader = () => {
-  const title   = "I N V O I C E";
-  const pageNum = "Page 1 of 1";
-  return [centerText(title, LINE_WIDTH - pageNum.length) + pageNum];
+  return [centerText("I N V O I C E")];
 };
 
 /**
- * Invoice meta: two-column layout (left 40 / right 40).
- * Lines 1–2: blank left + Invoice No / Date right-aligned.
- * Line 3: "Kepada :" left + "Note       : [note]" right.
- * Line 4: client name (no label), left-aligned.
- * Line 5+: client address (no label), left-aligned, if found in contacts.
+ * Invoice meta: two-column layout (left 40 / right 40), matching surat jalan style.
+ * Row 1: "KEPADA YTH :" left + "TANGGAL : [date]" right.
+ * Row 2: client name left + "NO. INVOICE : [txnId]" right.
+ * Row 3+: address lines left (wrapped to 40) paired with CATATAN lines right (only if note non-empty).
+ *   CATATAN label (10 chars) on first note line; continuation lines indented to align with text.
+ *   Right column blank when note is empty — CATATAN label not rendered at all.
  * Minor separator after meta.
  *
  * @param {Object[]} transactions
@@ -134,21 +133,45 @@ const formatInvoiceMeta = (transactions, contacts = [], note = "") => {
   const dateStr = fmtDate(t0.date) || "—";
   const client  = t0.counterparty  || "—";
 
-  const lines = [
-    padRight("", 40) + padLeft("Invoice No: " + invNo,              40),
-    padRight("", 40) + padLeft("Date       : " + dateStr,           40),
-    padRight("Kepada :", 40) + padLeft("Note       : " + note.trim(), 40),
-    padRight(client, LINE_WIDTH),
-  ];
+  const tglStr = "TANGGAL : "     + dateStr;
+  const invStr = "NO. INVOICE : " + invNo;
 
-  // Client address — left-aligned, no label, wrapped to full width
+  // Look up client address
   const clientAddr = contacts.find(
     (c) => (c.name || "").toLowerCase() === client.toLowerCase()
   )?.address?.trim();
-  if (clientAddr) {
-    wrapText(clientAddr, LINE_WIDTH).forEach((line) =>
-      lines.push(padRight(line, LINE_WIDTH))
-    );
+
+  const lines = [
+    padRight("KEPADA YTH :", 40) + padLeft(tglStr, 40),  // row 1
+    padRight(client, 40)          + padLeft(invStr, 40),  // row 2
+  ];
+
+  // Build CATATAN lines — only when note is non-empty
+  // Label "CATATAN : " = 10 chars; right col = 40 chars; note text width = 30
+  const CATATAN_LABEL = "CATATAN : ";
+  const CATATAN_TEXT_WIDTH = 40 - CATATAN_LABEL.length; // 30
+  const trimmedNote = note.trim();
+  const noteLines = trimmedNote
+    ? trimmedNote.split(/\r?\n/).flatMap((line) =>
+        line.trim() === "" ? [""] : wrapText(line, CATATAN_TEXT_WIDTH)
+      )
+    : [];
+
+  const addrLines   = clientAddr ? wrapText(clientAddr, 40) : [];
+  const NOTE_INDENT = " ".repeat(CATATAN_LABEL.length); // 10 spaces for continuation alignment
+  const maxRows     = Math.max(addrLines.length, noteLines.length, 1);
+
+  for (let i = 0; i < maxRows; i++) {
+    const leftPart = padRight(addrLines[i] || "", 40);
+    let rightPart;
+    if (i === 0 && noteLines.length > 0) {
+      rightPart = padLeft(CATATAN_LABEL + (noteLines[0] || ""), 40);
+    } else if (i > 0 && noteLines[i] !== undefined) {
+      rightPart = padLeft(NOTE_INDENT + noteLines[i], 40);
+    } else {
+      rightPart = " ".repeat(40);
+    }
+    lines.push(leftPart + rightPart);
   }
 
   lines.push(SEP_MINOR);
@@ -231,7 +254,7 @@ const formatInvoiceFooter = (transactions, settings) => {
     padLeft("(" + " ".repeat(26) + ")", 40);
 
   lines.push(
-    padRight("      Tanda terima", 40) + padLeft("Hormat kami,", 40),
+    padRight("TANDA TERIMA,", 40) + padLeft("HORMAT KAMI,", 40),
     "",
     "",
     "",

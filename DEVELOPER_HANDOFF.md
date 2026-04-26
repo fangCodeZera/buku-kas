@@ -439,10 +439,10 @@ No(3) + `" | "` + Barang(50) + `" | "` + Jumlah(21) = 80
 **Invoice layout sections:** `formatInvoiceHeader()` (no args) → `formatInvoiceMeta(transactions, contacts, note)` → `formatItemsTable(transactions)` → `formatInvoiceFooter(transactions, settings)`
 
 **Invoice format (current):**
-- Header: `"I N V O I C E"` centered in left 69 chars + `"Page 1 of 1"` right-aligned in last 11 chars. No business name/address/phone.
-- Meta: Row 1 blank left + `"Invoice No: [txnId]"` right. Row 2 blank left + `"Date       : [date]"` right. Row 3 `"Kepada :"` left + `"Note       : [invoiceNote]"` right. Row 4: client name left-aligned, no label. Row 5+: client address left-aligned, no label (if found in contacts). SEP_MINOR after.
+- Header: `"I N V O I C E"` centered full 80 cols. No business name/address/phone/page number.
+- Meta: Two-column surat jalan style. Row 1: `KEPADA YTH :` (left 40) + `TANGGAL : [date]` (right 40). Row 2: client name (left 40) + `NO. INVOICE : [txnId]` (right 40). Row 3+: address lines (left 40, wrapped to 40) paired with CATATAN lines (right 40) — `CATATAN : ` label (10 chars) on first note line, continuation lines indented 10 spaces; right column blank when note is empty (CATATAN label not rendered). `maxRows = Math.max(addrLines.length, noteLines.length, 1)` — always at least one row before SEP_MINOR. Note wrapped to 30 chars per line (40 − 10 label).
 - Items: header row (No/Jenis Barang/Berat (Kg)/Harga/Total), SEP_MINOR, item rows. Berat shows `"[n] kg"`, Harga shows `"Rp [n]"`, Total shows `"Rp [n]"`. No trailing separator (footer adds SEP_MAJOR after total row).
-- Footer: `"TOTAL    : Rp [amount]"` right-aligned → SEP_MAJOR → bank accounts (`NAME BANK : / ACCOUNT NUMBER : / ACCOUNT NAME :` format, one block per account) → blank line → `"      Tanda terima"` left / `"Hormat kami,"` right → 3 blank lines → `"(                          )"` left + `"(                          )"` right. No LUNAS/SISA TAGIHAN. No transaction notes.
+- Footer: `"TOTAL    : Rp [amount]"` right-aligned → SEP_MAJOR → bank accounts (`NAME BANK : / ACCOUNT NUMBER : / ACCOUNT NAME :` format, one block per account) → blank line → `"TANDA TERIMA,"` left / `"HORMAT KAMI,"` right → 3 blank lines → `"(                          )"` left + `"(                          )"` right. No LUNAS/SISA TAGIHAN. No transaction notes.
 
 **Surat Jalan layout sections:** `formatSuratJalanHeader()` (no args — no company name) → `formatSuratJalanMeta(transaction, platNomor, contacts)` → `formatSuratJalanItems(transaction)` → `formatSuratJalanFooter(catatanPengiriman)`
 
