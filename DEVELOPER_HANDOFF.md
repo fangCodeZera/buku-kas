@@ -1072,6 +1072,10 @@ Added `withTimeout(promise, ms = 10000)` helper — races any promise against a 
 2. `isFirst = originalIdx === history.length - 1` — creation entry is now last in reversed array
 3. `PendingNode` moved to TOP of timeline in both collapsed and non-collapsed `buildNodes` paths
 4. Removed `|| hasPending` from `!isLast` connector expressions — PendingNode no longer terminates the chain at the bottom
+5. `PendingNode` now includes `<div className="payment-timeline__line" />` after the dot div (T40) — connector line to the first history node below was previously missing
+6. `.payment-timeline__pending-node` `padding-top: 4px` removed (T41) — the offset shifted label text down vs regular nodes
+7. T43 empty datetime div and T44 `min-height` both reverted (T45). `.payment-timeline__pending-label` has `margin-top: 2px`. `PendingNode` structure: dot → line → pending-node (no datetime div)
+8. `PendingNode` `paddingBottom` changed `0` → `24` (T46) — matches standard node CSS; zero padding collapsed node height so `.payment-timeline__line` was too short to reach the next node's dot
 
 **Collapse logic unchanged:** `history.slice(0, SHOW_FIRST)` still shows newest 3; `history.slice(-SHOW_LAST)` still shows the creation entry (oldest = last in reversed array). `origIdx` calculation `history.length - SHOW_LAST + idx` correctly targets the creation entry position.
 

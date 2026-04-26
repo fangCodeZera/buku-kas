@@ -318,8 +318,9 @@ const PaymentHistoryPanel = ({ transaction: t, onClose }) => {
 
 function PendingNode({ out, dueDate }) {
   return (
-    <div className="payment-timeline__node" style={{ paddingBottom: 0 }}>
+    <div className="payment-timeline__node" style={{ paddingBottom: 24 }}>
       <div className="payment-timeline__dot payment-timeline__dot--pending" />
+      <div className="payment-timeline__line" />
       <div className="payment-timeline__pending-node">
         <div className="payment-timeline__pending-label">Menunggu pembayaran berikutnya</div>
         <div className="payment-timeline__pending-info">
