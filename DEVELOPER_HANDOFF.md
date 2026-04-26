@@ -424,6 +424,8 @@ ASCII layout engine for dot matrix printing. Pure functions, no React, no DOM.
 - `formatInvoice` options: `{ note: string }` — shown as "Note       : [note]" in meta section (right-aligned, line 3)
 - `formatSuratJalan` options: `{ platNomor: string, catatanPengiriman: string }` — plate number in meta, delivery note in footer
 
+**Separator constants:** `SEP_MAJOR = "=".repeat(80)` (section divider), `SEP_MINOR = "_".repeat(80)` (column header divider — underscore chosen over `-` for continuous baseline on dot matrix printers; T34). Spacing between rows is provided by `line-height: 1.2` on the `<pre>` elements in `DotMatrixPrintModal.js` rather than blank lines in the text (T36).
+
 **Internal helpers:** `padRight`, `padLeft`, `centerText`, `fmtNum`, `fmtRp`, `getItemsArray`, `wrapText`
 
 **`wrapText(str, width)`:** Word-boundary wrapping that returns an array of strings each ≤ width chars. Hard-truncates a single word that alone exceeds the width. Used by `formatItemsTable` and `formatSuratJalanItems` for long item names via `flatMap`.
@@ -722,7 +724,7 @@ Edit entries (`note === "Detail Perubahan"` or `"Transaksi diedit — nilai dipe
 
 Computes formatted ASCII text via `useMemo` (deps: `transaction, mode, settings, invoiceNote, platNomor, catatanPengiriman`) using `formatInvoice(transaction, settings, { note: invoiceNote })` or `formatSuratJalan(transaction, settings, { platNomor, catatanPengiriman })`. Preview updates live as user types in input fields.
 
-Renders preview in `.dot-matrix-preview` `<pre>` block (no inline style — font from CSS class). "Konfirmasi Cetak" button manually escapes `&`, `<`, `>` then calls `printWithPortal()` with inline-styled `<pre>` (Courier New, 12pt, no bold, line-height 1 — T22: Arial and bold Courier New both tried and reverted; original format preserved). "Batal" button and Escape key close the modal. Conditionally mounted — no Escape guard needed.
+Renders preview: when `mode === "suratJalan"`, splits `formattedText` on `"\n"` — `lines[0]` ("SURAT JALAN") shown as a centered bold 20px div (letterSpacing 4, borderBottom 2px replaces the `====` line dropped via `lines.slice(2)`), body in `.dot-matrix-preview` `<pre style={{ marginTop: 8, lineHeight: 1.2 }}>` (8px gap below title border, 1.2 line-height for uniform row spacing). When `mode === "invoice"`, single `.dot-matrix-preview` `<pre style={{ lineHeight: 1.2 }}>`. "Konfirmasi Cetak" mirrors the same split for Surat Jalan: title in 20pt bold div + body in inline-styled `<pre>` (`margin-top:8px;line-height:1.2`); invoice path uses `line-height:1.2` (T36) (Courier New, 12pt, no bold, line-height 1 — T22: Arial and bold Courier New both tried and reverted). "Batal" button and Escape key close the modal. Conditionally mounted — no Escape guard needed.
 
 Note: Uses manual `replace(/&/g, ...)` chain in `handlePrint` rather than `escapeHtml()` from `printUtils.js` — both approaches are equivalent.
 

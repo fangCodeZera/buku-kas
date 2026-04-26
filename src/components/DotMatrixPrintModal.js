@@ -35,14 +35,29 @@ const DotMatrixPrintModal = ({ transaction, mode, settings, contacts = [], onClo
   }, [transaction, mode, settings, contacts, invoiceNote, platNomor, catatanPengiriman]);
 
   const handlePrint = () => {
-    // Escape HTML special chars to prevent injection; pre-tag uses inline styles
-    // for print portal compatibility (CSS classes don't resolve outside #root)
-    const escaped = formattedText
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    let printHtml;
 
-    const printHtml = `<pre style="font-family:'Courier New',Courier,monospace;font-size:12pt;line-height:1;margin:0;padding:0;white-space:pre;border:none;background:none;">${escaped}</pre>`;
+    if (mode === "suratJalan") {
+      const lines     = formattedText.split("\n");
+      const titleText = lines[0];
+      const bodyText  = lines.slice(2).join("\n");
+
+      const escapedBody = bodyText
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+      printHtml =
+        `<div style="text-align:center;font-family:'Courier New',Courier,monospace;font-size:20pt;font-weight:bold;letter-spacing:4px;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:0;">${titleText}</div>` +
+        `<pre style="font-family:'Courier New',Courier,monospace;font-size:12pt;line-height:1.2;margin-top:8px;margin-bottom:0;margin-left:0;margin-right:0;padding:0;white-space:pre;border:none;background:none;">${escapedBody}</pre>`;
+    } else {
+      const escaped = formattedText
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      printHtml = `<pre style="font-family:'Courier New',Courier,monospace;font-size:12pt;line-height:1.2;margin:0;padding:0;white-space:pre;border:none;background:none;">${escaped}</pre>`;
+    }
+
     printWithPortal(printHtml);
   };
 
@@ -101,7 +116,30 @@ const DotMatrixPrintModal = ({ transaction, mode, settings, contacts = [], onClo
           </div>
         )}
 
-        <pre className="dot-matrix-preview">{formattedText}</pre>
+        {mode === "suratJalan" ? (() => {
+          const lines = formattedText.split("\n");
+          const suratJalanTitle = lines[0];
+          const suratJalanBody  = lines.slice(2).join("\n");
+          return (
+            <>
+              <div style={{
+                textAlign: "center",
+                fontFamily: "'Courier New', Courier, monospace",
+                fontSize: 20,
+                fontWeight: "bold",
+                letterSpacing: 4,
+                borderBottom: "2px solid #000",
+                paddingBottom: 6,
+                marginBottom: 0,
+              }}>
+                {suratJalanTitle}
+              </div>
+              <pre className="dot-matrix-preview" style={{ marginTop: 8, lineHeight: 1.2 }}>{suratJalanBody}</pre>
+            </>
+          );
+        })() : (
+          <pre className="dot-matrix-preview" style={{ lineHeight: 1.2 }}>{formattedText}</pre>
+        )}
 
         <div className="modal-actions" style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onClose} className="btn btn-secondary" aria-label="Batal">

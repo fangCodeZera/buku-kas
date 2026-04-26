@@ -85,7 +85,7 @@ const fmtNum = (n) => Math.round(Number(n) || 0).toLocaleString("id-ID");
 const fmtRp = (n) => "Rp " + fmtNum(n);
 
 const SEP_MAJOR = "=".repeat(LINE_WIDTH);
-const SEP_MINOR = "-".repeat(LINE_WIDTH);
+const SEP_MINOR = "_".repeat(LINE_WIDTH);
 
 // ─── Item array helper ───────────────────────────────────────────────────────
 
