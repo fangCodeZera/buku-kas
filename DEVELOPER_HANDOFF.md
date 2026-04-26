@@ -1050,6 +1050,17 @@ Added a `code` field to catalog items. Code is auto-generated on creation, shown
 
 ---
 
+### T30 — 10-second timeout on all Supabase write operations (2026-04-26)
+
+**Problem:** All Supabase write functions waited indefinitely for a response. On slow or dropped free-tier connections, the app would hang until the browser gave up (minutes).
+
+**Fix (`src/utils/supabaseStorage.js`):**
+Added `withTimeout(promise, ms = 10000)` helper — races any promise against a 10-second rejection. Applied to all 10 write operations: `saveTransaction`, `deleteTransaction`, `saveContact`, `deleteContact`, `saveStockAdjustment`, `deleteStockAdjustment`, both `delete` and `insert` calls inside `saveItemCategories`, `saveItemCatalogItem`, `deleteItemCatalogItem`, `saveSettings`. `SaveErrorModal` now reliably appears within 10 seconds.
+
+**Not wrapped:** `isSupabaseReachable` (own 5s timeout), `saveActivityLog` (non-blocking, intentionally fire-and-forget), all read operations (`loadDataFromSupabase`, `loadActivityLog`), `getNextTxnSerial` (App.js already falls back to `generateTxnId()` on any error).
+
+---
+
 ### T29 — PaymentHistoryPanel newest-first order (2026-04-26)
 
 **Problem:** `PaymentHistoryPanel` rendered `t.paymentHistory` in natural append order (oldest-first). `TransactionDetailModal` already reversed to newest-first. Three surfaces (TransactionPage, Contacts, Outstanding) were inconsistent with the modal.

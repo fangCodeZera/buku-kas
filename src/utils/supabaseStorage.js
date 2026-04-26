@@ -8,6 +8,21 @@ import { defaultData } from './storage';
 import { checkVersion, ConflictError } from './conflictDetector';
 
 /**
+ * Wraps a Supabase query promise with a timeout.
+ * If the query does not resolve within `ms` milliseconds, rejects with a
+ * user-friendly timeout error. This prevents indefinite hangs on slow
+ * or dropped Supabase free-tier connections.
+ */
+function withTimeout(promise, ms = 10000) {
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(
+      `Koneksi ke database terlalu lama (>${ms / 1000}s). Periksa koneksi internet Anda dan coba lagi.`
+    )), ms)
+  );
+  return Promise.race([promise, timeout]);
+}
+
+/**
  * Health check: returns true if the Supabase database is reachable, false if paused/unreachable.
  * Uses a lightweight query (1 row from profiles). Times out after 5 seconds.
  */
@@ -176,7 +191,7 @@ export async function saveTransaction(tx, userId, isEdit = false) {
     const result = await checkVersion('transactions', tx.id, (tx.version || 1) - 1);
     if (result.conflict) throw new ConflictError(result.updatedBy);
   }
-  const { error } = await supabase.from('transactions').upsert({
+  const { error } = await withTimeout(supabase.from('transactions').upsert({
     id:               tx.id,
     type:             tx.type,
     date:             tx.date,
@@ -200,7 +215,7 @@ export async function saveTransaction(tx, userId, isEdit = false) {
     version:          (tx.version || 0) + 1,
     created_by:       userId,
     updated_by:       userId,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
   if (error) throw new Error(`Gagal menyimpan transaksi: ${error.message}`);
 }
 
@@ -209,7 +224,7 @@ export async function saveTransaction(tx, userId, isEdit = false) {
  * @param {string} id - transaction id
  */
 export async function deleteTransaction(id) {
-  const { error } = await supabase.from('transactions').delete().eq('id', id);
+  const { error } = await withTimeout(supabase.from('transactions').delete().eq('id', id));
   if (error) throw new Error(`Gagal menghapus transaksi: ${error.message}`);
 }
 
@@ -224,7 +239,7 @@ export async function saveContact(contact, userId, isEdit = false) {
     const result = await checkVersion('contacts', contact.id, (contact.version || 1) - 1);
     if (result.conflict) throw new ConflictError(result.updatedBy);
   }
-  const { error } = await supabase.from('contacts').upsert({
+  const { error } = await withTimeout(supabase.from('contacts').upsert({
     id:         contact.id,
     name:       contact.name,
     email:      contact.email    || '',
@@ -234,7 +249,7 @@ export async function saveContact(contact, userId, isEdit = false) {
     version:    (contact.version || 0) + 1,
     created_by: userId,
     updated_by: userId,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
   if (error) throw new Error(`Gagal menyimpan kontak: ${error.message}`);
 }
 
@@ -243,7 +258,7 @@ export async function saveContact(contact, userId, isEdit = false) {
  * @param {string} id - contact id
  */
 export async function deleteContact(id) {
-  const { error } = await supabase.from('contacts').delete().eq('id', id);
+  const { error } = await withTimeout(supabase.from('contacts').delete().eq('id', id));
   if (error) throw new Error(`Gagal menghapus kontak: ${error.message}`);
 }
 
@@ -253,7 +268,7 @@ export async function deleteContact(id) {
  * @param {string} userId
  */
 export async function saveStockAdjustment(adj, userId) {
-  const { error } = await supabase.from('stock_adjustments').upsert({
+  const { error } = await withTimeout(supabase.from('stock_adjustments').upsert({
     id:               adj.id,
     item_name:        adj.itemName,
     date:             adj.date,
@@ -265,7 +280,7 @@ export async function saveStockAdjustment(adj, userId) {
     version:          (adj.version || 0) + 1,
     created_by:       userId,
     updated_by:       userId,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
   if (error) throw new Error(`Gagal menyimpan penyesuaian stok: ${error.message}`);
 }
 
@@ -274,7 +289,7 @@ export async function saveStockAdjustment(adj, userId) {
  * @param {string} id - adjustment id
  */
 export async function deleteStockAdjustment(id) {
-  const { error } = await supabase.from('stock_adjustments').delete().eq('id', id);
+  const { error } = await withTimeout(supabase.from('stock_adjustments').delete().eq('id', id));
   if (error) throw new Error(`Gagal menghapus penyesuaian stok: ${error.message}`);
 }
 
@@ -293,10 +308,10 @@ let _categoriesSaveQueue = Promise.resolve();
 export function saveItemCategories(categories, userId) {
   _categoriesSaveQueue = _categoriesSaveQueue
     .then(async () => {
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await withTimeout(supabase
         .from('item_categories')
         .delete()
-        .gte('created_at', '1970-01-01');
+        .gte('created_at', '1970-01-01'));
       if (deleteError) {
         throw new Error('Gagal menghapus kategori lama: ' + deleteError.message);
       }
@@ -315,7 +330,7 @@ export function saveItemCategories(categories, userId) {
         updated_at: new Date().toISOString(),
       }));
 
-      const { error: insertError } = await supabase.from('item_categories').insert(mapped);
+      const { error: insertError } = await withTimeout(supabase.from('item_categories').insert(mapped));
       if (insertError) {
         throw new Error('Gagal menyimpan kategori: ' + insertError.message);
       }
@@ -335,7 +350,7 @@ export function saveItemCategories(categories, userId) {
  * @param {string} userId
  */
 export async function saveItemCatalogItem(item, userId) {
-  const { error } = await supabase.from('item_catalog').upsert({
+  const { error } = await withTimeout(supabase.from('item_catalog').upsert({
     id:               item.id,
     name:             item.name,
     code:             item.code             || '',
@@ -346,7 +361,7 @@ export async function saveItemCatalogItem(item, userId) {
     version:          (item.version || 0) + 1,
     created_by:       userId,
     updated_by:       userId,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
   if (error) throw new Error(`Gagal menyimpan katalog barang: ${error.message}`);
 }
 
@@ -355,7 +370,7 @@ export async function saveItemCatalogItem(item, userId) {
  * @param {string} id - catalog item id
  */
 export async function deleteItemCatalogItem(id) {
-  const { error } = await supabase.from('item_catalog').delete().eq('id', id);
+  const { error } = await withTimeout(supabase.from('item_catalog').delete().eq('id', id));
   if (error) throw new Error(`Gagal menghapus katalog barang: ${error.message}`);
 }
 
@@ -365,7 +380,7 @@ export async function deleteItemCatalogItem(id) {
  * @param {string} userId
  */
 export async function saveSettings(settings, userId) {
-  const { error } = await supabase.from('app_settings').upsert({
+  const { error } = await withTimeout(supabase.from('app_settings').upsert({
     id:                          'singleton',
     business_name:               settings.businessName,
     address:                     settings.address                  || '',
@@ -379,7 +394,7 @@ export async function saveSettings(settings, userId) {
     version:                     (settings.version || 0) + 1,
     created_by:                  userId,
     updated_by:                  userId,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
   if (error) throw new Error(`Gagal menyimpan pengaturan: ${error.message}`);
 }
 
