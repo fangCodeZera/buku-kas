@@ -229,9 +229,9 @@ const formatInvoiceFooter = (transactions, settings) => {
   const total = transactions.reduce((a, t) => a + (Number(t.value) || 0), 0);
   const lines = [];
 
-  // Total row right-aligned, then major separator
-  lines.push(padLeft("TOTAL    : " + fmtRp(total), LINE_WIDTH));
+  // Major separator, then TOTAL row right-aligned below it
   lines.push(SEP_MAJOR);
+  lines.push(padLeft("TOTAL : " + fmtRp(total), LINE_WIDTH));
 
   // Bank accounts
   const bankAccounts = (settings.bankAccounts || []).filter((a) => a.showOnInvoice);
