@@ -64,7 +64,7 @@ src/
   components/
     TransactionPage.js             652  Shared base: Penjualan + Pembelian day-view
     TransactionForm.js            1430  Full transaction input form (multi-item, catalog autocomplete)
-    PaymentHistoryPanel.js         290  Expandable payment timeline
+    PaymentHistoryPanel.js         334  Expandable payment timeline — newest-first order (T29); PendingNode at top
     PaymentUpdateModal.js          183  Record payment modal
     DeleteConfirmModal.js          125  Dual-mode (transaction/contact) delete confirm — requires typing "hapus" to enable confirm button
     InvoiceModal.js                337  Printable A4 invoice
@@ -1047,6 +1047,20 @@ Added a `code` field to catalog items. Code is auto-generated on creation, shown
 - "Tampilkan pembayaran di luar periode" checkbox — hidden in ReportModal when filter active
 
 **`selectedItems` passthrough:** `onReport({...selectedItems})` → `reportState.selectedItems` → `<ReportModal selectedItems={...}>`.
+
+---
+
+### T29 — PaymentHistoryPanel newest-first order (2026-04-26)
+
+**Problem:** `PaymentHistoryPanel` rendered `t.paymentHistory` in natural append order (oldest-first). `TransactionDetailModal` already reversed to newest-first. Three surfaces (TransactionPage, Contacts, Outstanding) were inconsistent with the modal.
+
+**Fix (`src/components/PaymentHistoryPanel.js`):**
+1. `history = [...(t.paymentHistory || [])].reverse()` — reversed copy, original not mutated
+2. `isFirst = originalIdx === history.length - 1` — creation entry is now last in reversed array
+3. `PendingNode` moved to TOP of timeline in both collapsed and non-collapsed `buildNodes` paths
+4. Removed `|| hasPending` from `!isLast` connector expressions — PendingNode no longer terminates the chain at the bottom
+
+**Collapse logic unchanged:** `history.slice(0, SHOW_FIRST)` still shows newest 3; `history.slice(-SHOW_LAST)` still shows the creation entry (oldest = last in reversed array). `origIdx` calculation `history.length - SHOW_LAST + idx` correctly targets the creation entry position.
 
 ---
 

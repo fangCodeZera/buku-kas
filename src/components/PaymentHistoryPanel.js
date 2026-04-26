@@ -50,7 +50,7 @@ const SHOW_LAST  = 1;
 const PaymentHistoryPanel = ({ transaction: t, onClose }) => {
   const [showAll, setShowAll] = useState(false);
 
-  const history      = t.paymentHistory || [];
+  const history      = [...(t.paymentHistory || [])].reverse();
   const val          = Number(t.value)       || 0;
   const out          = Number(t.outstanding) || 0;
   const pct          = val > 0 ? Math.round(((val - out) / val) * 100) : 100;
@@ -82,7 +82,7 @@ const PaymentHistoryPanel = ({ transaction: t, onClose }) => {
     const isEmpty    = (entry.amount || 0) === 0 && !isEdit;
     const userNote   = getUserNote(entry);
     const label      = getEntryLabel(entry);
-    const isFirst    = originalIdx === 0;
+    const isFirst    = originalIdx === history.length - 1;
 
     let dotClass = "payment-timeline__dot";
     if (isLunas)      dotClass += " payment-timeline__dot--lunas";
@@ -197,6 +197,7 @@ const PaymentHistoryPanel = ({ transaction: t, onClose }) => {
       const lastEntries  = history.slice(-SHOW_LAST);
       return (
         <>
+          {hasPending && <PendingNode out={out} dueDate={t.dueDate} />}
           {firstEntries.map((entry, idx) =>
             renderNode(entry, idx, true)
           )}
@@ -218,20 +219,19 @@ const PaymentHistoryPanel = ({ transaction: t, onClose }) => {
           {lastEntries.map((entry, idx) => {
             const origIdx  = history.length - SHOW_LAST + idx;
             const isLast   = idx === lastEntries.length - 1;
-            return renderNode(entry, origIdx, !isLast || hasPending);
+            return renderNode(entry, origIdx, !isLast);
           })}
-          {hasPending && <PendingNode out={out} dueDate={t.dueDate} />}
         </>
       );
     }
 
     return (
       <>
+        {hasPending && <PendingNode out={out} dueDate={t.dueDate} />}
         {history.map((entry, idx) => {
           const isLast = idx === history.length - 1;
-          return renderNode(entry, idx, !isLast || hasPending);
+          return renderNode(entry, idx, !isLast);
         })}
-        {hasPending && <PendingNode out={out} dueDate={t.dueDate} />}
       </>
     );
   };

@@ -1725,7 +1725,7 @@ body {
 }
 .payment-timeline__node {
   position: relative;
-  padding-bottom: 16px;
+  padding-bottom: 24px;
   padding-left: 16px;
 }
 .payment-timeline__dot {
@@ -1794,7 +1794,6 @@ body {
   margin-top: 2px;
 }
 .payment-timeline__pending-node {
-  padding-left: 16px;
   padding-top: 4px;
 }
 .payment-timeline__pending-label {
