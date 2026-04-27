@@ -474,10 +474,15 @@ const Inventory = ({
       coveredKeys.add(baseKey);
       const baseStock = activeStockMap[baseKey];
 
-      // Base row: hidden only when archived.
+      // Base row: hidden when archived OR when it has zero stock and zero transactions
+      // (no warehouse presence). Reappears automatically once stock/transactions are recorded.
       // Each item — base and each subtype — is archived independently; archiving the base
-      // does NOT hide subtypes. Standalone items (no subtypes) are always shown.
-      if (!cat.archived) {
+      // does NOT hide subtypes.
+      const baseQty     = baseStock?.qty     ?? 0;
+      const baseTxCount = baseStock?.txCount || 0;
+      const isEmptyBase = baseQty === 0 && baseTxCount === 0;
+
+      if (!cat.archived && !isEmptyBase) {
         flatRows.push({
           key:         baseKey,
           displayName: cat.name,
@@ -596,6 +601,7 @@ const Inventory = ({
       setCatalogFormError(`Barang "${name}" sudah ada di katalog.`); return;
     }
     const subtypes = (catalogForm.subtypes || []).map((s) => s.trim()).filter(Boolean);
+    if (subtypes.length === 0) { setCatalogSubtypeError("Minimal satu tipe barang wajib ditambahkan."); return; }
     const seen = new Set();
     for (const s of subtypes) {
       if (seen.has(normItem(s))) { setCatalogSubtypeError("Tipe tidak boleh duplikat dalam satu barang."); return; }
@@ -604,7 +610,7 @@ const Inventory = ({
     setSubmitting(true);
     onAddCatalogItem({
       name,
-      defaultUnit: (catalogForm.defaultUnit || "karung").trim() || "karung",
+      defaultUnit: "karung",
       subtypes: subtypes.map(normalizeTitleCase),
     });
     setCatalogForm(null); setCatalogFormError(""); setCatalogSubtypeError("");
@@ -1005,19 +1011,13 @@ const Inventory = ({
                 />
                 {catalogFormError && <span className="field-error">{catalogFormError}</span>}
               </div>
-              <div style={{ marginBottom: 12 }}>
-                <label className="field-label">Satuan Default</label>
-                <input
-                  value={catalogForm.defaultUnit || ""}
-                  onChange={(e) => setCatalogForm((f) => ({ ...f, defaultUnit: e.target.value }))}
-                  placeholder="cth. karung"
-                  style={{ width: "100%", padding: "8px 11px", border: "1.5px solid #c7ddf7", borderRadius: 8, fontSize: 14, boxSizing: "border-box" }}
-                  aria-label="Satuan default"
-                />
-              </div>
               <div style={{ marginBottom: 8 }}>
                 <label className="field-label">
-                  Tipe Barang <span style={{ color: "#9ca3af", fontWeight: 400 }}>(opsional)</span>
+                  Tipe Barang{" "}
+                  {catalogForm.id
+                    ? <span style={{ color: "#9ca3af", fontWeight: 400 }}>(opsional)</span>
+                    : <span style={{ color: "#ef4444" }}>*</span>
+                  }
                 </label>
                 {(catalogForm.subtypes || []).length > 0 && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
@@ -1031,7 +1031,7 @@ const Inventory = ({
                             setCatalogForm((f) => ({ ...f, subtypes: updated }));
                             setCatalogSubtypeError("");
                           }}
-                          placeholder={`Tipe ${i + 1}`}
+                          placeholder={i === 0 && !catalogForm.id ? "cth. China, India, Local..." : `Tipe ${i + 1}`}
                           style={{ flex: 1, padding: "6px 10px", border: "1.5px solid #c7ddf7", borderRadius: 8, fontSize: 13, boxSizing: "border-box" }}
                           aria-label={`Tipe ${i + 1}`}
                         />
@@ -1053,6 +1053,11 @@ const Inventory = ({
                   ＋ Tambah Tipe
                 </button>
               </div>
+              {!catalogForm.id && (catalogForm.subtypes || []).filter(s => s.trim()).length === 0 && (
+                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+                  Minimal satu tipe barang wajib ditambahkan
+                </div>
+              )}
               {catalogSubtypeError && <span className="field-error">{catalogSubtypeError}</span>}
             </div>
             <div className="modal-actions">
@@ -1060,7 +1065,7 @@ const Inventory = ({
               <button
                 className="btn btn-primary"
                 onClick={catalogForm.id ? handleUpdateCatalogItem : handleAddCatalogItem}
-                disabled={submitting}
+                disabled={submitting || (!catalogForm.id && (catalogForm.subtypes || []).filter(s => s.trim()).length === 0)}
               >
                 {submitting ? "Menyimpan..." : catalogForm.id ? "Simpan" : "Tambah"}
               </button>
@@ -1322,7 +1327,7 @@ const Inventory = ({
         <div style={{ display: "flex", gap: 8 }}>
           {isToday && (
             <button
-              onClick={() => { setCatalogForm({ name: "", defaultUnit: "karung", subtypes: [] }); setCatalogFormError(""); setTimeout(() => catalogNameRef.current?.focus(), 50); }}
+              onClick={() => { setCatalogForm({ name: "", subtypes: [""] }); setCatalogFormError(""); setTimeout(() => catalogNameRef.current?.focus(), 50); }}
               className="btn btn-primary"
               aria-label="Tambah item baru ke katalog"
             >
@@ -1491,7 +1496,7 @@ const Inventory = ({
             <button
               className="btn btn-primary"
               style={{ marginTop: 12 }}
-              onClick={() => { setCatalogForm({ name: "", defaultUnit: "karung", subtypes: [] }); setCatalogFormError(""); setTimeout(() => catalogNameRef.current?.focus(), 50); }}
+              onClick={() => { setCatalogForm({ name: "", subtypes: [""] }); setCatalogFormError(""); setTimeout(() => catalogNameRef.current?.focus(), 50); }}
             >
               ＋ Tambah Barang Pertama
             </button>

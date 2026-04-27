@@ -51,7 +51,7 @@ src/
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
-    Inventory.js                  ~1680  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24)
+    Inventory.js                  ~1680  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype, opens with one pre-filled empty input, defaultUnit hardcoded to "karung" (T48/T49); base item rows hidden when zero stock AND zero transactions (T50)
     Contacts.js                    639  Contact list + detail panel + transaction history
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
     Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table)
