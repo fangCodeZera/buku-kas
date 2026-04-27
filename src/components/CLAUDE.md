@@ -51,6 +51,7 @@
   4. Unit auto-fills from `catalogItem.defaultUnit` when catalog match found.
 - **`mapItemFromCatalog(itemName)`**: Used in edit mode. Walks catalog for matching `name` or `name + " " + subtype`. Falls back to free text with empty `catalogItemId` — no `__legacy__` sentinel.
 - **New-item confirmation dialog** (`newItemConfirm` state): Fires before save when user typed unknown item or subtype. On confirm, calls `onAddCatalogItem()` or `onUpdateCatalogItem()`, then proceeds to save.
+- **`missingTypeItems` state** (`string[] | null`): Set in `handleSubmit` when any item row has a non-empty `itemNameInput` but empty `itemTypeInput`. Check runs after the expense txnId guard and BEFORE `validate()`. Shows a blocking modal listing all offending item names; single "Isi Tipe Barang" button dismisses. No inline field errors — modal is the only feedback. Form data is preserved on dismiss.
 - **`submitting` state**: `setSubmitting(true)` called as the very first line of `handleSubmit` (before validation) to block rapid double-clicks. Each early-return validation path calls `setSubmitting(false)`. `doSave` wrapped in `try/finally { setSubmitting(false) }`.
 - **`errors` object**: Per-field inline validation. Error border via `iStyle()` helper. Error text via `.field-error` class.
 - **Auto-focus on mount**: Counterparty input (`cpInputRef`) receives focus. `skipNextFocusOpen` ref prevents programmatic focus from opening counterparty dropdown.

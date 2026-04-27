@@ -164,6 +164,7 @@ const TransactionForm = ({
   const [newItemConfirm, setNewItemConfirm] = useState(null); // { items: [...], unit: string } | null
   // Duplicate item confirmation dialog state
   const [duplicateItemConfirm, setDuplicateItemConfirm] = useState(null); // { rowIndex, itemName } | null
+  const [missingTypeItems, setMissingTypeItems] = useState(null); // string[] of item names missing type | null
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -559,6 +560,16 @@ const TransactionForm = ({
     if (form.type === "expense" && (!txnIdInput || !txnIdInput.trim())) {
       setTxnIdError("No. Invoice Supplier wajib diisi");
       txnIdInputRef.current?.focus();
+      setSubmitting(false);
+      return;
+    }
+    // Check for items missing Tipe — block entirely
+    const itemsMissingType = form.items
+      .filter((it) => it.itemNameInput.trim() && !it.itemTypeInput.trim())
+      .map((it) => it.itemNameInput.trim());
+
+    if (itemsMissingType.length > 0) {
+      setMissingTypeItems(itemsMissingType);
       setSubmitting(false);
       return;
     }
@@ -1017,8 +1028,7 @@ const TransactionForm = ({
                   {item.itemNameInput.trim() && (
                     <div style={{ position: "relative" }}>
                       <label style={lStyle}>
-                        Tipe{" "}
-                        <span style={{ fontWeight: 400, textTransform: "none", fontSize: 10, color: "#9ca3af" }}>(opsional)</span>
+                        Tipe <span style={{ color: "#ef4444" }}>*</span>
                       </label>
                       <input
                         type="text"
@@ -1029,7 +1039,7 @@ const TransactionForm = ({
                           setTimeout(() => setShowTypeSugg(null), 200);
                           checkDuplicate(idx, item.itemNameInput, item.itemTypeInput, item.pricePerKg);
                         }}
-                        placeholder="Tipe (opsional)"
+                        placeholder="Ketik tipe barang..."
                         style={iStyle("")}
                         autoComplete="off"
                         aria-label={`Tipe barang item ${idx + 1}`}
@@ -1471,6 +1481,39 @@ const TransactionForm = ({
                 }}
               >
                 Ya, Lanjutkan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Missing Tipe blocking dialog ── */}
+      {missingTypeItems && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-box" style={{ maxWidth: 480 }}>
+            <h3 className="modal-title">⚠ Tipe Barang Wajib Diisi</h3>
+            <div className="modal-body">
+              <p style={{ marginBottom: 8 }}>
+                Semua barang harus memiliki tipe. Barang berikut belum memiliki tipe:
+              </p>
+              <ul style={{ margin: "0 0 12px 0", paddingLeft: 20 }}>
+                {missingTypeItems.map((name, i) => (
+                  <li key={i} style={{ marginBottom: 4 }}>
+                    <strong>"{normalizeTitleCase(name)}"</strong>
+                  </li>
+                ))}
+              </ul>
+              <p style={{ fontSize: 13, color: "#6b7280" }}>
+                Isi kolom Tipe untuk setiap barang sebelum menyimpan transaksi.
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setMissingTypeItems(null)}
+              >
+                Isi Tipe Barang
               </button>
             </div>
           </div>

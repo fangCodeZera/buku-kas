@@ -136,6 +136,7 @@ const Inventory = ({
   //                       | { type: "subtype", subtypeName, parentCatalogItem, displayName }
   const [deleteConfirm,      setDeleteConfirm]      = useState(null);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+  const [missingSubtypeModal, setMissingSubtypeModal] = useState(false);
 
   // Stock ledger state
   const [expandedStockItem, setExpandedStockItem] = useState(null);
@@ -173,6 +174,7 @@ const Inventory = ({
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
+      if (missingSubtypeModal) { setMissingSubtypeModal(false); return; }
       if (catalogForm)       { setCatalogForm(null); setCatalogFormError(""); setCatalogSubtypeError(""); return; }
       if (deleteConfirm)     { setDeleteConfirm(null); setDeleteConfirmInput(''); return; }
       if (adjTarget)         { setAdjTarget(null); return; }
@@ -185,8 +187,8 @@ const Inventory = ({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [catalogForm, deleteConfirm, adjTarget, renameTarget, deleteTarget, adjDeleteConfirm,
-      addSubtypeTarget, editingCodeId, expandedStockItem]);
+  }, [missingSubtypeModal, catalogForm, deleteConfirm, adjTarget, renameTarget, deleteTarget,
+      adjDeleteConfirm, addSubtypeTarget, editingCodeId, expandedStockItem]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -595,13 +597,16 @@ const Inventory = ({
 
   const handleAddCatalogItem = () => {
     if (submitting) return;
+    const subtypes = (catalogForm.subtypes || []).map((s) => s.trim()).filter(Boolean);
+    if (subtypes.length === 0) {
+      setMissingSubtypeModal(true);
+      return;
+    }
     const name = (catalogForm.name || "").trim();
     if (!name) { setCatalogFormError("Nama barang wajib diisi."); return; }
     if (itemCatalog.some((c) => normItem(c.name) === normItem(name))) {
       setCatalogFormError(`Barang "${name}" sudah ada di katalog.`); return;
     }
-    const subtypes = (catalogForm.subtypes || []).map((s) => s.trim()).filter(Boolean);
-    if (subtypes.length === 0) { setCatalogSubtypeError("Minimal satu tipe barang wajib ditambahkan."); return; }
     const seen = new Set();
     for (const s of subtypes) {
       if (seen.has(normItem(s))) { setCatalogSubtypeError("Tipe tidak boleh duplikat dalam satu barang."); return; }
@@ -1053,11 +1058,6 @@ const Inventory = ({
                   ＋ Tambah Tipe
                 </button>
               </div>
-              {!catalogForm.id && (catalogForm.subtypes || []).filter(s => s.trim()).length === 0 && (
-                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
-                  Minimal satu tipe barang wajib ditambahkan
-                </div>
-              )}
               {catalogSubtypeError && <span className="field-error">{catalogSubtypeError}</span>}
             </div>
             <div className="modal-actions">
@@ -1065,9 +1065,33 @@ const Inventory = ({
               <button
                 className="btn btn-primary"
                 onClick={catalogForm.id ? handleUpdateCatalogItem : handleAddCatalogItem}
-                disabled={submitting || (!catalogForm.id && (catalogForm.subtypes || []).filter(s => s.trim()).length === 0)}
+                disabled={submitting}
               >
                 {submitting ? "Menyimpan..." : catalogForm.id ? "Simpan" : "Tambah"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Missing subtype blocking modal ── */}
+      {missingSubtypeModal && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-box" style={{ maxWidth: 420 }}>
+            <h3 className="modal-title">⚠ Tipe Barang Wajib Diisi</h3>
+            <div className="modal-body">
+              <p>Setiap barang harus memiliki minimal satu tipe.</p>
+              <p style={{ fontSize: 13, color: "#6b7280", marginTop: 8 }}>
+                Contoh: Bawang Putih → Tipe: China, India, Local
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setMissingSubtypeModal(false)}
+              >
+                Isi Tipe Barang
               </button>
             </div>
           </div>

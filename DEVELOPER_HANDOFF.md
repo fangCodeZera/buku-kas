@@ -51,7 +51,7 @@ src/
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
-    Inventory.js                  ~1680  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype, opens with one pre-filled empty input, defaultUnit hardcoded to "karung" (T48/T49); base item rows hidden when zero stock AND zero transactions (T50)
+    Inventory.js                  ~1700  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "karung" (T48/T49); base item rows hidden when zero stock AND zero transactions (T50)
     Contacts.js                    639  Contact list + detail panel + transaction history
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
     Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table)
@@ -63,7 +63,7 @@ src/
 
   components/
     TransactionPage.js             652  Shared base: Penjualan + Pembelian day-view
-    TransactionForm.js            1430  Full transaction input form (multi-item, catalog autocomplete)
+    TransactionForm.js            1496  Full transaction input form (multi-item, catalog autocomplete); Tipe field required — missing-type blocking modal (T52)
     PaymentHistoryPanel.js         334  Expandable payment timeline — newest-first order (T29); PendingNode at top
     PaymentUpdateModal.js          183  Record payment modal
     DeleteConfirmModal.js          125  Dual-mode (transaction/contact) delete confirm — requires typing "hapus" to enable confirm button
@@ -73,7 +73,7 @@ src/
     ToggleSwitch.js                 65  Reusable toggle switch — track+thumb, #007bff/#cbd5e1, keyboard accessible (role=switch, Space/Enter)
     ReportModal.js                 590  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR. Defaults (T25): showCompanyName=false, showSummary=false, printTable1=true, printTable2=false. grandTotalPaid = table1Total + table2Total (T26 — each 0 when its toggle is off)
     StockWarningModal.js            77  Negative-stock warning
-    StockReportModal.js            ~370  Printable stock report — derives groupings from itemCatalog prop (active entries = groups, active subtypes = members, uncatalogued → "Lainnya"). Toggles: showZeroStock (includes catalog items with no history as qty 0), showCompanyName
+    StockReportModal.js            ~430  Printable stock report — derives groupings from itemCatalog prop (active entries = groups, active subtypes = members, uncatalogued → "Lainnya", archived → "Barang Diarsipkan"). Toggles: showZeroStock, showCompanyName (default OFF — T53), showArchivedItems (default OFF). Base rows hidden when baseQty===0 && baseTxCount===0 even with showZeroStock ON (T53 — mirrors Inventory T50)
     Badge.js                       113  StatusBadge, TypeBadge (named exports)
     DueBadge.js                     32  Due date status badge
     ErrorBoundary.js               118  React class error boundary — catches unhandled render errors, auto-retries up to 3× (3s delay each); shows "Coba Lagi" + "Muat Ulang" buttons

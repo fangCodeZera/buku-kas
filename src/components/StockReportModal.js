@@ -32,7 +32,8 @@ const StockReportModal = ({
 }) => {
   const [reportDate, setReportDate] = useState(today());
   const [showZeroStock, setShowZeroStock] = useState(false);
-  const [showCompanyName, setShowCompanyName] = useState(true);
+  const [showCompanyName, setShowCompanyName] = useState(false);
+  const [showArchivedItems, setShowArchivedItems] = useState(false);
   const docRef = useRef(null);
 
   useEffect(() => {
@@ -66,21 +67,27 @@ const StockReportModal = ({
       const baseEntry = effectiveStockMap[baseKey];
       categorized.add(baseKey);
       if (!cat.archived) {
-        if (baseEntry) {
-          if (showZeroStock || baseEntry.qty !== 0) {
+        const baseTxCount = baseEntry?.txCount || 0;
+        const baseQty     = baseEntry?.qty     ?? 0;
+        const isEmptyBase = baseQty === 0 && baseTxCount === 0;
+
+        if (!isEmptyBase) {
+          if (baseEntry) {
+            if (showZeroStock || baseEntry.qty !== 0) {
+              items.push({
+                displayName: baseEntry.displayName || normalizeTitleCase(cat.name),
+                qty: baseEntry.qty,
+                unit: baseEntry.unit || "karung",
+              });
+            }
+          } else if (showZeroStock) {
+            // Item exists in catalog but has no stock history at all — show as 0
             items.push({
-              displayName: baseEntry.displayName || normalizeTitleCase(cat.name),
-              qty: baseEntry.qty,
-              unit: baseEntry.unit || "karung",
+              displayName: normalizeTitleCase(cat.name),
+              qty: 0,
+              unit: "karung",
             });
           }
-        } else if (showZeroStock) {
-          // Item exists in catalog but has no stock history at all — show as 0
-          items.push({
-            displayName: normalizeTitleCase(cat.name),
-            qty: 0,
-            unit: "karung",
-          });
         }
       }
 
@@ -116,29 +123,54 @@ const StockReportModal = ({
       }
     }
 
-    // Catch uncatalogued items (in stockMap but not in any catalog entry)
+    // Build set of all archived item keys (base + archived subtypes)
+    const archivedKeys = new Set();
+    for (const cat of (itemCatalog || [])) {
+      if (cat.archived) archivedKeys.add(normItem(cat.name));
+      for (const sub of (cat.archivedSubtypes || [])) {
+        archivedKeys.add(normItem(`${cat.name} ${sub}`));
+      }
+    }
+
+    // Catch items in stockMap not covered by active catalog entries.
+    // Split into truly uncatalogued vs archived (controlled by showArchivedItems toggle).
     const uncatItems = [];
+    const archivedItems = [];
     for (const [normName, entry] of Object.entries(effectiveStockMap)) {
       if (categorized.has(normName)) continue;
       if (!showZeroStock && entry.qty === 0) continue;
-      uncatItems.push({
-        displayName: entry.displayName || normName,
-        qty: entry.qty,
-        unit: entry.unit || "karung",
-      });
+      if (archivedKeys.has(normName)) {
+        archivedItems.push({
+          displayName: entry.displayName || normName,
+          qty: entry.qty,
+          unit: entry.unit || "karung",
+        });
+      } else {
+        uncatItems.push({
+          displayName: entry.displayName || normName,
+          qty: entry.qty,
+          unit: entry.unit || "karung",
+        });
+      }
     }
     if (uncatItems.length > 0) {
       uncatItems.sort((a, b) => a.displayName.localeCompare(b.displayName, "id"));
       groups.push({ groupName: "Lainnya", items: uncatItems });
     }
+    if (showArchivedItems && archivedItems.length > 0) {
+      archivedItems.sort((a, b) => a.displayName.localeCompare(b.displayName, "id"));
+      groups.push({ groupName: "Barang Diarsipkan", items: archivedItems });
+    }
 
     groups.sort((a, b) => {
+      if (a.groupName === "Barang Diarsipkan") return 1;
+      if (b.groupName === "Barang Diarsipkan") return -1;
       if (a.groupName === "Lainnya") return 1;
       if (b.groupName === "Lainnya") return -1;
       return a.groupName.localeCompare(b.groupName, "id");
     });
     return groups;
-  }, [effectiveStockMap, itemCatalog, showZeroStock]);
+  }, [effectiveStockMap, itemCatalog, showZeroStock, showArchivedItems]);
 
   // ── Guard: no stockMap → render nothing ────────────────────────────────────
   if (!stockMap) return null;
@@ -289,6 +321,11 @@ const StockReportModal = ({
             checked={showCompanyName}
             onChange={setShowCompanyName}
             label="Nama perusahaan"
+          />
+          <ToggleSwitch
+            checked={showArchivedItems}
+            onChange={setShowArchivedItems}
+            label="Tampilkan arsip"
           />
         </div>
 
