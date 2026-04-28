@@ -186,11 +186,11 @@ const formatInvoiceMeta = (transactions, contacts = [], note = "") => {
  */
 const formatItemsTable = (transactions) => {
   const COL_NO     = 6;
-  const COL_BARANG = 32;
+  const COL_BARANG = 28;
   const COL_BERAT  = 14;
-  const COL_HARGA  = 14;
-  const COL_TOTAL  = 14;
-  // 6 + 32 + 14 + 14 + 14 = 80
+  const COL_HARGA  = 16;
+  const COL_TOTAL  = 16;
+  // 6 + 28 + 14 + 16 + 16 = 80
 
   const mkRow = (no, barang, berat, harga, total) =>
     padRight(no,    COL_NO)    +
@@ -255,7 +255,6 @@ const formatInvoiceFooter = (transactions, settings) => {
 
   lines.push(
     padRight("TANDA TERIMA,", 40) + padLeft("HORMAT KAMI,", 40),
-    "",
     "",
     "",
     sigLine,

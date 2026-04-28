@@ -855,6 +855,21 @@ Used when `settings.printerType === "Dot Matrix"`. Optimized for Epson LX-300+II
 
 **Scope:** Invoice (Penjualan + Pembelian) and Surat Jalan only. Reports and stock reports always use A4.
 
+### Dot Matrix Printer & Paper Specs
+
+| Property | Value |
+|---|---|
+| Printer model | Epson LX-300 II |
+| Paper | Continuous Form 9½ × 11 inch, 3-ply NCR |
+| Character width | 80 chars per line (confirmed by physical print — `=` separator fills exactly) |
+| Font | Courier New 12pt, line-height 1.2 |
+| `LINE_WIDTH` constant | `80` in `textFormatter.js` |
+
+**Column widths — invoice items table (T56):**
+`COL_NO=6, COL_BARANG=28, COL_BERAT=14, COL_HARGA=16, COL_TOTAL=16` (sum = 80). Harga and Total widened from 14 to 16 to prevent large Rp values merging with adjacent columns.
+
+**Surat Jalan title width fix (T56):** The bold 20px "SURAT JALAN" title `<div>` is constrained with `display:inline-block; width:fit-content` wrapper so its border matches the `<pre>` body width exactly, eliminating the right-side gap on screen preview and print output.
+
 ---
 
 ## 10. CSS Structure
@@ -907,6 +922,32 @@ Always search `styles.css` before adding a new class.
 ## 12. Known Issues & Fixed Bugs
 
 See Section 9 of `CLAUDE.md` for full bug fix history.
+
+### T57 — Dot matrix follow-up: restore preview width, restore bank account spacing (2026-04-29)
+
+**Fix 1 — Surat Jalan screen preview too narrow (`DotMatrixPrintModal.js`):** The T56 `display:inline-block;width:fit-content` wrapper on the screen preview caused the modal preview to shrink to `<pre>` content width, leaving a large right gap in the modal. Fix: removed the wrapper from the screen preview JSX — reverted to `<>` fragment (title `<div>` and `<pre>` as siblings). The print portal surat jalan path retains the `display:inline-block;width:fit-content` wrapper (needed for print alignment — unrelated to screen layout).
+
+**Fix 2 — Bank account spacing (`textFormatter.js`):** T56 removed all blank lines between bank account entries, which caused multiple bank accounts to appear visually merged. Fix: restored `if (idx > 0) lines.push("")` between groups (one blank line before each account entry after the first). No blank lines added between individual fields (`NAME BANK` / `ACCOUNT NUMBER` / `ACCOUNT NAME`) within the same group.
+
+**Files:** `src/components/DotMatrixPrintModal.js`, `src/utils/textFormatter.js`.
+
+---
+
+### T56 — Dot matrix print fixes: column widths, footer overflow, surat jalan gap (2026-04-29)
+
+Four fixes based on physical Epson LX-300 II print test.
+
+**Fix 1 — Invoice items table column widths (`textFormatter.js`):** COL_BARANG reduced from 32 → 28; COL_HARGA and COL_TOTAL each increased from 14 → 16. Sum still 80. Large `Rp` values no longer overflow into adjacent columns.
+
+**Fix 2 — Invoice footer blank lines (`textFormatter.js`):** Removed blank line separator between bank account entries (removed `if (idx > 0) lines.push("")` and unused `idx` param). Reduced signature block leading blank lines from 3 → 2. Prevents footer from overflowing to a second page on normal-length invoices.
+
+**Fix 3 — Surat Jalan title width gap (screen) (`DotMatrixPrintModal.js`):** Wrapped the title `<div>` + `<pre>` in `<div style={{ display: "inline-block", width: "fit-content" }}>`. The bold 20px title was stretching to full modal width while the `<pre>` content is narrower, creating a visible right-side gap. `fit-content` constrains the wrapper to the `<pre>` width.
+
+**Fix 4 — Surat Jalan title width gap (print) (`DotMatrixPrintModal.js`):** Same outer `display:inline-block;width:fit-content` wrapper applied to the print portal HTML string for the surat jalan path. Invoice mode in both screen and print paths completely untouched.
+
+**Files:** `src/utils/textFormatter.js`, `src/components/DotMatrixPrintModal.js`.
+
+---
 
 ### T16 — Remove Kelola Kategori / itemCategories (2026-04-25)
 

@@ -48,8 +48,10 @@ const DotMatrixPrintModal = ({ transaction, mode, settings, contacts = [], onClo
         .replace(/>/g, "&gt;");
 
       printHtml =
+        `<div style="display:inline-block;width:fit-content;">` +
         `<div style="text-align:center;font-family:'Courier New',Courier,monospace;font-size:20pt;font-weight:bold;letter-spacing:4px;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:0;">${titleText}</div>` +
-        `<pre style="font-family:'Courier New',Courier,monospace;font-size:12pt;line-height:1.2;margin-top:8px;margin-bottom:0;margin-left:0;margin-right:0;padding:0;white-space:pre;border:none;background:none;">${escapedBody}</pre>`;
+        `<pre style="font-family:'Courier New',Courier,monospace;font-size:12pt;line-height:1.2;margin-top:8px;margin-bottom:0;margin-left:0;margin-right:0;padding:0;white-space:pre;border:none;background:none;">${escapedBody}</pre>` +
+        `</div>`;
     } else {
       const escaped = formattedText
         .replace(/&/g, "&amp;")
