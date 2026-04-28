@@ -75,9 +75,10 @@ const Inventory = ({
   onNavigateToArchive   = () => {},
 }) => {
   // Search / sort state
-  const [search,  setSearch]  = useState("");
-  const [sortBy,  setSortBy]  = useState("name");
-  const [sortDir, setSortDir] = useState("asc");
+  const [search,         setSearch]         = useState("");
+  const [sortBy,         setSortBy]         = useState("name");
+  const [sortDir,        setSortDir]        = useState("asc");
+  const [showEmptyItems, setShowEmptyItems] = useState(false);
 
   // Date navigation
   const [inventoryDate, setInventoryDate] = useState(today);
@@ -505,7 +506,12 @@ const Inventory = ({
         const key      = normItem(fullName);
         coveredKeys.add(key);
         if (archivedSubs.has(normItem(sub))) continue;  // skip archived subtypes
-        const stock = activeStockMap[key];
+        const stock       = activeStockMap[key];
+        const subQty      = stock?.qty     ?? 0;
+        const subTxCount  = stock?.txCount || 0;
+        const subAdjCount = adjCountMap[key] || 0;
+        const isEmptySub  = subQty === 0 && subTxCount === 0 && subAdjCount === 0;
+        if (isEmptySub && !showEmptyItems) continue;
         flatRows.push({
           key,
           displayName:       fullName,
@@ -591,7 +597,7 @@ const Inventory = ({
     }
 
     return sortedGroups;
-  }, [itemCatalog, activeStockMap, search, sortBy, sortDir]);
+  }, [itemCatalog, activeStockMap, search, sortBy, sortDir, showEmptyItems, adjCountMap]);
 
   // ── Catalog helpers ───────────────────────────────────────────────────────────
 
@@ -1509,6 +1515,15 @@ const Inventory = ({
           <option value="qty:desc">Stok Terbanyak</option>
           <option value="qty:asc">Stok Tersedikit</option>
         </select>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6b7280", cursor: "pointer", userSelect: "none" }}>
+          <input
+            type="checkbox"
+            checked={showEmptyItems}
+            onChange={(e) => setShowEmptyItems(e.target.checked)}
+            style={{ cursor: "pointer" }}
+          />
+          Tampilkan item tanpa transaksi
+        </label>
       </div>
 
       {/* ── Inventory Table ── */}
