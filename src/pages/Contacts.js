@@ -120,10 +120,11 @@ const Contacts = ({
     if (submitting) return;
     setSubmitting(true);
     const normForm = { ...form, name: normalizeTitleCase(form.name) };
-    if (editMode && sel) {
-      if (normForm.name.toLowerCase() !== sel.name.toLowerCase()) {
+    const editingContact = editMode ? contacts.find((c) => c.id === selected) : null;
+    if (editMode && editingContact) {
+      if (normForm.name.toLowerCase() !== editingContact.name.toLowerCase()) {
         const duplicate = contacts.find(
-          (c) => c.id !== sel.id && c.name.toLowerCase() === normForm.name.toLowerCase()
+          (c) => c.id !== editingContact.id && c.name.toLowerCase() === normForm.name.toLowerCase()
         );
         if (duplicate) {
           setNameError("Kontak dengan nama ini sudah ada");
@@ -133,8 +134,8 @@ const Contacts = ({
       }
     }
     try {
-      if (editMode && sel) {
-        onUpdateContact({ ...sel, ...normForm });
+      if (editMode && editingContact) {
+        onUpdateContact({ ...editingContact, ...normForm });
         setToast("Kontak berhasil diperbarui");
       } else {
         const duplicate = contacts.find(
@@ -518,7 +519,7 @@ const Contacts = ({
                           if (!prog) return null;
                           const { percent: pct } = prog;
                           if (pct >= 100) return <div style={{ fontSize: 10, color: "#10b981", marginTop: 2 }}>✓ 100%</div>;
-                          if (pct <= 0) return <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 2 }}>0%</div>;
+                          if (pct <= 0) return null;
                           return (
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 2 }}>
                               <div style={{ width: 60, height: 5, background: "#e5e7eb", borderRadius: 99, overflow: "hidden", flexShrink: 0 }}>
@@ -573,7 +574,7 @@ const Contacts = ({
                     </tr>
                     {expandedTxId === t.id && (
                       <tr className="payment-history-row">
-                        <td colSpan={8} className="payment-history-cell">
+                        <td colSpan={9} className="payment-history-cell">
                           <PaymentHistoryPanel transaction={t} onClose={() => setExpandedTxId(null)} />
                         </td>
                       </tr>
@@ -628,6 +629,7 @@ const Contacts = ({
                   onClick={() => {
                     onArchiveContact(contactAction.contact.id);
                     setSelected(null);
+                    setEditMode(false);
                     setContactAction(null);
                     setToast(`${contactAction.contact.name} berhasil diarsipkan`);
                   }}
@@ -640,6 +642,7 @@ const Contacts = ({
                   onClick={() => {
                     onDeleteContact(contactAction.contact.id);
                     setSelected(null);
+                    setEditMode(false);
                     setContactAction(null);
                     setToast(`${contactAction.contact.name} berhasil dihapus`);
                   }}

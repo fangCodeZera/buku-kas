@@ -52,7 +52,7 @@ src/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
     Inventory.js                  ~1884  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "karung" (T48/T49); base item rows hidden when zero stock AND zero transactions (T50); subtype rows with 0 stock + 0 txCount + 0 adjCount hidden by default (T55) — "Tampilkan item tanpa transaksi" checkbox reveals them; handleAddSubtype checks both subtypes+archivedSubtypes for duplicates (T60); rename guard checks all catalog entries not just stockMap (T60); hasTx checks include archivedSubtypes (T60); uncatalogued item delete requires typing "hapus" (T60)
-    Contacts.js                    639  Contact list + detail panel + transaction history
+    Contacts.js                    672  Contact list + detail panel + transaction history; handleSave uses editingContact (from contacts array) not sel (from filtered withBalance) — prevents silent add-instead-of-edit when search is active (T61); archive/delete confirm handlers call setEditMode(false) (T61); progress bar at 0% returns null not "0%" text (T61); payment history colSpan corrected 8→9 (T62)
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
     Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table)
     Outstanding.js                 557  AR/AP outstanding transactions view
@@ -1281,6 +1281,18 @@ If environment variables change, redeploy is required for changes to take effect
 ---
 
 ## 15. What Was Done
+
+### T62 (2026-04-30): Contacts.js colSpan fix
+
+Payment history expansion row `colSpan` corrected from `8` to `9` in `src/pages/Contacts.js`. The table has 9 columns (Tanggal, No. Invoice, Jenis, Item, Stok, Status, Jatuh Tempo, Nilai, Aksi); the old value left an empty gap at the right edge of the panel. No other files touched.
+
+### T61 (2026-04-30): Three Contacts.js bug fixes
+
+Three bugs fixed in `src/pages/Contacts.js`. No other files touched.
+
+- **C2 — handleSave edit routing via filtered `sel`:** `handleSave` previously used `sel` (derived from `withBalance`, which is filtered by `search` and `alphaFilter`) to decide whether to call `onUpdateContact` or `onAddContact`. If the user typed in the search box while the edit form was open, the selected contact was filtered out of `withBalance`, making `sel` null, and save silently created a new contact instead of editing the existing one. Fix: introduced `editingContact = editMode ? contacts.find(c => c.id === selected) : null` — looks up by ID from the unfiltered `contacts` array, immune to search/alpha filtering.
+- **C3 — Archive/delete confirm missing `setEditMode(false)`:** Both the archive and delete confirm `onClick` handlers called `setSelected(null)` but not `setEditMode(false)`. If the user was in edit mode when the dialog fired, the form remained visible after the contact was removed. A subsequent Simpan click would take the add path (since `editingContact` would resolve to null for an archived/deleted contact) and create an unintended new contact. Fix: added `setEditMode(false)` to both handlers.
+- **C5 — Progress bar 0% renders text instead of null:** The payment progress bar IIFE had `if (pct <= 0) return <div>0%</div>` — a text label instead of hiding. Changed to `return null` to match the TransactionPage/Outstanding fix from 2026-04-17.
 
 ### T60 (2026-04-29): Four Inventory.js bug fixes
 
