@@ -1213,7 +1213,7 @@ Key patterns to never reintroduce:
 - **Site URL:** https://buku-kas.pages.dev
 - **Realtime:** Enabled on transactions, contacts, stock_adjustments, item_catalog
 
-### Supabase Tables (9 total)
+### Supabase Tables (8 total)
 | Table | Purpose | RLS |
 |-------|---------|-----|
 | `profiles` | User display name, role (owner/staff), is_active | ✅ |
@@ -1221,7 +1221,6 @@ Key patterns to never reintroduce:
 | `contacts` | Contact list with archived flag | ✅ |
 | `item_catalog` | Catalog items with subtypes + archive state | ✅ |
 | `stock_adjustments` | Manual stock correction entries | ✅ |
-| `item_categories` | Category groupings with codes and item lists | ✅ |
 | `app_settings` | Per-user settings row (one row per user_id) | ✅ |
 | `activity_log` | Audit trail — action, entity, user, timestamp, changes | ✅ |
 | `txn_counters` | Atomic invoice serial counter per YY-MM prefix | No RLS (function-level) |
@@ -1238,8 +1237,10 @@ RETURNING last_serial;
 ```
 Called by `getNextTxnSerial(dateStr)` in `supabaseStorage.js`. Returns `"YY-MM-NNNNN"` string. Falls back to local `generateTxnId()` on RPC error.
 
+**`activity_log` indexes:** `id` (PK unique), `created_at DESC` (`idx_activity_log_created`), `user_id` (`idx_activity_log_user`), `action` (`idx_activity_log_action`), `entity_type` (`idx_activity_log_entity_type`). The last two were added 2026-04-29 to support filter queries in `loadActivityLog`.
+
 ### Security in Production
-- RLS enabled on all 9 tables (role-aware policies; txn_counters is function-level access only)
+- RLS enabled on all 8 tables (role-aware policies; txn_counters is function-level access only)
 - Session idle timeout: 15 minutes (auto sign-out via setTimeout + visibilitychange timestamp check — survives device sleep/shutdown)
 - HTTP security headers via public/_headers (CSP, X-Frame-Options, etc.) — served by Cloudflare Pages
 - Supabase anon key is public by design — RLS enforces all access control

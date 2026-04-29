@@ -119,16 +119,6 @@ export const mapCatalogItem = (row) => ({
   updated_by:       row.updated_by,
 });
 
-const mapCategory = (row) => ({
-  id:        row.id,
-  groupName: row.group_name,
-  code:      row.code,
-  items:     row.items || [],
-  version:   row.version,
-  created_by: row.created_by,
-  updated_by: row.updated_by,
-});
-
 const mapSettings = (row) => ({
   businessName:             row.business_name,
   address:                  row.address,
@@ -145,17 +135,16 @@ const mapSettings = (row) => ({
 // ── loadDataFromSupabase ───────────────────────────────────────────────────────
 
 /**
- * Fetches all 6 data collections from Supabase in parallel.
+ * Fetches all 5 data collections from Supabase in parallel.
  * Returns the same shape as loadData() in storage.js.
  * @param {string} userId - current user's UUID (unused for queries, RLS handles auth)
  * @returns {Promise<Object>} full data object matching defaultData shape
  */
 export async function loadDataFromSupabase(userId) {
-  const [txRes, contactRes, adjRes, catRes, catalogRes, settingsRes] = await Promise.all([
+  const [txRes, contactRes, adjRes, catalogRes, settingsRes] = await Promise.all([
     supabase.from('transactions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('contacts').select('*').order('name', { ascending: true }),
     supabase.from('stock_adjustments').select('*').order('date', { ascending: false }),
-    supabase.from('item_categories').select('*').order('group_name', { ascending: true }),
     supabase.from('item_catalog').select('*').order('name', { ascending: true }),
     supabase.from('app_settings').select('*').eq('id', 'singleton').maybeSingle(),
   ]);
@@ -163,7 +152,6 @@ export async function loadDataFromSupabase(userId) {
   if (txRes.error)       throw new Error(`Gagal memuat transaksi: ${txRes.error.message}`);
   if (contactRes.error)  throw new Error(`Gagal memuat kontak: ${contactRes.error.message}`);
   if (adjRes.error)      throw new Error(`Gagal memuat penyesuaian stok: ${adjRes.error.message}`);
-  if (catRes.error)      throw new Error(`Gagal memuat kategori: ${catRes.error.message}`);
   if (catalogRes.error)  throw new Error(`Gagal memuat katalog barang: ${catalogRes.error.message}`);
   if (settingsRes.error) throw new Error(`Gagal memuat pengaturan: ${settingsRes.error.message}`);
 
@@ -171,7 +159,7 @@ export async function loadDataFromSupabase(userId) {
     transactions:     (txRes.data      || []).map(mapTransaction),
     contacts:         (contactRes.data  || []).map(mapContact),
     stockAdjustments: (adjRes.data      || []).map(mapStockAdjustment),
-    itemCategories:   (catRes.data      || []).map(mapCategory),
+    itemCategories:   [],
     itemCatalog:      (catalogRes.data  || []).map(mapCatalogItem),
     settings:         settingsRes.data ? mapSettings(settingsRes.data) : { ...defaultData.settings },
     _normVersion:     18,
@@ -291,57 +279,6 @@ export async function saveStockAdjustment(adj, userId) {
 export async function deleteStockAdjustment(id) {
   const { error } = await withTimeout(supabase.from('stock_adjustments').delete().eq('id', id));
   if (error) throw new Error(`Gagal menghapus penyesuaian stok: ${error.message}`);
-}
-
-// Promise queue — serializes all saveItemCategories calls so concurrent invocations
-// (e.g. two onAddCatalogItem calls from a multi-item transaction) never race on
-// the delete-then-insert sequence, which would cause duplicate key violations.
-let _categoriesSaveQueue = Promise.resolve();
-
-/**
- * Replace the entire item_categories table with the given array.
- * Deletes all existing rows then inserts all new rows.
- * Concurrent calls are automatically serialized via a promise queue.
- * @param {Array} categories - full camelCase categories array
- * @param {string} userId
- */
-export function saveItemCategories(categories, userId) {
-  _categoriesSaveQueue = _categoriesSaveQueue
-    .then(async () => {
-      const { error: deleteError } = await withTimeout(supabase
-        .from('item_categories')
-        .delete()
-        .gte('created_at', '1970-01-01'));
-      if (deleteError) {
-        throw new Error('Gagal menghapus kategori lama: ' + deleteError.message);
-      }
-
-      if (!categories || categories.length === 0) return;
-
-      const mapped = categories.map((cat) => ({
-        id:         cat.id,
-        group_name: cat.groupName,
-        code:       cat.code  || '',
-        items:      cat.items || [],
-        version:    (cat.version || 0) + 1,
-        created_by: userId,
-        updated_by: userId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }));
-
-      const { error: insertError } = await withTimeout(supabase.from('item_categories').insert(mapped));
-      if (insertError) {
-        throw new Error('Gagal menyimpan kategori: ' + insertError.message);
-      }
-    })
-    .catch((err) => {
-      // Reset queue to a resolved promise so future calls work normally after an error.
-      // Re-throw so persistToSupabase still catches it and shows SaveErrorModal.
-      _categoriesSaveQueue = Promise.resolve();
-      throw err;
-    });
-  return _categoriesSaveQueue;
 }
 
 /**
