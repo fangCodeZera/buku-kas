@@ -56,7 +56,7 @@ src/
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
     Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table); chip dismiss + Reset Filter both sync inventoryFilterItem↔selectedItems (T63); orphanPayments + paymentCount both respect typeFilter (T63)
     Outstanding.js                 557  AR/AP outstanding transactions view
-    Settings.js                    591  Business settings + JSON/CSV backup/restore + printer type toggle
+    Settings.js                    617  Business settings + JSON/CSV backup/restore + printer type toggle; handleSave flushes unblurred numeric fields into finalForm (T64); import syncs form/dueDaysStr/lowStockStr/maxBankStr from parsed.settings on success (T64); NORM_VERSION from storage.js (T64)
     ArchivedItems.js               286  Archived catalog items — restore or delete
     ArchivedContacts.js            222  Archived contacts — restore or delete
     ActivityLog.js                 312  Audit trail viewer — Pemilik-only, reads activity_log table
@@ -1281,6 +1281,15 @@ If environment variables change, redeploy is required for changes to take effect
 ---
 
 ## 15. What Was Done
+
+### T64 (2026-04-30): Four Settings.js bug fixes
+
+Four bugs fixed across `src/pages/Settings.js` and `src/styles.css`.
+
+- **S1 — `handleSave` sends stale numeric values when user hasn't blurred:** Three numeric fields (`defaultDueDateDays`, `lowStockThreshold`, `maxBankAccountsOnInvoice`) use separate string state (`dueDaysStr`, `lowStockStr`, `maxBankStr`) that only writes back to `form` on `onBlur`. `handleSave` called `onSave(form)` directly — if the user typed a new value and clicked Simpan without first blurring the field (e.g. Tab), the field's previous blurred value was saved, silently discarding the typed change. Fix: parse all three string states inline inside `handleSave` using the same validation rules as their `onBlur` handlers, build `finalForm`, call `onSave(finalForm)` instead of `onSave(form)`.
+- **S2 — form not re-synchronized after successful import:** `form` is initialized once from `settings` on mount and never re-synced. After a successful import, App.js replaces `settings` (via `onImport` → `setData` → `data.settings` prop changes), but `form` stayed stale. A subsequent Simpan click would overwrite imported settings with the pre-import values. Fix: in both full-success branches (`result.failed === 0` and localStorage `else`), after `setImportMsg(...)`, sync `form`, `dueDaysStr`, `lowStockStr`, `maxBankStr` from `parsed.settings`. Partial-failure branch intentionally excluded (data may be incomplete).
+- **S3 — import message uses error style for pending and partial-success:** The `importMsg` className ternary only distinguished `✅` (success) from everything else (error). "Mengimpor data..." (pending) and "⚠️ Impor sebagian berhasil" (warning) both received the red `import-msg--error` class. Fix: four-branch ternary — `✅` → `--success`, `⚠️` → `--warning`, `❌` → `--error`, otherwise → `--pending`. Added two CSS rules: `.import-msg--warning` (amber `#fef3c7` / `#92400e`) and `.import-msg--pending` (neutral `#f1f5f9` / `#475569`).
+- **S4 — `_normVersion: 18` hardcoded in `exportJSON`:** The Supabase-mode backup export stamped the current schema version as the literal `18`. Any future `NORM_VERSION` bump would require a manual find-and-replace in Settings.js. Fix: import `NORM_VERSION` from `../utils/storage` alongside the existing `STORAGE_KEY` import; replace `18` with `NORM_VERSION`.
 
 ### T63 (2026-04-30): Three Reports.js bug fixes
 

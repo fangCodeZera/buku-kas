@@ -1473,6 +1473,8 @@ body {
 .import-msg { margin-top: 12px; font-size: 13px; padding: 8px 12px; border-radius: 7px; }
 .import-msg--success { background: #d1fae5; color: #065f46; }
 .import-msg--error   { background: #fee2e2; color: #991b1b; }
+.import-msg--warning { background: #fef3c7; color: #92400e; }
+.import-msg--pending { background: #f1f5f9; color: #475569; }
 
 /* ── Sort button ─────────────────────────────────────────────────────────────── */
 .sort-btn {

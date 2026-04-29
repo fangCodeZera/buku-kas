@@ -11,7 +11,7 @@
 import React, { useState, useRef } from "react";
 import Icon from "../components/Icon";
 import { generateId, today } from "../utils/idGenerators";
-import { STORAGE_KEY } from "../utils/storage";
+import { STORAGE_KEY, NORM_VERSION } from "../utils/storage";
 import { USE_SUPABASE } from "../utils/storageConfig";
 
 /**
@@ -51,7 +51,16 @@ const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
       return;
     }
     setBizErrors({});
-    onSave(form);
+    const parsedDueDays  = parseInt(dueDaysStr, 10);
+    const parsedLowStock = parseInt(lowStockStr, 10);
+    const parsedMaxBank  = parseInt(maxBankStr, 10);
+    const finalForm = {
+      ...form,
+      defaultDueDateDays:       (!isNaN(parsedDueDays)  && parsedDueDays  >= 1) ? parsedDueDays  : (form.defaultDueDateDays       ?? 14),
+      lowStockThreshold:        (!isNaN(parsedLowStock) && parsedLowStock >= 0) ? parsedLowStock : (form.lowStockThreshold          ?? 10),
+      maxBankAccountsOnInvoice: (!isNaN(parsedMaxBank)  && parsedMaxBank  >= 0) ? parsedMaxBank  : (form.maxBankAccountsOnInvoice   ?? 1),
+    };
+    onSave(finalForm);
     setFlash(true);
     setTimeout(() => { setFlash(false); setSubmitting(false); }, 2000);
   };
@@ -69,7 +78,7 @@ const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
       let jsonStr;
       if (USE_SUPABASE) {
         jsonStr = JSON.stringify(
-          { ...data, _exportedAt: new Date().toISOString(), _normVersion: 18 },
+          { ...data, _exportedAt: new Date().toISOString(), _normVersion: NORM_VERSION },
           null,
           2
         );
@@ -230,10 +239,24 @@ const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
           const txCount = (parsed.transactions || []).length;
           const cCount  = (parsed.contacts     || []).length;
           setImportMsg(`✅ Impor berhasil — ${txCount} transaksi, ${cCount} kontak disinkronkan ke database.`);
+          if (parsed.settings) {
+            const s = parsed.settings;
+            setForm((f) => ({ ...f, ...s, printerType: s.printerType || f.printerType || "A4" }));
+            setDueDaysStr(String(s.defaultDueDateDays ?? 14));
+            setLowStockStr(String(s.lowStockThreshold ?? 10));
+            setMaxBankStr(String(s.maxBankAccountsOnInvoice ?? 1));
+          }
         } else if (result && result.failed > 0) {
           setImportMsg(`⚠️ Impor sebagian berhasil. ${result.failed} item gagal disinkronkan. Silakan periksa dan coba lagi.`);
         } else {
           setImportMsg("✅ Data berhasil diimpor!");
+          if (parsed.settings) {
+            const s = parsed.settings;
+            setForm((f) => ({ ...f, ...s, printerType: s.printerType || f.printerType || "A4" }));
+            setDueDaysStr(String(s.defaultDueDateDays ?? 14));
+            setLowStockStr(String(s.lowStockThreshold ?? 10));
+            setMaxBankStr(String(s.maxBankAccountsOnInvoice ?? 1));
+          }
         }
       } catch (err) {
         setImportMsg(`❌ Gagal: ${err.message}`);
@@ -581,7 +604,7 @@ const Settings = ({ settings, transactions = [], data, onSave, onImport }) => {
 
         {importMsg && (
           <div
-            className={`import-msg ${importMsg.startsWith("✅") ? "import-msg--success" : "import-msg--error"}`}
+            className={`import-msg ${importMsg.startsWith("✅") ? "import-msg--success" : importMsg.startsWith("⚠️") ? "import-msg--warning" : importMsg.startsWith("❌") ? "import-msg--error" : "import-msg--pending"}`}
             role="status"
           >
             {importMsg}
