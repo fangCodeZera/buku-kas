@@ -54,7 +54,7 @@ src/
     Inventory.js                  ~1884  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "karung" (T48/T49); base item rows hidden when zero stock AND zero transactions (T50); subtype rows with 0 stock + 0 txCount + 0 adjCount hidden by default (T55) — "Tampilkan item tanpa transaksi" checkbox reveals them; handleAddSubtype checks both subtypes+archivedSubtypes for duplicates (T60); rename guard checks all catalog entries not just stockMap (T60); hasTx checks include archivedSubtypes (T60); uncatalogued item delete requires typing "hapus" (T60)
     Contacts.js                    672  Contact list + detail panel + transaction history; handleSave uses editingContact (from contacts array) not sel (from filtered withBalance) — prevents silent add-instead-of-edit when search is active (T61); archive/delete confirm handlers call setEditMode(false) (T61); progress bar at 0% returns null not "0%" text (T61); payment history colSpan corrected 8→9 (T62)
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
-    Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table)
+    Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table); chip dismiss + Reset Filter both sync inventoryFilterItem↔selectedItems (T63); orphanPayments + paymentCount both respect typeFilter (T63)
     Outstanding.js                 557  AR/AP outstanding transactions view
     Settings.js                    591  Business settings + JSON/CSV backup/restore + printer type toggle
     ArchivedItems.js               286  Archived catalog items — restore or delete
@@ -1281,6 +1281,14 @@ If environment variables change, redeploy is required for changes to take effect
 ---
 
 ## 15. What Was Done
+
+### T63 (2026-04-30): Three Reports.js bug fixes
+
+Three bugs fixed in `src/pages/Reports.js`. No other files touched.
+
+- **R1 — `inventoryFilterItem` / `selectedItems` out of sync:** Two dismissal paths were broken. (A) Chip ✕ dismiss called only `setInventoryFilterItem(null)`, clearing the chip but leaving `selectedItems` populated — the MultiSelect still showed the item selected and `filtered` continued applying the item filter silently. (B) Reset Filter button called only `setSelectedClients([]); setSelectedItems([])`, clearing the filter but leaving `inventoryFilterItem` set — the chip persisted after the filter was cleared. Fix: chip dismiss now also calls `setSelectedItems([])`; Reset Filter now also calls `setInventoryFilterItem(null)`.
+- **R2 — `orphanPayments` ignores `typeFilter`:** The `orphanPayments` useMemo iterated all transactions and only skipped those in `filteredIds`. When `typeFilter === "income"`, expense payments still appeared in the "Pembayaran dari transaksi di luar periode ini" section. Fix: added `if (typeFilter !== "all" && t.type !== typeFilter) return;` guard before the `paymentHistory` check; added `typeFilter` to dep array.
+- **R3 — `paymentCount` ignores `typeFilter`:** The `paymentCount` useMemo counted payment history entries from all `transactions` regardless of `typeFilter`. The "N pembayaran" footer badge overcounted relative to what was visible. Fix: added same `typeFilter !== "all" && t.type !== typeFilter` guard; added `typeFilter` to dep array.
 
 ### T62 (2026-04-30): Contacts.js colSpan fix
 

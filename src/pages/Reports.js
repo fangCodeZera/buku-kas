@@ -112,6 +112,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     return transactions.reduce((total, t) => {
       // When item filter active, only count payments from transactions in the filtered set
       if (selectedItems.length > 0 && !filteredTxIds.has(t.id)) return total;
+      if (typeFilter !== "all" && t.type !== typeFilter) return total;
       if (!Array.isArray(t.paymentHistory)) return total;
       return total + t.paymentHistory.filter((ph) =>
         Number(ph.amount) > 0 &&
@@ -120,7 +121,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         (!dateTo   || (ph.date || "") <= dateTo)
       ).length;
     }, 0);
-  }, [transactions, filtered, dateFrom, dateTo, selectedItems]);
+  }, [transactions, filtered, dateFrom, dateTo, selectedItems, typeFilter]);
 
   const grandTotalPaid = useMemo(() => {
     const filteredNet = filtered.reduce((sum, t) => {
@@ -306,12 +307,13 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     const result = [];
     transactions.forEach((t) => {
       if (filteredIds.has(t.id)) return;
+      if (typeFilter !== "all" && t.type !== typeFilter) return;
       if (!Array.isArray(t.paymentHistory)) return;
       const pmts = t.paymentHistory.filter(visiblePmtFilter);
       if (pmts.length > 0) result.push({ t, pmts });
     });
     return result;
-  }, [transactions, filtered, selectedItems, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [transactions, filtered, selectedItems, dateFrom, dateTo, typeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Helper: render payment <tr> elements for a transaction
   const mkPaymentRows = (t, payments, keyPrefix, contrib = null) => {
@@ -404,7 +406,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
               Menampilkan semua transaksi: <strong>{inventoryFilterItem}</strong>
             </span>
             <button
-              onClick={() => setInventoryFilterItem(null)}
+              onClick={() => { setInventoryFilterItem(null); setSelectedItems([]); }}
               style={{ marginLeft:"auto", background:"none", border:"none", cursor:"pointer", color:"#6b7280", fontSize:14, lineHeight:1 }}
               aria-label="Hapus filter item"
             >
@@ -468,7 +470,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
           </div>
           {hasActiveFilters && (
             <div style={{ display:"flex", alignItems:"flex-end" }}>
-              <button onClick={() => { setSelectedClients([]); setSelectedItems([]); }} className="btn btn-secondary btn-sm" aria-label="Reset filter">
+              <button onClick={() => { setSelectedClients([]); setSelectedItems([]); setInventoryFilterItem(null); }} className="btn btn-secondary btn-sm" aria-label="Reset filter">
                 ✕ Reset Filter
               </button>
             </div>
