@@ -51,7 +51,7 @@ src/
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
-    Inventory.js                  ~1715  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "karung" (T48/T49); base item rows hidden when zero stock AND zero transactions (T50); subtype rows with 0 stock + 0 txCount + 0 adjCount hidden by default (T55) — "Tampilkan item tanpa transaksi" checkbox reveals them
+    Inventory.js                  ~1884  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "karung" (T48/T49); base item rows hidden when zero stock AND zero transactions (T50); subtype rows with 0 stock + 0 txCount + 0 adjCount hidden by default (T55) — "Tampilkan item tanpa transaksi" checkbox reveals them; handleAddSubtype checks both subtypes+archivedSubtypes for duplicates (T60); rename guard checks all catalog entries not just stockMap (T60); hasTx checks include archivedSubtypes (T60); uncatalogued item delete requires typing "hapus" (T60)
     Contacts.js                    639  Contact list + detail panel + transaction history
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
     Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table)
@@ -1237,7 +1237,7 @@ RETURNING last_serial;
 ```
 Called by `getNextTxnSerial(dateStr)` in `supabaseStorage.js`. Returns `"YY-MM-NNNNN"` string. Falls back to local `generateTxnId()` on RPC error.
 
-**`activity_log` indexes:** `id` (PK unique), `created_at DESC` (`idx_activity_log_created`), `user_id` (`idx_activity_log_user`), `action` (`idx_activity_log_action`), `entity_type` (`idx_activity_log_entity_type`). The last two were added 2026-04-29 to support filter queries in `loadActivityLog`.
+**`activity_log` indexes (5 total):** `id` (PK), `created_at DESC` (`idx_activity_log_created`), `user_id` (`idx_activity_log_user`), `action` (`idx_activity_log_action`, added 2026-04-29), `entity_type` (`idx_activity_log_entity_type`, added 2026-04-29). The last two were added to support filter queries in `loadActivityLog` as the log grows.
 
 ### Security in Production
 - RLS enabled on all 8 tables (role-aware policies; txn_counters is function-level access only)
@@ -1277,3 +1277,31 @@ Any push to `main` branch auto-deploys to Cloudflare Pages. To manually redeploy
 1. Go to dash.cloudflare.com → Pages → buku-kas → Deployments
 2. Click "Retry deployment" on the latest deployment
 If environment variables change, redeploy is required for changes to take effect.
+
+---
+
+## 15. What Was Done
+
+### T60 (2026-04-29): Four Inventory.js bug fixes
+
+Four data-integrity and UX bugs fixed in `src/pages/Inventory.js`. No other files touched.
+
+- **I1 — `handleAddSubtype` archivedSubtypes check:** The inline "+ Tambah Tipe" handler only checked `catalogItem.subtypes` for duplicates. Adding a subtype with the same name as an archived subtype of the same parent caused the new active subtype to be silently skipped by `tableGroups` (the `archivedSubs.has()` guard at line 508 matched and filtered it out — invisible in inventory, visible only in TransactionForm autocomplete). Fix: check `[...subtypes, ...archivedSubtypes]` for the collision; error message updated to "Tipe ini sudah ada (termasuk yang diarsipkan)".
+
+- **I2 — `handleRenameConfirm` catalog collision guard:** The catalogued-item rename guard used `normItem(normalizedNew) in activeStockMap`. Catalog entries with zero transactions (active or archived) are absent from `activeStockMap`, so renaming a base item to match one of them was not blocked — creating two catalog entries with identical normalized names. Fix: added `itemCatalog.some()` check for name collisions across all catalog entries, combined with the existing `activeStockMap` check via `||`.
+
+- **I3 — `hasTx` missing `archivedSubtypes`:** Two locations computed `hasTx` for a base catalog item using only `row.catalogItem?.subtypes` (active subtypes). If the only transactions for a base item's family were from an archived subtype, `hasTx` evaluated to `false` — showing a Delete button instead of Archive. The delete call would silently do nothing (App.js safety guard blocks it), but the user saw the modal close with no feedback. Fix: spread both `subtypes` and `archivedSubtypes` before the `.some()` check in `handleDeleteRow` and in the JSX IIFE.
+
+- **I4 — `deleteTarget` modal "hapus" gate:** The uncatalogued-item delete modal permanently deletes all transactions referencing the item, but had no confirmation input gate — a single click could destroy N transactions irreversibly. By contrast, `deleteConfirm.type === "catalog"` (deletes a zero-transaction catalog entry — less destructive) already required typing "hapus". Fix: added `deleteTargetInput` / `setDeleteTargetInput` state; input rendered in the modal; Ya Hapus button `disabled` until input equals "hapus" (case-insensitive); state cleared on open, Batal, Escape, and after confirm.
+
+---
+
+### T59 (2026-04-29): activity_log indexes
+Added two missing indexes to the `activity_log` Supabase table via MCP: `idx_activity_log_action` (on `action` column) and `idx_activity_log_entity_type` (on `entity_type` column). No code changes — database only. Prevents slow filter queries as the log grows into thousands of entries.
+
+---
+
+## 16. What Is NOT Yet Done
+
+### Penjualan/Pembelian audit (partial)
+Code audit complete — no bugs found worth fixing. Runtime test checklist not yet executed. Edge cases to manually verify: multi-item stock delta display, search persistence across date navigation, overdue banner showing correct type (hutang vs piutang), payment partial→full flow, edit on past date, concurrent edit conflict detection.

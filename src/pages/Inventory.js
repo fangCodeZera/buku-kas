@@ -137,6 +137,7 @@ const Inventory = ({
   //                       | { type: "subtype", subtypeName, parentCatalogItem, displayName }
   const [deleteConfirm,      setDeleteConfirm]      = useState(null);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+  const [deleteTargetInput,  setDeleteTargetInput]  = useState('');
   const [missingSubtypeModal, setMissingSubtypeModal] = useState(false);
 
   // Stock ledger state
@@ -180,7 +181,7 @@ const Inventory = ({
       if (deleteConfirm)     { setDeleteConfirm(null); setDeleteConfirmInput(''); return; }
       if (adjTarget)         { setAdjTarget(null); return; }
       if (renameTarget)      { setRenameTarget(null); setRenameMergeConfirm(false); return; }
-      if (deleteTarget)      { setDeleteTarget(null); return; }
+      if (deleteTarget)      { setDeleteTarget(null); setDeleteTargetInput(''); return; }
       if (adjDeleteConfirm)  { setAdjDeleteConfirm(null); return; }
       if (addSubtypeTarget)  { setAddSubtypeTarget(null); setAddSubtypeInput(""); setAddSubtypeError(""); return; }
       if (editingCodeId)     { setEditingCodeId(null); setWarning(''); return; }
@@ -240,9 +241,14 @@ const Inventory = ({
     }
 
     // Guard: catalogued items cannot merge into an existing item — catalog dedup is complex
-    if (renameTarget.isCatalogued && !isSameKey && normItem(normalizedNew) in activeStockMap) {
-      setRenameError("Nama ini sudah dipakai oleh item lain. Pilih nama yang belum ada.");
-      return;
+    if (renameTarget.isCatalogued && !isSameKey) {
+      const collidesCatalog = itemCatalog.some(
+        (c) => normItem(c.name) === normItem(normalizedNew) && normItem(c.name) !== normItem(normalizedOld)
+      );
+      if (collidesCatalog || normItem(normalizedNew) in activeStockMap) {
+        setRenameError("Nama ini sudah dipakai oleh item lain. Pilih nama yang belum ada.");
+        return;
+      }
     }
     // Uncatalogued: show merge-confirm (existing behavior unchanged)
     if (!isSameKey && !renameMergeConfirm && normItem(normalizedNew) in activeStockMap) {
@@ -264,6 +270,7 @@ const Inventory = ({
     onDeleteItem(itemName);
     setToast(`${txCount} transaksi untuk "${itemName}" telah dihapus`);
     setDeleteTarget(null);
+    setDeleteTargetInput('');
     setSubmitting(false);
   };
 
@@ -666,8 +673,12 @@ const Inventory = ({
     if (submitting) return;
     const sub = addSubtypeInput.trim();
     if (!sub) { setAddSubtypeError("Nama tipe wajib diisi"); return; }
-    if ((catalogItem.subtypes || []).some((s) => normItem(s) === normItem(sub))) {
-      setAddSubtypeError("Tipe ini sudah ada"); return;
+    const allExisting = [
+      ...(catalogItem.subtypes || []),
+      ...(catalogItem.archivedSubtypes || []),
+    ];
+    if (allExisting.some((s) => normItem(s) === normItem(sub))) {
+      setAddSubtypeError("Tipe ini sudah ada (termasuk yang diarsipkan)"); return;
     }
     setSubmitting(true);
     onUpdateCatalogItem({ ...catalogItem, subtypes: [...(catalogItem.subtypes || []), normalizeTitleCase(sub)] });
@@ -689,10 +700,12 @@ const Inventory = ({
     } else {
       // Base item: hasTx checks base key AND all subtype keys — subtypes must be considered
       // because if any subtype has transactions, deleting the base should show Archive, not Delete.
+      const allSubs = [
+        ...(row.catalogItem?.subtypes || []),
+        ...(row.catalogItem?.archivedSubtypes || []),
+      ];
       const hasTx = (txCountMap[row.key] || 0) > 0 ||
-        (row.catalogItem?.subtypes || []).some(
-          (s) => (txCountMap[normItem(`${row.catalogItem.name} ${s}`)] || 0) > 0
-        );
+        allSubs.some((s) => (txCountMap[normItem(`${row.catalogItem.name} ${s}`)] || 0) > 0);
       setDeleteConfirm({
         type:        hasTx ? "archiveCatalog" : "catalog",
         catalogItem: row.catalogItem,
@@ -1343,9 +1356,27 @@ const Inventory = ({
               <div className="delete-tx-name">{deleteTarget.itemName}</div>
               <div className="delete-tx-meta">{deleteTarget.txCount} transaksi akan dihapus</div>
             </div>
+            <input
+              type="text"
+              value={deleteTargetInput}
+              onChange={(e) => setDeleteTargetInput(e.target.value)}
+              placeholder={'Ketik "hapus" untuk melanjutkan'}
+              style={{
+                width: "100%", marginTop: 10, padding: "8px 11px",
+                border: "1.5px solid #e2e8f0", borderRadius: 8,
+                fontSize: 14, boxSizing: "border-box",
+              }}
+              aria-label='Ketik hapus untuk konfirmasi'
+            />
             <div className="modal-actions">
-              <button onClick={() => setDeleteTarget(null)} className="btn btn-secondary">Batal</button>
-              <button onClick={handleDeleteConfirm} className="btn btn-danger">🗑 Ya, Hapus</button>
+              <button onClick={() => { setDeleteTarget(null); setDeleteTargetInput(''); }} className="btn btn-secondary">Batal</button>
+              <button
+                onClick={handleDeleteConfirm}
+                className="btn btn-danger"
+                disabled={deleteTargetInput.trim().toLowerCase() !== "hapus"}
+              >
+                🗑 Ya, Hapus
+              </button>
             </div>
           </div>
         </div>
@@ -1786,9 +1817,10 @@ const Inventory = ({
                                   const hasTx = row.isSubtype
                                     ? (txCountMap[row.key] || 0) > 0
                                     : (txCountMap[row.key] || 0) > 0 ||
-                                      (row.catalogItem?.subtypes || []).some(
-                                        (s) => (txCountMap[normItem(`${row.displayName} ${s}`)] || 0) > 0
-                                      );
+                                      [
+                                        ...(row.catalogItem?.subtypes || []),
+                                        ...(row.catalogItem?.archivedSubtypes || []),
+                                      ].some((s) => (txCountMap[normItem(`${row.displayName} ${s}`)] || 0) > 0);
                                   return hasTx ? (
                                     <button
                                       onClick={() => handleDeleteRow(row)}
@@ -1814,7 +1846,7 @@ const Inventory = ({
                                 if (txCount === 0) return null;
                                 return (
                                   <button
-                                    onClick={() => setDeleteTarget({ itemName: row.displayName, txCount })}
+                                    onClick={() => { setDeleteTarget({ itemName: row.displayName, txCount }); setDeleteTargetInput(''); }}
                                     className="action-btn action-btn--delete"
                                     title="Hapus Item"
                                     aria-label={`Hapus ${row.displayName} dan semua transaksinya`}
