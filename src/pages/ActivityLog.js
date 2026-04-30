@@ -101,6 +101,7 @@ export default function ActivityLog({ currentUser, profile, onLoadLog, onBack, o
   const [loading,      setLoading]      = useState(true);
   const [loadingMore,  setLoadingMore]  = useState(false);
   const [error,        setError]        = useState(null);
+  const [loadMoreError, setLoadMoreError] = useState(null);
   const [page,         setPage]         = useState(0);
   const [hasMore,      setHasMore]      = useState(false);
   const [filterAction,   setFilterAction]   = useState("");
@@ -116,6 +117,7 @@ export default function ActivityLog({ currentUser, profile, onLoadLog, onBack, o
       setLoadingMore(true);
     }
     setError(null);
+    setLoadMoreError(null);
     try {
       const filters = { page: pageNum };
       if (filterAction)   filters.action     = filterAction;
@@ -127,7 +129,11 @@ export default function ActivityLog({ currentUser, profile, onLoadLog, onBack, o
       setHasMore(more);
       setPage(pageNum);
     } catch (err) {
-      setError(err.message || "Gagal memuat log aktivitas.");
+      if (pageNum === 0) {
+        setError(err.message || "Gagal memuat log aktivitas.");
+      } else {
+        setLoadMoreError("Gagal memuat entri lebih lama. Silakan coba lagi.");
+      }
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -327,6 +333,11 @@ export default function ActivityLog({ currentUser, profile, onLoadLog, onBack, o
       )}
 
       {/* Load more button */}
+      {loadMoreError && (
+        <div className="alert-banner alert-banner--danger" style={{ marginTop: 12, textAlign: "center" }}>
+          {loadMoreError}
+        </div>
+      )}
       {!loading && !error && hasMore && (
         <div style={{ textAlign: "center", marginTop: 12 }}>
           <button

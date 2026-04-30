@@ -59,7 +59,7 @@ src/
     Settings.js                    617  Business settings + JSON/CSV backup/restore + printer type toggle; handleSave flushes unblurred numeric fields into finalForm (T64); import syncs form/dueDaysStr/lowStockStr/maxBankStr from parsed.settings on success (T64); NORM_VERSION from storage.js (T64)
     ArchivedItems.js               286  Archived catalog items — restore or delete
     ArchivedContacts.js            222  Archived contacts — restore or delete
-    ActivityLog.js                 312  Audit trail viewer — Pemilik-only, reads activity_log table
+    ActivityLog.js                 351  Audit trail viewer — Pemilik-only, reads activity_log table; loadMoreError state separates load-more failures from initial-load failures so first-page data stays visible on retry (T65)
 
   components/
     TransactionPage.js             652  Shared base: Penjualan + Pembelian day-view
@@ -1281,6 +1281,20 @@ If environment variables change, redeploy is required for changes to take effect
 ---
 
 ## 15. What Was Done
+
+### T65 (2026-04-30): ActivityLog.js load-more error handling
+
+Fixed A1: when "Muat Lebih Banyak" failed, the `catch` block unconditionally called `setError(...)`, causing the `!loading && !error && allLogs.length > 0` table guard to evaluate false and hide the already-loaded first-page data. The user was left with a blank screen and no retry path.
+
+**Root cause:** `loadLogs` used a single `error` state for both the initial page-0 load (where no data exists to fall back on) and subsequent page loads (where first-page data should remain visible).
+
+**Fix (four steps):**
+1. Added `loadMoreError` / `setLoadMoreError` state variable alongside `error`.
+2. Updated `catch` to branch on `pageNum`: `pageNum === 0` → `setError(...)` (full-page failure, nothing to show); `pageNum > 0` → `setLoadMoreError("Gagal memuat entri lebih lama. Silakan coba lagi.")` (first-page data stays visible).
+3. Added `setLoadMoreError(null)` at the start of `loadLogs` alongside the existing `setError(null)` — clears the banner when any load attempt begins.
+4. Added inline `alert-banner--danger` banner above the "Muat Lebih Banyak" button that appears when `loadMoreError` is set — gives the user explicit feedback and the button remains enabled for retry.
+
+After the fix: a load-more failure shows the error banner below the table, the table and retry button remain visible, and `page` stays at its current value so the retry correctly requests the same next page.
 
 ### T64 (2026-04-30): Four Settings.js bug fixes
 
