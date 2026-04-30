@@ -40,7 +40,7 @@ src/
     balanceUtils.js                 72  computeARandAP, computeCashIncome, computeCashExpense, computeNetCash
     printUtils.js                   47  printWithPortal, escapeHtml
     stockUtils.js                  114  computeStockMap, computeStockMapForDate
-    textFormatter.js               387  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText)
+    textFormatter.js               416  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText); formatSuratJalanFooter removes sigLine + brackets (T67); when no catatan: one blank line before labels (T68); when catatan: blank line after catatan (T68); formatInvoiceFooter: else branch adds blank line when no bank accounts, sigLine + brackets removed (T70)
     AuthContext.js                 175  AuthProvider, useAuth — session state, signIn (with login audit log), signOut, 15-min idle timeout; `ignoringSessionRef` guards onAuthStateChange during idle sign-out (T23); clears #access_token hash on auth state change to prevent PASSWORD_RECOVERY re-trigger on reload
     supabaseClient.js               19  Creates Supabase client (anon key only, env var validated)
     supabaseStorage.js             445  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog, getNextTxnSerial, isSupabaseReachable
@@ -51,7 +51,7 @@ src/
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
-    Inventory.js                  ~1884  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "karung" (T48/T49); base item rows hidden when zero stock AND zero transactions (T50); subtype rows with 0 stock + 0 txCount + 0 adjCount hidden by default (T55) — "Tampilkan item tanpa transaksi" checkbox reveals them; handleAddSubtype checks both subtypes+archivedSubtypes for duplicates (T60); rename guard checks all catalog entries not just stockMap (T60); hasTx checks include archivedSubtypes (T60); uncatalogued item delete requires typing "hapus" (T60)
+    Inventory.js                  ~1884  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "karung" (T48/T49); base item rows hidden when zero stock AND zero transactions (T50); subtype rows with 0 stock + 0 txCount + 0 adjCount hidden by default (T55) — "Tampilkan item tanpa stok & transaksi" toggle reveals them (label updated T72); handleAddSubtype checks both subtypes+archivedSubtypes for duplicates (T60); rename guard checks all catalog entries not just stockMap (T60); hasTx checks include archivedSubtypes (T60); uncatalogued item delete requires typing "hapus" (T60); ledgerEntries sort uses date+time only, ignoring createdAt (T71)
     Contacts.js                    672  Contact list + detail panel + transaction history; handleSave uses editingContact (from contacts array) not sel (from filtered withBalance) — prevents silent add-instead-of-edit when search is active (T61); archive/delete confirm handlers call setEditMode(false) (T61); progress bar at 0% returns null not "0%" text (T61); payment history colSpan corrected 8→9 (T62)
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
     Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table); chip dismiss + Reset Filter both sync inventoryFilterItem↔selectedItems (T63); orphanPayments + paymentCount both respect typeFilter (T63)
@@ -69,7 +69,7 @@ src/
     DeleteConfirmModal.js          125  Dual-mode (transaction/contact) delete confirm — requires typing "hapus" to enable confirm button
     InvoiceModal.js                337  Printable A4 invoice
     SuratJalanModal.js             289  Printable A4 delivery note
-    DotMatrixPrintModal.js         122  Dot matrix preview + print modal (invoice & surat jalan)
+    DotMatrixPrintModal.js         127  Dot matrix preview + print modal (invoice & surat jalan); both modes render single `<pre>` on screen and print — surat jalan bold-title split removed (T67); modal-box maxWidth 750; `<pre>` style lineHeight:1.2 only (T69 final)
     ToggleSwitch.js                 65  Reusable toggle switch — track+thumb, #007bff/#cbd5e1, keyboard accessible (role=switch, Space/Enter)
     ReportModal.js                 590  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR. Defaults (T25): showCompanyName=false, showSummary=false, printTable1=true, printTable2=false. grandTotalPaid = table1Total + table2Total (T26 — each 0 when its toggle is off)
     StockWarningModal.js            77  Negative-stock warning
@@ -1285,6 +1285,71 @@ If environment variables change, redeploy is required for changes to take effect
 ---
 
 ## 15. What Was Done
+
+### T71 (2026-05-01): Riwayat Stok — sort by date+time, ignore createdAt
+
+Fixed `ledgerEntries` useMemo sort comparator in `Inventory.js`. Previously sorted by `createdAt` (ISO timestamp) when present, falling back to `date + time` — this caused manual stock adjustments (which may lack `createdAt` or have a `createdAt` that doesn't match their `date`/`time`) to float out of chronological position relative to same-day transactions.
+
+**Change:** Replaced the two-branch comparator with a single path: always parse `date + time` as a local datetime string. `createdAt` is now ignored entirely. The running total calculation (`runningQty`) and the `visibleLedgerEntries` newest-first reverse are untouched — they automatically reflect the corrected order.
+
+**File:** `src/pages/Inventory.js`
+
+---
+
+### T70 (2026-05-01): Dot matrix invoice footer — blank line when no bank accounts, remove signature brackets
+
+Two changes to `formatInvoiceFooter()` in `textFormatter.js`:
+
+1. **Blank line when no bank accounts:** Added `else { lines.push(""); }` after the `if (shown.length > 0)` bank account block. Previously, when no bank accounts were configured, nothing was pushed between the TOTAL line and the TANDA TERIMA labels — the signature block appeared immediately after TOTAL with no gap. Now one blank line always appears before TANDA TERIMA regardless of whether bank accounts are shown.
+
+2. **Removed signature brackets:** Deleted the `sigLine` const (`padRight("(" + " ".repeat(26) + ")", 40) + padLeft(...)`) and removed it from `lines.push(...)`. The signature block now ends with just the two blank lines for signature space — no parentheses.
+
+`formatSuratJalanFooter` is untouched (its brackets were already removed in T67). No other functions touched.
+
+**File:** `src/utils/textFormatter.js`
+
+---
+
+### T69 rev2 (2026-05-01): Dot matrix modal — center pre with inline-block shrink-to-fit
+
+Revised T69 again. `modal-box` `maxWidth` stays at `1000`. Change to the preview block:
+
+Wrapped `<pre className="dot-matrix-preview">` in `<div style={{ textAlign: "center" }}>`. Added `display: "inline-block", textAlign: "left"` to the `<pre>` inline style. The `inline-block` causes the pre to shrink to its content width (the 80-column text) rather than stretching to fill the full modal — eliminating the right-side whitespace gap. The centering div visually centres the now-narrower block. `textAlign: "left"` on the pre keeps text left-aligned inside the centred container. Applies to both invoice and surat jalan modes. Print unaffected.
+
+**File:** `src/components/DotMatrixPrintModal.js`
+
+---
+
+### T68 (2026-05-01): Dot matrix Surat Jalan — fix catatan gap logic, fix screen preview width
+
+Two targeted fixes to the Surat Jalan dot matrix output and preview.
+
+**Change 1 — `textFormatter.js` `formatSuratJalanItems`:** Removed the trailing `""` blank line that was added in T67 (`return [header, divider, ...items, SEP_MAJOR]` — no trailing blank). The gap between items and footer is now owned by `formatSuratJalanFooter` instead.
+
+**Change 2 — `textFormatter.js` `formatSuratJalanFooter`:** Fixed gap logic so both cases are symmetric:
+- **With catatan:** no blank line before catatan; one blank line after catatan; then labels + two blank lines.
+- **Without catatan:** one blank line before labels; then labels + two blank lines. (Previously: no blank line before labels when catatan was absent, creating a gap only in the catatan case.)
+Implementation: added `else { lines.push(blankLine); }` branch to the existing `if (catatanPengiriman.trim())` block.
+
+**Change 3 — `DotMatrixPrintModal.js` JSX `<pre>`:** Added `maxWidth: "80ch"` and `overflowX: "auto"` to the screen preview `<pre>`'s inline style. Previously the `<pre>` stretched to the full modal width on wide desktop screens, making 80-column content appear wider than intended. The constraint is cosmetic only — `printWithPortal()` renders the print HTML independently, so print output is completely unaffected.
+
+**Files:** `src/utils/textFormatter.js`, `src/components/DotMatrixPrintModal.js`
+
+---
+
+### T67 (2026-05-01): Dot matrix Surat Jalan — revert to plain ASCII block, remove signature brackets, add footer gap
+
+Reverted the Surat Jalan dot matrix preview and print to render as a single `<pre>` block, matching the invoice path. Removed the bracketed signature lines from the footer. Added a blank line between the items table and the signature block.
+
+**Change 1 — `DotMatrixPrintModal.js` `handlePrint`:** The surat jalan branch previously split `formattedText` on `"\n"`, extracted `lines[0]` as a bold 20pt title, and rendered the rest as a body `<pre>` inside a `display:inline-block` wrapper div. Replaced with the same pattern as the invoice branch: escape `&`/`<`/`>` and wrap the full `formattedText` in a single `<pre style="...">` string.
+
+**Change 2 — `DotMatrixPrintModal.js` JSX:** Replaced the mode-conditional IIFE (which rendered a bold title `<div>` + body `<pre>` for surat jalan, and a plain `<pre>` for invoice) with a single unconditional `<pre className="dot-matrix-preview" style={{ lineHeight: 1.2 }}>`. No leftover unused variables. Bundle shrank by 278 B.
+
+**Change 3 — `textFormatter.js` `formatSuratJalanItems`:** Added `""` (blank line) after `SEP_MAJOR` at the end of the returned array — creates a visible gap between the items table and the TANDA TERIMA / HORMAT KAMI footer labels.
+
+**Change 4 — `textFormatter.js` `formatSuratJalanFooter`:** Removed the `sigLine` const declaration (`padRight("(" + " ".repeat(26) + ")", 40) + padLeft(...)`) and its usage. The final `lines.push` now ends with `blankLine, blankLine` — two lines of signature space, no parentheses. The `catatanPengiriman` block at the top of the function is untouched. `formatInvoiceFooter` (which has its own `sigLine`) is untouched.
+
+**Files:** `src/components/DotMatrixPrintModal.js`, `src/utils/textFormatter.js`
 
 ### T66 (2026-05-01): Four fixes — updateContact version, Icon contacts, Inventory ToggleSwitch, CSP tighten
 

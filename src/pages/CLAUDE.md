@@ -69,7 +69,7 @@
 
 **Table layout:** Group header rows (dark navy `.inventory-group-header`) → base item row → indented subtype rows. "LAINNYA — UNC" group catches items not matched to any category.
 
-**Ledger:** Expandable per-item panel (`expandedStockItem`) showing all transactions and adjustments, running totals, date filter, type filter, PERIODE quick-select (Hari Ini / Minggu Ini / Bulan Ini / Semua) with active state. Ledger accumulates ALL matching item rows in multi-item transactions (does not break on first match). Sort order matches `computeStockMap` comparator (date+time string first, then `createdAt` as tiebreak).
+**Ledger:** Expandable per-item panel (`expandedStockItem`) showing all transactions and adjustments, running totals, date filter, type filter, PERIODE quick-select (Hari Ini / Minggu Ini / Bulan Ini / Semua) with active state. Ledger accumulates ALL matching item rows in multi-item transactions (does not break on first match). Sort order: `date + time` only — `createdAt` is ignored (T71).
 
 **eslint-disable note:** The `useEffect` syncing `ledgerDateFrom`/`ledgerDateTo` to `inventoryDate` intentionally excludes `expandedStockItem` from its deps array — the effect should only fire on date changes, not when the expanded item changes. Comment in source explains this.
 

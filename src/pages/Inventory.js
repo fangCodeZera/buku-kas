@@ -379,12 +379,8 @@ const Inventory = ({
 
     // Oldest first — same comparator as computeStockMap so running totals match stock snapshots
     entries.sort((a, b) => {
-      const ta = a.createdAt
-        ? new Date(a.createdAt).getTime()
-        : new Date((a.date || "1970-01-01") + "T" + (a.time || "00:00") + ":00Z").getTime();
-      const tb = b.createdAt
-        ? new Date(b.createdAt).getTime()
-        : new Date((b.date || "1970-01-01") + "T" + (b.time || "00:00") + ":00Z").getTime();
+      const ta = new Date((a.date || "1970-01-01") + "T" + (a.time || "00:00") + ":00").getTime();
+      const tb = new Date((b.date || "1970-01-01") + "T" + (b.time || "00:00") + ":00").getTime();
       return ta - tb;
     });
 
@@ -1550,7 +1546,7 @@ const Inventory = ({
         <ToggleSwitch
           checked={showEmptyItems}
           onChange={(v) => setShowEmptyItems(v)}
-          label="Tampilkan item tanpa transaksi"
+          label="Tampilkan item tanpa stok & transaksi"
         />
       </div>
 

@@ -246,18 +246,15 @@ const formatInvoiceFooter = (transactions, settings) => {
       if (acct.accountName)   lines.push(padRight("ACCOUNT NAME     : " + acct.accountName,   LINE_WIDTH));
     });
     lines.push("");
+  } else {
+    lines.push("");
   }
 
   // Signature block
-  const sigLine =
-    padRight("(" + " ".repeat(26) + ")", 40) +
-    padLeft("(" + " ".repeat(26) + ")", 40);
-
   lines.push(
     padRight("TANDA TERIMA,", 40) + padLeft("HORMAT KAMI,", 40),
     "",
     "",
-    sigLine,
   );
 
   return lines;
@@ -351,9 +348,6 @@ const formatSuratJalanFooter = (catatanPengiriman = "") => {
   const leftLabel  = padRight("TANDA TERIMA,", 40);
   const rightLabel = padLeft("HORMAT KAMI,", 40);
   const blankLine  = " ".repeat(LINE_WIDTH);
-  const sigLine    =
-    padRight("(" + " ".repeat(26) + ")", 40) +
-    padLeft("(" + " ".repeat(26) + ")", 40);
 
   const lines = [];
 
@@ -366,9 +360,11 @@ const formatSuratJalanFooter = (catatanPengiriman = "") => {
       lines.push(padRight("  " + noteLines[i], LINE_WIDTH));
     }
     lines.push(blankLine);
+  } else {
+    lines.push(blankLine);
   }
 
-  lines.push(leftLabel + rightLabel, blankLine, blankLine, sigLine);
+  lines.push(leftLabel + rightLabel, blankLine, blankLine);
   return lines;
 };
 
