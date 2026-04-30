@@ -325,6 +325,7 @@ Tracks `false → true` transition via `prevSaved` ref. Records `nowTime()` into
 **Props:** `name: string`, `size?: number` (defaults 16), `color?: string` (defaults "currentColor")
 Inline SVG icons by name.
 **Valid names:** `income, expense, inventory, contacts, reports, warning, settings, menu, plus, edit, trash, invoice, check, clock, search, download, link, upload, eye, adjust, truck, dashboard`
+**`contacts` icon:** Single-person silhouette (full circle head + body arc) — replaced clipped multi-person group icon in T66.
 **Used by:** App.js sidebar, all pages and some components.
 
 ---

@@ -83,7 +83,7 @@ src/
     SaveIndicator.js                41  "Tersimpan ✓ · HH:MM" / "Menyimpan..." indicator
     StockChip.js                    25  Coloured stock qty pill
     Toast.js                        50  Auto-dismissing 3-second notification
-    Icon.js                         72  Inline SVG icon system
+    Icon.js                         72  Inline SVG icon system; `contacts` icon = clean single-person silhouette (circle head + body arc) — replaced clipped group icon in T66
     ConflictModal.js                63  Non-blocking conflict warning, 8s auto-dismiss (Phase 5)
     SaveErrorModal.js               91  Blocks UI on Supabase write failure (Phase 4)
 ```
@@ -1192,7 +1192,7 @@ Key patterns to never reintroduce:
 - `autoDetectCategories` in `categoryUtils.js` is O(n²) worst case — acceptable for <200 items. Performance comment in source.
 - `SuratJalanModal` uses transaction-level `t.stockUnit` for all item rows — per-item unit field doesn't exist on `items[]` (known design limitation).
 - **H2:** Resolved — see `txn_counters` table and `next_txn_serial()` RPC. Short-term collision toast remains as defense-in-depth.
-- Custom domain purchase will further improve the URL (currently `buku-kas.pages.dev`) and enable custom Cloudflare rate limiting rules.
+- Custom domain is live at `ajspt.com` — Cloudflare rate limiting rules can now be configured as needed.
 - Family member account creation is manual (Supabase Dashboard). No self-registration flow exists — intentional for a private family business app.
 
 ---
@@ -1200,7 +1200,7 @@ Key patterns to never reintroduce:
 ## 14. Deployment
 
 ### Production
-- **URL:** https://buku-kas.pages.dev
+- **URL:** https://ajspt.com
 - **Host:** Cloudflare Pages (free tier — 500 builds/month, no build minute limits)
 - **Repo:** github.com/fangCodeZera/buku-kas (also mirrored under PT-CHANG-JAYA org)
 - **Branch:** main (auto-deploys on push)
@@ -1214,7 +1214,7 @@ Key patterns to never reintroduce:
 - **Region:** Singapore (ap-southeast-1)
 - **Plan:** Free tier (auto-pauses after 1 week inactivity)
 - **Auth:** Email + Password only
-- **Site URL:** https://buku-kas.pages.dev
+- **Site URL:** https://ajspt.com
 - **Realtime:** Enabled on transactions, contacts, stock_adjustments, item_catalog
 
 ### Supabase Tables (8 total)
@@ -1256,7 +1256,7 @@ Custom domain setup (when a domain is purchased, ~$10-15/year):
 1. Purchase domain via Cloudflare Registrar (cheapest option)
 2. In Cloudflare Pages: add custom domain in project settings
 3. In Supabase: update Site URL and Redirect URLs to new domain
-4. In public/_headers: tighten CSP connect-src from `*.supabase.co` to specific project URL
+4. In public/_headers: CSP connect-src already tightened to `yjqhgmbgbfjmytgtqtmu.supabase.co` (done 2026-05-01)
 5. Enable custom Cloudflare rate limiting rules as needed
 
 ### Keep-Alive (prevents Supabase free tier pause)
@@ -1285,6 +1285,15 @@ If environment variables change, redeploy is required for changes to take effect
 ---
 
 ## 15. What Was Done
+
+### T66 (2026-05-01): Four fixes — updateContact version, Icon contacts, Inventory ToggleSwitch, CSP tighten
+
+Four independent fixes:
+
+- **updateContact version sync:** `contacts` map in `updateContact`'s `update()` state function now increments `version: (c.version || 0) + 1`. Previously Supabase wrote version N+1 but local state stayed at N, causing a false-positive conflict modal on the next edit of a cascade-renamed transaction. Same root cause and fix pattern as `applyPayment`/`editTransaction`. Uses `c.version` (pre-update from state), not `contact.version` (from form). File: `src/App.js`
+- **Icon.js contacts path:** Replaced clipped multi-person group silhouette with a clean single-person icon (full circle head + body arc). Icon name `contacts` unchanged. File: `src/components/Icon.js`
+- **Inventory ToggleSwitch:** "Tampilkan item tanpa transaksi" plain `<input type="checkbox">` replaced with `ToggleSwitch` component to match all other toggles in the app. State variable `showEmptyItems` and logic unchanged. File: `src/pages/Inventory.js`
+- **CSP tightened + custom domain live:** `public/_headers` `connect-src` changed from wildcard `*.supabase.co` to specific project URL `yjqhgmbgbfjmytgtqtmu.supabase.co`. App now live at `https://ajspt.com`. Supabase Site URL and Redirect URLs updated to custom domain. File: `public/_headers`
 
 ### T65 (2026-04-30): ActivityLog.js load-more error handling
 
