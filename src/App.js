@@ -1069,7 +1069,7 @@ export default function App() {
         }
         return {
           ...d,
-          contacts: d.contacts.map((c) => (c.id === contact.id ? { ...contact, name: newName } : c)),
+          contacts: d.contacts.map((c) => (c.id === contact.id ? { ...contact, name: newName, version: (c.version || 0) + 1 } : c)),
           transactions: isNameChange
             ? d.transactions.map((t) =>
                 t.counterparty.toLowerCase() === oldContact.name.toLowerCase()

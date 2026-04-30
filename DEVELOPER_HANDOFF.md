@@ -1120,6 +1120,10 @@ Added `withTimeout(promise, ms = 10000)` helper — races any promise against a 
 
 **Collapse logic unchanged:** `history.slice(0, SHOW_FIRST)` still shows newest 3; `history.slice(-SHOW_LAST)` still shows the creation entry (oldest = last in reversed array). `origIdx` calculation `history.length - SHOW_LAST + idx` correctly targets the creation entry position.
 
+**CSS fixes in same session (`src/styles.css`):**
+- **Fix A:** Removed `padding-left: 16px` from `.payment-timeline__pending-node` — parent `.payment-timeline__node` already provides 16px left padding; duplicate caused PendingNode text to be misaligned (double-indented) relative to regular timeline nodes.
+- **Fix B:** Increased `padding-bottom` on `.payment-timeline__node` from `16px` to `24px` — nodes were too close together, reducing readability.
+
 ---
 
 ### T28 — EDIT_NOTES extraction + audit log accuracy (2026-04-26)
