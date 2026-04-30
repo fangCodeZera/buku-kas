@@ -234,7 +234,7 @@
 
 **Access guard:** Renders "Akses ditolak" when `profile?.role !== "owner"`. Also gated in App.js `navItems` and JSX render condition.
 
-**Key local state:** `logs`, `loading`, `error`, `filterAction`, `filterEntity`, `filterDateFrom`, `filterDateTo`
+**Key local state:** `logs`, `loading`, `error`, `loadMoreError`, `filterAction`, `filterEntity`, `filterDateFrom`, `filterDateTo`
 
 **Filter bar:** Dropdown selects for Aksi + Entitas, date range inputs, Reset button. All filter changes trigger `loadLogs()` via `useCallback` dep array.
 
