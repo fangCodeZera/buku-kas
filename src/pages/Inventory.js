@@ -13,6 +13,7 @@
  */
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import Icon               from "../components/Icon";
+import ToggleSwitch       from "../components/ToggleSwitch";
 import QtyInput           from "../components/QtyInput";
 import StockChip          from "../components/StockChip";
 import Toast              from "../components/Toast";
@@ -1546,15 +1547,11 @@ const Inventory = ({
           <option value="qty:desc">Stok Terbanyak</option>
           <option value="qty:asc">Stok Tersedikit</option>
         </select>
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6b7280", cursor: "pointer", userSelect: "none" }}>
-          <input
-            type="checkbox"
-            checked={showEmptyItems}
-            onChange={(e) => setShowEmptyItems(e.target.checked)}
-            style={{ cursor: "pointer" }}
-          />
-          Tampilkan item tanpa transaksi
-        </label>
+        <ToggleSwitch
+          checked={showEmptyItems}
+          onChange={(v) => setShowEmptyItems(v)}
+          label="Tampilkan item tanpa transaksi"
+        />
       </div>
 
       {/* ── Inventory Table ── */}
