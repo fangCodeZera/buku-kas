@@ -144,14 +144,10 @@ const mapSettings = (row) => ({
  * @returns {Promise<Object>} full data object matching defaultData shape
  */
 export async function loadDataFromSupabase(userId) {
-  const twoYearsAgo = new Date();
-  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-  const cutoffDate = twoYearsAgo.toISOString().slice(0, 10); // "YYYY-MM-DD"
-
   const [txRes, contactRes, adjRes, catalogRes, settingsRes] = await Promise.all([
-    supabase.from('transactions').select('*').gte('date', cutoffDate).order('date', { ascending: false }).order('created_at', { ascending: false }),
+    supabase.from('transactions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('contacts').select('*').order('name', { ascending: true }),
-    supabase.from('stock_adjustments').select('*').gte('date', cutoffDate).order('date', { ascending: false }),
+    supabase.from('stock_adjustments').select('*').order('date', { ascending: false }),
     supabase.from('item_catalog').select('*').order('name', { ascending: true }),
     supabase.from('app_settings').select('*').eq('id', 'singleton').maybeSingle(),
   ]);
