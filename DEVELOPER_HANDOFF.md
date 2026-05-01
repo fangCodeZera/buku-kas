@@ -1283,6 +1283,20 @@ If environment variables change, redeploy is required for changes to take effect
 
 ## 15. What Was Done
 
+### T73-REVERT (2026-05-01): Reverted 2-year date filter from loadDataFromSupabase
+
+T73 added `.gte('date', cutoffDate)` to the `transactions` and `stock_adjustments` queries in `loadDataFromSupabase` to improve load performance at scale. Reverted because `computeStockMap()` runs on whatever transactions are in memory — transactions excluded by the date filter are silently excluded from stock calculations, producing wrong inventory numbers after 2 years with no error or warning to the user.
+
+Wrong stock numbers are worse than slow load times. Full transaction history is now always loaded.
+
+**Accepted trade-off:** At 50 transactions/day, year 3 will have ~54,000 transactions. Estimated load time on mobile: 4-6 seconds. This is annoying but not broken.
+
+**Fix when load time becomes painful (year 3+):** Upgrade to Supabase Pro ($25/month) for better query performance. Alternatively implement a stock snapshot pattern — but only with a developer who understands the edge cases (editing historical transactions after snapshot date requires snapshot regeneration).
+
+**File:** `src/utils/supabaseStorage.js`
+
+---
+
 ### T75 (2026-05-01): Database hardening — contacts unique index + RPC security
 
 Two database-level security and integrity improvements. No code changes — database only.
