@@ -60,6 +60,7 @@ import {
   mapStockAdjustment,
   mapCatalogItem,
   getNextTxnSerial,
+  syncTxnCounter,
   isSupabaseReachable,
 } from "./utils/supabaseStorage";
 import SaveErrorModal from "./components/SaveErrorModal";
@@ -680,6 +681,7 @@ export default function App() {
     // H2 LONG-TERM FIX: In Supabase mode, get an atomic serial from the DB before
     // touching local state. This prevents duplicate txnIds under concurrent writes.
     // In localStorage mode, generateTxnId() inside update() is still correct (single user).
+    let usedFallback = false;
     if (USE_SUPABASE && nt.type === "income") {
       try {
         nt.txnId = await getNextTxnSerial(nt.date);
@@ -688,6 +690,7 @@ export default function App() {
         // user isn't blocked. The short-term collision toast below will catch any
         // resulting duplicate.
         console.error("getNextTxnSerial failed, falling back to local generateTxnId:", err);
+        usedFallback = true;
       }
     }
 
@@ -721,7 +724,13 @@ export default function App() {
           type: nt.type, counterparty: nt.counterparty, value: nt.value,
           items: nt.items?.map((i) => i.itemName),
         }),
-      ]);
+      ]).then(() => {
+        // If the RPC failed and we used local generateTxnId(), sync the counter
+        // non-blocking so the next RPC call doesn't return the same serial number.
+        if (usedFallback && newTx?.txnId && nt.type === "income") {
+          syncTxnCounter(nt.date, newTx.txnId).catch(() => {});
+        }
+      });
       const retryFn = () => persistToSupabase(supabaseSave, retryFn);
       persistToSupabase(supabaseSave, retryFn);
       // H2 SHORT-TERM FIX (kept as defense-in-depth alongside DB sequence):

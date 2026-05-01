@@ -1242,6 +1242,15 @@ RETURNING last_serial;
 Called by `getNextTxnSerial(dateStr)` in `supabaseStorage.js`. Returns `"YY-MM-NNNNN"` string. Falls back to local `generateTxnId()` on RPC error.
 **Security (2026-05-01):** Function updated with `SECURITY DEFINER` and `SET search_path = public` to prevent search path injection. No behaviour change for callers.
 
+**`sync_txn_counter(p_prefix TEXT, p_serial INTEGER)` Postgres function:**
+```sql
+INSERT INTO txn_counters (prefix, last_serial)
+VALUES (p_prefix, p_serial)
+ON CONFLICT (prefix) DO UPDATE
+  SET last_serial = GREATEST(txn_counters.last_serial, p_serial);
+```
+Called by `syncTxnCounter(dateStr, txnId)` in `supabaseStorage.js` after a successful fallback save (when `getNextTxnSerial` failed and local `generateTxnId()` was used instead). `GREATEST()` ensures the counter is only raised — never decremented. Non-blocking; failures are silently swallowed inside `syncTxnCounter` and never trigger `SaveErrorModal`.
+
 **`activity_log` indexes (5 total):** `id` (PK), `created_at DESC` (`idx_activity_log_created`), `user_id` (`idx_activity_log_user`), `action` (`idx_activity_log_action`, added 2026-04-29), `entity_type` (`idx_activity_log_entity_type`, added 2026-04-29). The last two were added to support filter queries in `loadActivityLog` as the log grows.
 
 ### Security in Production
@@ -1282,6 +1291,27 @@ If environment variables change, redeploy is required for changes to take effect
 ---
 
 ## 15. What Was Done
+
+### T76 (2026-05-02): Fixed txnId fallback counter sync gap
+
+**Problem:** When `getNextTxnSerial()` fails (network blip, RPC timeout), `addTransaction` falls back to local `generateTxnId()` and saves the transaction successfully. But `txn_counters` is never updated with the serial that was used locally. On the next successful RPC call, `next_txn_serial()` returns the same serial — creating a duplicate txnId for a different transaction.
+
+**Fix — three parts:**
+
+1. **`sync_txn_counter(p_prefix, p_serial)` Postgres function** (database) — `INSERT … ON CONFLICT DO UPDATE SET last_serial = GREATEST(last_serial, p_serial)`. Safely raises the counter to at least `p_serial` without risk of decrementing if the fallback serial was lower than the current DB value.
+
+2. **`syncTxnCounter(dateStr, txnId)` export in `supabaseStorage.js`** — parses `YY-MM` prefix from `dateStr` (UTC), extracts the integer serial from `txnId`, calls the RPC. Entire function is wrapped in `try/catch`; failures log a warning and return silently.
+
+3. **`usedFallback` flag + `.then()` in `addTransaction` (App.js)** — plain `let usedFallback = false` (not state, no re-render) set to `true` inside the `getNextTxnSerial` catch block. After the Supabase save `Promise.all` succeeds, a `.then()` checks `usedFallback && newTx?.txnId` and calls `syncTxnCounter(...).catch(() => {})`. This is non-blocking — the `.then()` runs after the user sees their transaction saved. The `.catch(() => {})` swallows any error from `syncTxnCounter` so it can never propagate to `SaveErrorModal`.
+
+**Defense-in-depth layers after this fix:**
+- Layer 1: `next_txn_serial()` — atomic DB sequence, no collision possible (primary path)
+- Layer 2: Short-term collision detection toast (pre-existing, secondary)
+- Layer 3: `sync_txn_counter` — resync after fallback so Layer 1 stays accurate (new, tertiary)
+
+**Files:** `src/utils/supabaseStorage.js`, `src/App.js`
+
+---
 
 ### T73-REVERT (2026-05-01): Reverted 2-year date filter from loadDataFromSupabase
 

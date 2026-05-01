@@ -408,3 +408,27 @@ export async function getNextTxnSerial(dateStr) {
   const serial = String(data).padStart(5, "0");
   return `${prefix}-${serial}`;
 }
+
+/**
+ * Syncs txn_counters after a local fallback txnId was used.
+ * Called non-blocking after addTransaction succeeds in the fallback path.
+ * Uses GREATEST() so the counter only ever increases, never decrements.
+ * Failures are silently swallowed — this is defense-in-depth only.
+ *
+ * @param {string} dateStr - Transaction date "YYYY-MM-DD"
+ * @param {string} txnId - The locally-generated txnId e.g. "26-05-00007"
+ */
+export async function syncTxnCounter(dateStr, txnId) {
+  try {
+    const d = new Date(dateStr + "T00:00:00Z");
+    const yy = String(d.getUTCFullYear()).slice(-2);
+    const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const prefix = `${yy}-${mm}`;
+    // Extract serial from txnId format "YY-MM-NNNNN"
+    const serial = parseInt(txnId.split("-")[2], 10);
+    if (!serial || isNaN(serial)) return;
+    await supabase.rpc("sync_txn_counter", { p_prefix: prefix, p_serial: serial });
+  } catch (err) {
+    console.warn("[syncTxnCounter] non-blocking failure:", err.message);
+  }
+}
