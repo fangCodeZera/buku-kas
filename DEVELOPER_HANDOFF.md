@@ -1222,7 +1222,7 @@ Key patterns to never reintroduce:
 |-------|---------|-----|
 | `profiles` | User display name, role (owner/staff), is_active | ✅ |
 | `transactions` | All income + expense transactions (full JSON-like row) | ✅ |
-| `contacts` | Contact list with archived flag | ✅ |
+| `contacts` | Contact list with archived flag — `UNIQUE INDEX idx_contacts_name_unique_lower ON contacts (lower(name))` enforces case-insensitive uniqueness at DB level (added 2026-05-01) | ✅ |
 | `item_catalog` | Catalog items with subtypes + archive state | ✅ |
 | `stock_adjustments` | Manual stock correction entries | ✅ |
 | `app_settings` | Per-user settings row (one row per user_id) | ✅ |
@@ -1240,6 +1240,7 @@ ON CONFLICT (prefix) DO UPDATE
 RETURNING last_serial;
 ```
 Called by `getNextTxnSerial(dateStr)` in `supabaseStorage.js`. Returns `"YY-MM-NNNNN"` string. Falls back to local `generateTxnId()` on RPC error.
+**Security (2026-05-01):** Function updated with `SECURITY DEFINER` and `SET search_path = public` to prevent search path injection. No behaviour change for callers.
 
 **`activity_log` indexes (5 total):** `id` (PK), `created_at DESC` (`idx_activity_log_created`), `user_id` (`idx_activity_log_user`), `action` (`idx_activity_log_action`, added 2026-04-29), `entity_type` (`idx_activity_log_entity_type`, added 2026-04-29). The last two were added to support filter queries in `loadActivityLog` as the log grows.
 
@@ -1252,12 +1253,7 @@ Called by `getNextTxnSerial(dateStr)` in `supabaseStorage.js`. Returns `"YY-MM-N
 
 ### Cloudflare Pages (active)
 App is hosted on Cloudflare Pages — Cloudflare edge DDoS protection and CDN are active by default.
-Custom domain setup (when a domain is purchased, ~$10-15/year):
-1. Purchase domain via Cloudflare Registrar (cheapest option)
-2. In Cloudflare Pages: add custom domain in project settings
-3. In Supabase: update Site URL and Redirect URLs to new domain
-4. In public/_headers: CSP connect-src already tightened to `yjqhgmbgbfjmytgtqtmu.supabase.co` (done 2026-05-01)
-5. Enable custom Cloudflare rate limiting rules as needed
+Custom domain `ajspt.com` is live (2026-05-01). Auto-renewal enabled in Cloudflare Registrar. Fallback URL: `buku-kas.pages.dev`. CSP connect-src already tightened to the specific Supabase project URL. Custom Cloudflare rate limiting rules (WAF rules) can be configured as needed if traffic patterns warrant it.
 
 ### Keep-Alive (prevents Supabase free tier pause)
 An external cron job pings the Supabase REST API every 5 days to prevent auto-pause:
@@ -1266,6 +1262,7 @@ An external cron job pings the Supabase REST API every 5 days to prevent auto-pa
 - **Headers:** `apikey: <anon key>`, `Authorization: Bearer <anon key>`
 - **Schedule:** Every 5 days
 - If the cron ever fails and the DB pauses, the app shows a friendly "Database Sedang Istirahat" screen (`DatabasePausedScreen`) with a link to Supabase Dashboard and a "Coba Lagi" button.
+- **Important:** cron-job.org free tier requires a login every 6 months to keep the account active. Last checked: 2026-05-01.
 
 ### Adding Family Members
 Create accounts via Supabase Dashboard → Authentication → Users → Invite User:
@@ -1285,6 +1282,43 @@ If environment variables change, redeploy is required for changes to take effect
 ---
 
 ## 15. What Was Done
+
+### T75 (2026-05-01): Database hardening — contacts unique index + RPC security
+
+Two database-level security and integrity improvements. No code changes — database only.
+
+**Fix 1 — contacts unique index:** Added `CREATE UNIQUE INDEX idx_contacts_name_unique_lower ON contacts (user_id, lower(name))`. Enforces case-insensitive contact name uniqueness at the database level. Prevents duplicate contacts from concurrent writes that slip past the app-level `nameError` validation guard (e.g. two users adding the same contact name simultaneously). The existing app-level duplicate check in `Contacts.js` and `createContact` is unchanged — this is a defense-in-depth layer.
+
+**Fix 2 — `next_txn_serial()` search path security:** Re-created the `next_txn_serial()` Postgres function with `SECURITY DEFINER` and `SET search_path = public`. Without `SET search_path`, a malicious schema created by an attacker that shadows `public` could theoretically redirect the function's table references. `SECURITY DEFINER` runs the function as its owner (postgres); `SET search_path = public` pins the schema resolution. No behaviour change for callers — `getNextTxnSerial()` in `supabaseStorage.js` is unchanged.
+
+---
+
+### T74 (2026-05-01): Activity log auto-cleanup via pg_cron
+
+Installed `pg_cron` extension in Supabase (v1.6.4 — available on free tier). Created `cleanup_old_activity_logs()` database function with `SECURITY DEFINER` and `SET search_path = public` that deletes all `activity_log` rows where `created_at < NOW() - INTERVAL '3 months'`. Scheduled as a daily cron job `cleanup-activity-log` at `0 2 * * *` (2AM UTC) via `cron.schedule()`.
+
+**Effect:** `activity_log` now self-maintains. At 50 entries/day maximum, 3 months = ~4,500 rows maximum sustained. In practice the table will stay well under 22,500 rows permanently. No code changes — database only.
+
+**Verification queries run:**
+```sql
+SELECT * FROM pg_extension WHERE extname = 'pg_cron';          -- v1.6.4 ✓
+SELECT proname FROM pg_proc WHERE proname = 'cleanup_old_activity_logs'; -- exists ✓
+SELECT jobname, schedule FROM cron.job WHERE jobname = 'cleanup-activity-log'; -- 0 2 * * * ✓
+```
+
+---
+
+### T73 (2026-05-01): Date-range loading — last 2 years only
+
+`loadDataFromSupabase` in `supabaseStorage.js` previously fetched all transactions and stock_adjustments regardless of age. At year 3+ scale (~55,000 rows × ~2KB = ~110MB payload), this would cause slow cold-start load times and potential memory pressure.
+
+**Change:** Computed `cutoffDate = new Date(); cutoffDate.setFullYear(cutoffDate.getFullYear() - 2); cutoffDate.toISOString().slice(0,10)` before the `Promise.all` call. Added `.gte('date', cutoffDate)` to the `transactions` query and the `stock_adjustments` query. Contacts, `item_catalog`, and `app_settings` are small tables — fetched without date filter as before.
+
+Older records remain in Supabase and are never deleted. The filter uses the existing `idx_transactions_date` index. Build: 188.46 kB (−181 B).
+
+**File:** `src/utils/supabaseStorage.js`
+
+---
 
 ### T71 (2026-05-01): Riwayat Stok — sort by date+time, ignore createdAt
 
