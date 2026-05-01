@@ -136,15 +136,22 @@ const mapSettings = (row) => ({
 
 /**
  * Fetches all 5 data collections from Supabase in parallel.
+ * Transactions and stock_adjustments are filtered to the last 2 years to keep
+ * initial load fast as data grows. Older records remain in Supabase and are
+ * never deleted — they just aren't loaded on startup.
  * Returns the same shape as loadData() in storage.js.
  * @param {string} userId - current user's UUID (unused for queries, RLS handles auth)
  * @returns {Promise<Object>} full data object matching defaultData shape
  */
 export async function loadDataFromSupabase(userId) {
+  const twoYearsAgo = new Date();
+  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+  const cutoffDate = twoYearsAgo.toISOString().slice(0, 10); // "YYYY-MM-DD"
+
   const [txRes, contactRes, adjRes, catalogRes, settingsRes] = await Promise.all([
-    supabase.from('transactions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
+    supabase.from('transactions').select('*').gte('date', cutoffDate).order('date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('contacts').select('*').order('name', { ascending: true }),
-    supabase.from('stock_adjustments').select('*').order('date', { ascending: false }),
+    supabase.from('stock_adjustments').select('*').gte('date', cutoffDate).order('date', { ascending: false }),
     supabase.from('item_catalog').select('*').order('name', { ascending: true }),
     supabase.from('app_settings').select('*').eq('id', 'singleton').maybeSingle(),
   ]);
