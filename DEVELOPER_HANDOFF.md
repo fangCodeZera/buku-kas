@@ -923,6 +923,33 @@ Always search `styles.css` before adding a new class.
 
 See Section 9 of `CLAUDE.md` for full bug fix history.
 
+### T86 (2026-05-03): Force A4 landscape for Laporan print
+
+**Root cause:** The browser ignores `@page` rules inside portal-injected HTML (`#print-portal`). The previous `@page { size: landscape; margin: 10mm; }` was inside the `<style>` block passed to `printWithPortal` — so the browser was using its default page size (Letter portrait) and ignoring the rule entirely.
+
+**Fix:** The print button `onClick` in `ReportModal.js` now injects a `<style>` tag directly into `document.head` before calling `printWithPortal`, then removes it in a `try/finally` block:
+
+```js
+const pageStyle = document.createElement("style");
+pageStyle.textContent = "@page { size: A4 landscape; margin: 10mm; }";
+document.head.appendChild(pageStyle);
+try {
+  printWithPortal(`<style>...no @page here...</style>${docRef.current.outerHTML}`);
+} finally {
+  pageStyle.remove();
+}
+```
+
+`window.print()` inside `printUtils.js` is synchronous — the `<style>` is guaranteed present for the entire print dialog and removed immediately after. The `finally` block ensures cleanup even if `printWithPortal` throws.
+
+The `@page` rule was removed from the injected `<style>` block (it was being ignored anyway).
+
+**Isolation:** Only `ReportModal.js` is affected. DotMatrixPrintModal, StockReportModal, InvoiceModal, and SuratJalanModal each have separate print paths and are untouched.
+
+**File:** `src/components/ReportModal.js`
+
+---
+
 ### T85 — Dot matrix right gap — PENDING PHYSICAL PRINT VERIFICATION
 
 **Status:** Fix applied (T85), physical Epson LX-300+II test not yet done.

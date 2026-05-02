@@ -577,18 +577,31 @@ const ReportModal = ({
           <button
             onClick={() => {
               if (!docRef.current) return;
-              printWithPortal(
-                `<style>
-                  body { margin: 0; background: #fff; font-family: 'Segoe UI', 'Inter', sans-serif; color: #1e293b;
-                         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                  * { box-sizing: border-box; }
-                  @page { size: landscape; margin: 10mm; }
-                  @media print {
-                    thead { display: table-header-group; }
-                    tr { page-break-inside: avoid; }
-                  }
-                </style>${docRef.current.outerHTML}`
-              );
+
+              // Inject @page rule into main document <head> — required because
+              // printWithPortal injects into #print-portal and @page rules inside
+              // injected content are ignored by the browser. window.print() in
+              // printUtils.js is synchronous so this style is safely present for
+              // the full print job and removed immediately after.
+              const pageStyle = document.createElement("style");
+              pageStyle.textContent = "@page { size: A4 landscape; margin: 10mm; }";
+              document.head.appendChild(pageStyle);
+
+              try {
+                printWithPortal(
+                  `<style>
+                    body { margin: 0; background: #fff; font-family: 'Segoe UI', 'Inter', sans-serif; color: #1e293b;
+                           -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    * { box-sizing: border-box; }
+                    @media print {
+                      thead { display: table-header-group; }
+                      tr { page-break-inside: avoid; }
+                    }
+                  </style>${docRef.current.outerHTML}`
+                );
+              } finally {
+                pageStyle.remove();
+              }
             }}
             className="btn btn-primary btn-lg"
             style={{ flex: 1 }}
