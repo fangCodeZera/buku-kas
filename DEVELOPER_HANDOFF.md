@@ -1292,6 +1292,19 @@ If environment variables change, redeploy is required for changes to take effect
 
 ## 15. What Was Done
 
+### T81 (2026-05-02): Grand total display — screen shows Nilai only, print shows both
+
+**T80:** Replaced single "Grand Total Sudah Dibayar" line with two separate lines:
+- **Grand Total Nilai** — sum of all transaction subtotals. Penjualan = positive, Pembelian = negative. When item filter active, uses `contrib.combinedSubtotal` (proportional). Red when negative.
+- **Total Sudah Dibayar** — net paid amount (value - outstanding). Same sign convention. Red when negative.
+Applied to both `Reports.js` (screen) and `ReportModal.js` (print modal). New `grandTotalNilai` variable added to both files.
+
+**T81:** Removed Total Sudah Dibayar from Laporan screen bottom bar. Screen now shows Grand Total Nilai only. `grandTotalPaid` useMemo retained in `Reports.js` — still used for payment count display and orphan payment calculations. ReportModal unchanged — both lines remain in print modal.
+
+**Files:** `src/pages/Reports.js`, `src/components/ReportModal.js`
+
+---
+
 ### T79 (2026-05-02): Fixed stale Sudah Dibayar in Laporan after value edit
 
 **Bug:** Laporan page payment row showed wrong Sudah Dibayar amount after a Lunas transaction's value was edited. Example: transaction created as Lunas at Rp 730.870.000, edited to Rp 73.087.000 — payment row still showed Rp 730.870.000.
