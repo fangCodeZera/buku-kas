@@ -778,7 +778,11 @@ export default function App() {
         }, 0);
         const newValue = Number(nt.value) || 0;
         const correctOutstanding = Math.max(0, newValue - alreadyPaid);
-        const out = Number(nt.outstanding) === 0 ? 0 : correctOutstanding;
+
+        // Full reversal detection: user explicitly set outstanding = full value (Sudah Dibayar = 0).
+        // In this case bypass T27's payment history recomputation — honor the user's intent directly.
+        const isFullReversal = Number(nt.outstanding) === newValue && newValue > 0;
+        const out = Number(nt.outstanding) === 0 ? 0 : (isFullReversal ? newValue : correctOutstanding);
         // dueDate rules on edit:
         //  - fully paid → null
         //  - partial/unpaid and date changed → recalculate from new date
@@ -881,9 +885,23 @@ export default function App() {
           status:         deriveStatus(nt.type, out > 0),
           version:        (x.version || 0) + 1,
           createdAt:      x.createdAt || nt.createdAt || new Date().toISOString(),
-          paymentHistory: editPaymentEntry
-            ? [...(x.paymentHistory || []), editPaymentEntry]
-            : (x.paymentHistory || []),
+          paymentHistory: (() => {
+            // On full reversal: void all prior positive payment entries (set amount to 0,
+            // add correction note) so the timeline doesn't contradict the Belum Lunas status.
+            const baseHistory = isFullReversal
+              ? (x.paymentHistory || []).map((ph) => {
+                  if (Number(ph.amount) <= 0 || EDIT_NOTES.has(ph.note)) return ph;
+                  return {
+                    ...ph,
+                    amount: 0,
+                    note: "Pembayaran dikoreksi — diubah ke Belum Lunas",
+                  };
+                })
+              : (x.paymentHistory || []);
+            return editPaymentEntry
+              ? [...baseHistory, editPaymentEntry]
+              : baseHistory;
+          })(),
           // BUG-008 Fix: Store slim snapshot to prevent localStorage bloat (full copy was 2-3KB each × 20)
           editLog: [...(x.editLog || []), { at: new Date().toISOString(), prev: {
             date:         x.date,

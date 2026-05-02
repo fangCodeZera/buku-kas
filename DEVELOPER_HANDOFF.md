@@ -1292,6 +1292,22 @@ If environment variables change, redeploy is required for changes to take effect
 
 ## 15. What Was Done
 
+### T78 (2026-05-02): Fixed Lunas → Belum Lunas reversal bug
+
+**Bug:** Editing a transaction from Lunas to Belum Lunas with Sudah Dibayar = Rp 0 had no effect — transaction stayed Lunas after saving.
+
+**Root cause:** T27 in `editTransaction` recomputes outstanding from payment history. When a transaction is created as Lunas, the initial payment entry records the full amount. So `alreadyPaid = full value`, `correctOutstanding = 0`, `out = 0` — Lunas — regardless of what the user entered in the form.
+
+**Fix (two parts):**
+1. Added `isFullReversal` detection: `const isFullReversal = Number(nt.outstanding) === newValue && newValue > 0`. When true, bypasses T27 recomputation and sets `out = newValue` directly — honoring the user's explicit intent.
+2. On full reversal, all prior positive payment history entries are voided (amount → 0, note → "Pembayaran dikoreksi — diubah ke Belum Lunas") so the payment timeline doesn't show a contradictory "paid in full" entry alongside a Belum Lunas status. EDIT_NOTES entries (amount=0) are left untouched. The `editPaymentEntry` "Detail Perubahan" audit entry is still appended normally.
+
+**Not affected:** partial payment edits, `addTransaction`, `applyPayment`. T27 normal path unchanged for all non-reversal edits.
+
+**File:** `src/App.js`
+
+---
+
 ### T77 (2026-05-02): StockReportModal quantity display fix
 
 Quantity column in Laporan Stok showed `.00` suffix on all values (e.g. `347.00 KARUNG`, `1055.00 KARUNG`) because `item.qty.toFixed(2)` was used. Fixed: replaced with `Number.isInteger(item.qty) ? item.qty.toLocaleString("id-ID") : item.qty.toFixed(2)`. Whole numbers now display without decimals using Indonesian locale formatting (e.g. `1.055 KARUNG`). File: `src/components/StockReportModal.js`
