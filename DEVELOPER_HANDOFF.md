@@ -1292,6 +1292,12 @@ If environment variables change, redeploy is required for changes to take effect
 
 ## 15. What Was Done
 
+### T77 (2026-05-02): StockReportModal quantity display fix
+
+Quantity column in Laporan Stok showed `.00` suffix on all values (e.g. `347.00 KARUNG`, `1055.00 KARUNG`) because `item.qty.toFixed(2)` was used. Fixed: replaced with `Number.isInteger(item.qty) ? item.qty.toLocaleString("id-ID") : item.qty.toFixed(2)`. Whole numbers now display without decimals using Indonesian locale formatting (e.g. `1.055 KARUNG`). File: `src/components/StockReportModal.js`
+
+---
+
 ### T76 (2026-05-02): Fixed txnId fallback counter sync gap
 
 **Problem:** When `getNextTxnSerial()` fails (network blip, RPC timeout), `addTransaction` falls back to local `generateTxnId()` and saves the transaction successfully. But `txn_counters` is never updated with the serial that was used locally. On the next successful RPC call, `next_txn_serial()` returns the same serial — creating a duplicate txnId for a different transaction.

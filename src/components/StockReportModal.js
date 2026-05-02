@@ -372,7 +372,7 @@ const StockReportModal = ({
                         <td style={{ ...s.td, textAlign: "center" }}>{idx + 1}</td>
                         <td style={s.td}>{item.displayName.toUpperCase()}</td>
                         <td style={{ ...s.td, textAlign: "right" }}>
-                          {item.qty.toFixed(2)}&nbsp;&nbsp;{item.unit.toUpperCase()}
+                          {Number.isInteger(item.qty) ? item.qty.toLocaleString("id-ID") : item.qty.toFixed(2)}&nbsp;&nbsp;{item.unit.toUpperCase()}
                         </td>
                       </tr>
                     ))}
