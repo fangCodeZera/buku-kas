@@ -69,7 +69,7 @@ src/
     DeleteConfirmModal.js          125  Dual-mode (transaction/contact) delete confirm — requires typing "hapus" to enable confirm button
     InvoiceModal.js                337  Printable A4 invoice
     SuratJalanModal.js             289  Printable A4 delivery note
-    DotMatrixPrintModal.js         127  Dot matrix preview + print modal (invoice & surat jalan); both modes render single `<pre>` on screen and print — surat jalan bold-title split removed (T67); modal-box maxWidth 750; `<pre>` style lineHeight:1.2 only (T69 final)
+    DotMatrixPrintModal.js         127  Dot matrix preview + print modal (invoice & surat jalan); both modes render single `<pre>` on screen and print — surat jalan bold-title split removed (T67); modal-box maxWidth 750; `<pre>` style lineHeight:1.2 only (T69 final). Print uses `@page { margin: 4mm }` to suppress browser headers/footers and eliminate right-side gap (T85)
     ToggleSwitch.js                 65  Reusable toggle switch — track+thumb, #007bff/#cbd5e1, keyboard accessible (role=switch, Space/Enter)
     ReportModal.js                 590  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR. Defaults (T25): showCompanyName=false, showSummary=false, printTable1=true, printTable2=false. grandTotalPaid = table1Total + table2Total (T26 — each 0 when its toggle is off). Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84)
     StockWarningModal.js            77  Negative-stock warning
@@ -923,6 +923,24 @@ Always search `styles.css` before adding a new class.
 
 See Section 9 of `CLAUDE.md` for full bug fix history.
 
+### T85 — Dot matrix right gap — PENDING PHYSICAL PRINT VERIFICATION
+
+**Status:** Fix applied (T85), physical Epson LX-300+II test not yet done.
+
+**Background:** Before T85, the physical print had a gap on the right side — the 80-column text did not reach the right edge of the paper. The browser's default `@page` margin (~12mm) shrunk the printable area enough to push the last columns off to the right.
+
+**T85 fix applied:** `handlePrint` in `DotMatrixPrintModal.js` now emits `@page { margin: 4mm }` in the print `<style>` block, giving 202mm usable width on A4 — enough to fit 80 columns of Courier New 12pt with a 4mm safety buffer on each side.
+
+**Why the browser preview still shows a gap:** The browser print preview renders on Letter paper (8.5" = 215.9mm). Epson LX-300+II uses continuous form paper (9.5" = 241.3mm wide). The preview is not a reliable indicator for dot matrix output — a visible gap in preview does not mean the physical print will have a gap.
+
+**If physical print still has a right gap after T85:** The one-line fix is to increase font size in `handlePrint` from `12pt` to `13pt` or `13.5pt`. Change this line in the `<style>` block inside `handlePrint`:
+```
+font-size: 12pt;   →   font-size: 13pt;
+```
+Only `src/components/DotMatrixPrintModal.js` needs to change — `textFormatter.js` layout engine is correct and must not be touched.
+
+---
+
 ### T57 — Dot matrix follow-up: restore preview width, restore bank account spacing (2026-04-29)
 
 **Fix 1 — Surat Jalan screen preview too narrow (`DotMatrixPrintModal.js`):** The T56 `display:inline-block;width:fit-content` wrapper on the screen preview caused the modal preview to shrink to `<pre>` content width, leaving a large right gap in the modal. Fix: removed the wrapper from the screen preview JSX — reverted to `<>` fragment (title `<div>` and `<pre>` as siblings). The print portal surat jalan path retains the `display:inline-block;width:fit-content` wrapper (needed for print alignment — unrelated to screen layout).
@@ -1415,6 +1433,32 @@ SELECT jobname, schedule FROM cron.job WHERE jobname = 'cleanup-activity-log'; -
 Older records remain in Supabase and are never deleted. The filter uses the existing `idx_transactions_date` index. Build: 188.46 kB (−181 B).
 
 **File:** `src/utils/supabaseStorage.js`
+
+---
+
+### T85 (2026-05-03): Dot matrix print — suppress browser headers and fix right gap
+
+Two physical print issues fixed by adding `@page` CSS to the print HTML string in `handlePrint`.
+
+**Issue A — Browser headers/footers:** Chrome and most browsers print a header (date/time) and footer (URL, page title) when the `@page` margin is large enough to fit them. Setting `@page { margin: 4mm }` makes the margins too small for the browser to render its decorations, suppressing them without requiring any browser print setting changes by the user.
+
+**Issue B — Right-side gap:** The browser's default `@page` margin (~12mm) shrinks the printable area. The 80-column Courier New content is ~200mm wide (80 chars × 2.54mm/char at 12pt). On A4 (210mm wide) that leaves ~10mm — but the default browser margins consumed it all, causing a large right gap. At 4mm margins the usable width is 202mm, comfortably fitting the content with a small safety buffer so the printer head doesn't cut anything.
+
+**Unification:** The two branches of `handlePrint` (suratJalan and invoice) were byte-for-byte identical. They are now unified into a single code path. The logic is exactly the same.
+
+**Print HTML structure (after T85):**
+```html
+<style>
+  @page { margin: 4mm 4mm 4mm 4mm; }
+  html, body { margin: 0; padding: 0; }
+  pre { font-family: 'Courier New'...; font-size: 12pt; line-height: 1.2; margin: 0; padding: 0; white-space: pre; border: none; background: none; }
+</style>
+<pre>[escaped 80-column text]</pre>
+```
+
+The screen preview (`<pre className="dot-matrix-preview">`) is untouched — only the print portal output changes.
+
+**File:** `src/components/DotMatrixPrintModal.js`
 
 ---
 

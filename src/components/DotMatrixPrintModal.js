@@ -35,21 +35,32 @@ const DotMatrixPrintModal = ({ transaction, mode, settings, contacts = [], onClo
   }, [transaction, mode, settings, contacts, invoiceNote, platNomor, catatanPengiriman]);
 
   const handlePrint = () => {
-    let printHtml;
+    const escaped = formattedText
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
 
-    if (mode === "suratJalan") {
-      const escaped = formattedText
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      printHtml = `<pre style="font-family:'Courier New',Courier,monospace;font-size:12pt;line-height:1.2;margin:0;padding:0;white-space:pre;border:none;background:none;">${escaped}</pre>`;
-    } else {
-      const escaped = formattedText
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      printHtml = `<pre style="font-family:'Courier New',Courier,monospace;font-size:12pt;line-height:1.2;margin:0;padding:0;white-space:pre;border:none;background:none;">${escaped}</pre>`;
-    }
+    const printHtml = `
+      <style>
+        @page {
+          margin: 4mm 4mm 4mm 4mm;
+        }
+        html, body {
+          margin: 0;
+          padding: 0;
+        }
+        pre {
+          font-family: 'Courier New', Courier, monospace;
+          font-size: 12pt;
+          line-height: 1.2;
+          margin: 0;
+          padding: 0;
+          white-space: pre;
+          border: none;
+          background: none;
+        }
+      </style>
+      <pre>${escaped}</pre>`;
 
     printWithPortal(printHtml);
   };
