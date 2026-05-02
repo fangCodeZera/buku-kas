@@ -677,7 +677,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                         <td className="td-right">{it.sackQty != null ? fmtQty(it.sackQty) : "—"}</td>
                         <td className="td-right">{it.weightKg ? fmtQty(it.weightKg) : "—"}</td>
                         <td className="td-right">{it.pricePerKg ? fmtIDR(it.pricePerKg) : "—"}</td>
-                        <td className="td-right" style={{ fontWeight: 700 }}>{fmtIDR(it.subtotal)}</td>
+                        <td className="td-right" style={{ fontWeight: 700, color: t.type === "income" ? "#10b981" : "#ef4444" }}>{fmtIDR(it.subtotal)}</td>
                         {optCells(true)}
                       </tr>,
                       ...mkPaymentRows(t, inlinePayments, "iph"),
@@ -729,7 +729,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                           </>
                         ) : "Total:"}
                       </td>
-                      <td className="td-right" style={{ fontWeight: 700 }}>
+                      <td className="td-right" style={{ fontWeight: 700, color: t.type === "income" ? "#10b981" : "#ef4444" }}>
                         {contrib ? fmtIDR(contrib.combinedSubtotal) : fmtIDR(t.value)}
                       </td>
                       {optCells(true, contrib)}

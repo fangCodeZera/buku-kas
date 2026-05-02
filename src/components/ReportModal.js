@@ -412,7 +412,7 @@ const ReportModal = ({
                       <td style={s.td}>{it.itemName}</td>
                       <td style={{ ...s.td, fontSize: 10 }}>{beratHarga}</td>
                       <td style={{ ...s.td, ...s.tdR }}>{it.sackQty != null ? fmtQty(it.sackQty) : "—"}</td>
-                      <td style={{ ...s.td, ...s.tdR, fontWeight: 700 }}>{fmtIDR(it.subtotal)}</td>
+                      <td style={{ ...s.td, ...s.tdR, fontWeight: 700, color: t.type === "income" ? "#10b981" : "#ef4444" }}>{fmtIDR(it.subtotal)}</td>
                       {optCellsForRow(t)}
                     </tr>,
                     ...mkPaymentRows(t, inlinePayments, "iph", true),
@@ -456,7 +456,7 @@ const ReportModal = ({
                           </>
                         : "Total:"}
                     </td>
-                    <td style={{ ...s.td, ...s.tdR, fontWeight: 700, color: "#1e3a5f" }}>
+                    <td style={{ ...s.td, ...s.tdR, fontWeight: 700, color: t.type === "income" ? "#10b981" : "#ef4444" }}>
                       {contrib ? fmtIDR(contrib.combinedSubtotal) : fmtIDR(t.value)}
                     </td>
                     {optCellsForRow(t, true, contrib)}
@@ -533,15 +533,15 @@ const ReportModal = ({
         {/* Grand total */}
         <div style={s.section}>
           <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: "8px 8px 4px", color: "#1e3a5f", borderTop: "2px solid #1e3a5f" }}>
-            Grand Total Nilai{" "}
-            <span style={{ color: grandTotalNilai >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>
-              {fmtIDR(grandTotalNilai)}
-            </span>
-          </div>
-          <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: "4px 8px 8px", color: "#1e3a5f" }}>
             Total Sudah Dibayar{" "}
             <span style={{ color: grandTotalPaid >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>
               {fmtIDR(grandTotalPaid)}
+            </span>
+          </div>
+          <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: "4px 8px 8px", color: "#1e3a5f" }}>
+            Grand Total Nilai{" "}
+            <span style={{ color: grandTotalNilai >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>
+              {fmtIDR(grandTotalNilai)}
             </span>
           </div>
         </div>

@@ -75,6 +75,11 @@ const TransactionForm = ({
       return activeSubtypes.length > 0;
     }),
   [itemCatalog]);
+
+  /** Format a quantity: integer → no decimals, float → 2 decimals */
+  const fmtQtyDisplay = (n) =>
+    Number.isInteger(n) ? n.toLocaleString("id-ID") : Number(n).toFixed(2);
+
   /**
    * Map an existing itemName string back to its catalog entry for edit-mode pre-fill.
    * Returns { itemNameInput, itemTypeInput, catalogItemId, matchedCatalog }.
@@ -1011,11 +1016,11 @@ const TransactionForm = ({
                                 onMouseDown={() => handleSelectSuggestion(idx, cat)}
                               >
                                 <span>{cat.name}</span>
-                                <span className="autocomplete-stock-hint">
-                                  {sq
-                                    ? `${Number(sq.qty).toFixed(2)} ${sq.unit || cat.defaultUnit}`
-                                    : `0 ${cat.defaultUnit}`}
-                                </span>
+                                {sq && (cat.subtypes || []).length === 0 && (
+                                  <span className="autocomplete-stock-hint">
+                                    {fmtQtyDisplay(Number(sq.qty))} {sq.unit || cat.defaultUnit}
+                                  </span>
+                                )}
                               </div>
                             );
                           })}
@@ -1067,7 +1072,7 @@ const TransactionForm = ({
                                   <span>{sub}</span>
                                   <span className="autocomplete-stock-hint">
                                     {sq
-                                      ? `${Number(sq.qty).toFixed(2)} ${sq.unit || "karung"}`
+                                      ? `${fmtQtyDisplay(Number(sq.qty))} ${sq.unit || "karung"}`
                                       : `0 ${freshCatalog.defaultUnit || "karung"}`}
                                   </span>
                                 </div>
@@ -1089,7 +1094,7 @@ const TransactionForm = ({
                           const color = aq > 0 ? "#10b981" : "#ef4444";
                           return (
                             <span style={{ color }}>
-                              Stok: {aq.toFixed(2)} {curStock.unit || "karung"}
+                              Stok: {fmtQtyDisplay(aq)} {curStock.unit || "karung"}
                             </span>
                           );
                         })()
@@ -1166,11 +1171,11 @@ const TransactionForm = ({
                         <>
                           Stok saat ini:{" "}
                           <strong style={{ color: aqd > 0 ? "#10b981" : "#ef4444" }}>
-                            {aqd.toFixed(2)}
+                            {fmtQtyDisplay(aqd)}
                           </strong>
                           {" → "}
                           <strong style={{ color: "#007bff" }}>
-                            {projected.toFixed(2)} karung
+                            {fmtQtyDisplay(projected)} karung
                           </strong>
                         </>
                       );

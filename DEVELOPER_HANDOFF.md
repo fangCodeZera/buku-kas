@@ -54,7 +54,7 @@ src/
     Inventory.js                  ~1884  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "karung" (T48/T49); base item rows hidden when zero stock AND zero transactions (T50); subtype rows with 0 stock + 0 txCount + 0 adjCount hidden by default (T55) — "Tampilkan item tanpa stok & transaksi" toggle reveals them (label updated T72); handleAddSubtype checks both subtypes+archivedSubtypes for duplicates (T60); rename guard checks all catalog entries not just stockMap (T60); hasTx checks include archivedSubtypes (T60); uncatalogued item delete requires typing "hapus" (T60); ledgerEntries sort uses date+time only, ignoring createdAt (T71)
     Contacts.js                    672  Contact list + detail panel + transaction history; handleSave uses editingContact (from contacts array) not sel (from filtered withBalance) — prevents silent add-instead-of-edit when search is active (T61); archive/delete confirm handlers call setEditMode(false) (T61); progress bar at 0% returns null not "0%" text (T61); payment history colSpan corrected 8→9 (T62)
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
-    Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table); chip dismiss + Reset Filter both sync inventoryFilterItem↔selectedItems (T63); orphanPayments + paymentCount both respect typeFilter (T63)
+    Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table); chip dismiss + Reset Filter both sync inventoryFilterItem↔selectedItems (T63); orphanPayments + paymentCount both respect typeFilter (T63); Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84)
     Outstanding.js                 557  AR/AP outstanding transactions view
     Settings.js                    617  Business settings + JSON/CSV backup/restore + printer type toggle; handleSave flushes unblurred numeric fields into finalForm (T64); import syncs form/dueDaysStr/lowStockStr/maxBankStr from parsed.settings on success (T64); NORM_VERSION from storage.js (T64)
     ArchivedItems.js               286  Archived catalog items — restore or delete
@@ -63,7 +63,7 @@ src/
 
   components/
     TransactionPage.js             652  Shared base: Penjualan + Pembelian day-view
-    TransactionForm.js            1496  Full transaction input form (multi-item, catalog autocomplete); Tipe field required — missing-type blocking modal (T52)
+    TransactionForm.js            1531  Full transaction input form (multi-item, catalog autocomplete); Tipe field required — missing-type blocking modal (T52); stock qty display uses fmtQtyDisplay (integer=no decimals, float=2dp) at all 5 locations (T82); Nama Barang autocomplete hides stock hint for base items with subtypes (T82)
     PaymentHistoryPanel.js         334  Expandable payment timeline — newest-first order (T29); PendingNode at top
     PaymentUpdateModal.js          183  Record payment modal
     DeleteConfirmModal.js          125  Dual-mode (transaction/contact) delete confirm — requires typing "hapus" to enable confirm button
@@ -71,7 +71,7 @@ src/
     SuratJalanModal.js             289  Printable A4 delivery note
     DotMatrixPrintModal.js         127  Dot matrix preview + print modal (invoice & surat jalan); both modes render single `<pre>` on screen and print — surat jalan bold-title split removed (T67); modal-box maxWidth 750; `<pre>` style lineHeight:1.2 only (T69 final)
     ToggleSwitch.js                 65  Reusable toggle switch — track+thumb, #007bff/#cbd5e1, keyboard accessible (role=switch, Space/Enter)
-    ReportModal.js                 590  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR. Defaults (T25): showCompanyName=false, showSummary=false, printTable1=true, printTable2=false. grandTotalPaid = table1Total + table2Total (T26 — each 0 when its toggle is off)
+    ReportModal.js                 590  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR. Defaults (T25): showCompanyName=false, showSummary=false, printTable1=true, printTable2=false. grandTotalPaid = table1Total + table2Total (T26 — each 0 when its toggle is off). Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84)
     StockWarningModal.js            77  Negative-stock warning
     StockReportModal.js            ~430  Printable stock report — derives groupings from itemCatalog prop (active entries = groups, active subtypes = members, uncatalogued → "Lainnya", archived → "Barang Diarsipkan"). Toggles: showZeroStock, showCompanyName (default OFF — T53), showArchivedItems (default OFF). Base rows hidden when baseQty===0 && baseTxCount===0 even with showZeroStock ON (T53 — mirrors Inventory T50)
     Badge.js                       113  StatusBadge, TypeBadge (named exports)
@@ -1415,6 +1415,55 @@ SELECT jobname, schedule FROM cron.job WHERE jobname = 'cleanup-activity-log'; -
 Older records remain in Supabase and are never deleted. The filter uses the existing `idx_transactions_date` index. Build: 188.46 kB (−181 B).
 
 **File:** `src/utils/supabaseStorage.js`
+
+---
+
+### T84 (2026-05-03): Color-code Subtotal amounts by transaction type
+
+Subtotal column amounts in the Laporan screen table and Cetak Laporan print modal are now color-coded by transaction type: Penjualan (`t.type === "income"`) → `#10b981` (green); Pembelian (`t.type === "expense"`) → `#ef4444` (red).
+
+Applied to 4 locations across 2 files:
+1. **`Reports.js` — single-item row subtotal** (line 680): Added `color: t.type === "income" ? "#10b981" : "#ef4444"` to existing `style={{ fontWeight: 700 }}`.
+2. **`Reports.js` — multi-item subtotal row amount** (line 732): Same color rule added to `style={{ fontWeight: 700 }}`.
+3. **`ReportModal.js` — single-item row subtotal** (line 442): Added `color` + `fontWeight: 700` to the inline style.
+4. **`ReportModal.js` — multi-item subtotal row amount** (line 459): Replaced `color: "#1e3a5f"` (navy) entirely with `color: t.type === "income" ? "#10b981" : "#ef4444"`. No navy fallback — green/red is the correct value.
+
+Sudah Dibayar column, payment rows (inline and orphan), and grand total bar are untouched.
+
+Print output automatically inherits the color via inline styles captured by `docRef.current.outerHTML` in `printWithPortal` — no additional print-specific changes needed.
+
+Build: 188.79 kB (+3 B).
+
+**Files:** `src/pages/Reports.js`, `src/components/ReportModal.js`
+
+---
+
+### T83 (2026-05-03): ReportModal — swap grand total row order
+
+Swapped the two rows in the Grand Total section of `ReportModal.js`. Previously: Grand Total Nilai (top) → Total Sudah Dibayar (bottom). Now: Total Sudah Dibayar (top) → Grand Total Nilai (bottom). Grand Total Nilai is the headline anchor number the eye lands on last.
+
+Pure content swap — all `style` props, colors, font weights, and padding are identical and unchanged between the two divs (only the border-top stays on the first div as before). The print output renders from `docRef.current.outerHTML` so it automatically reflects the same order with no additional changes.
+
+**File:** `src/components/ReportModal.js`
+
+---
+
+### T82 (2026-05-03): TransactionForm — fix decimal display, remove base item stock hint
+
+Two cosmetic fixes in `src/components/TransactionForm.js`.
+
+**Fix A — Decimal display:** Stock quantities were formatted with `.toFixed(2)`, always showing two decimal places (e.g. "92.00 karung"). Added a local `fmtQtyDisplay(n)` helper at the top of the component body (after `activeCatalog` useMemo): `Number.isInteger(n) ? n.toLocaleString("id-ID") : Number(n).toFixed(2)`. Applied to all 5 display locations:
+1. Nama Barang autocomplete stock hint
+2. Tipe autocomplete stock hint
+3. "Stok: X karung" line below item name
+4. Stock delta preview — current stock (`aqd`)
+5. Stock delta preview — projected stock (`projected`)
+
+**Fix B — Remove base item stock hint:** The Nama Barang autocomplete showed a stock hint (e.g. "0 karung") next to every base item. Since T52 enforces subtypes on all items, base items always show 0 — the hint is permanently useless noise. Changed the hint render condition to `{sq && (cat.subtypes || []).length === 0 && (...)}` — only shown when the item has actual stock AND has no subtypes. This effectively hides the hint for all active catalog items (which all have subtypes) and is future-safe for any edge-case legacy item.
+
+The Tipe (subtype) autocomplete dropdown is untouched — it correctly shows per-subtype stock.
+
+**File:** `src/components/TransactionForm.js`
 
 ---
 
