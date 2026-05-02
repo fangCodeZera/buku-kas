@@ -1292,6 +1292,25 @@ If environment variables change, redeploy is required for changes to take effect
 
 ## 15. What Was Done
 
+### T79 (2026-05-02): Fixed stale Sudah Dibayar in Laporan after value edit
+
+**Bug:** Laporan page payment row showed wrong Sudah Dibayar amount after a Lunas transaction's value was edited. Example: transaction created as Lunas at Rp 730.870.000, edited to Rp 73.087.000 — payment row still showed Rp 730.870.000.
+
+**Root cause:** `mkPaymentRows` in `Reports.js` reads `ph.amount` directly from payment history entries. The initial creation entry (note = `"Lunas saat transaksi dibuat"`) stores the amount at creation time and is never updated when the transaction value is edited later.
+
+**Fix:** For entries where `ph.note === "Lunas saat transaksi dibuat"`, use `Number(t.value) - (Number(t.outstanding) || 0)` instead of `ph.amount` — this always reflects the correct current paid amount based on the last edit. All other payment entries (partial payments via `applyPayment`) are untouched and unaffected.
+
+**Applied in three places in `Reports.js`:**
+1. `mkPaymentRows` Sudah Dibayar cell — screen display
+2. Orphan payment row (Table 2) Sudah Dibayar cell — screen display
+3. `exportCSV` — both inline and orphan payment rows via `effectiveAmount` variable
+
+**Not affected:** `grandTotalPaid` (already uses `t.value - t.outstanding`), transaction row `paid` calculation, partial payment flows, `outstandingBefore`/`outstandingAfter` audit display lines.
+
+**File:** `src/pages/Reports.js`
+
+---
+
 ### T78 (2026-05-02): Fixed Lunas → Belum Lunas reversal bug
 
 **Bug:** Editing a transaction from Lunas to Belum Lunas with Sudah Dibayar = Rp 0 had no effect — transaction stayed Lunas after saving.

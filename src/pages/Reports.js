@@ -205,7 +205,10 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
       if (!Array.isArray(t.paymentHistory)) return;
       const jenisLabel = t.type === "income" ? "Penjualan" : "Pembelian";
       t.paymentHistory.filter(pmtFilter).forEach((ph) => {
-        const signedAmount = t.type === "income" ? Number(ph.amount) : -Number(ph.amount);
+        const effectiveAmount = ph.note === "Lunas saat transaksi dibuat"
+          ? Number(t.value) - (Number(t.outstanding) || 0)
+          : Number(ph.amount);
+        const signedAmount = t.type === "income" ? effectiveAmount : -effectiveAmount;
         rows.push([
           "", t.txnId || "", ph.date, t.counterparty,
           ph.note || "", "", "", "",
@@ -221,7 +224,10 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
       if (!Array.isArray(t.paymentHistory)) return;
       const jenisLabel = t.type === "income" ? "Penjualan" : "Pembelian";
       t.paymentHistory.filter(pmtFilter).forEach((ph) => {
-        const signedAmount = t.type === "income" ? Number(ph.amount) : -Number(ph.amount);
+        const effectiveAmount = ph.note === "Lunas saat transaksi dibuat"
+          ? Number(t.value) - (Number(t.outstanding) || 0)
+          : Number(ph.amount);
+        const signedAmount = t.type === "income" ? effectiveAmount : -effectiveAmount;
         rows.push([
           "", t.txnId || "", ph.date, t.counterparty,
           ph.note || "", "", "", "",
@@ -354,7 +360,11 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         <td /><td /><td /><td />
         {colSudahDibayar && (
           <td className="td-right" style={{ color: phAmountColor, fontWeight: 700, fontSize: 12 }}>
-            {isIncome ? "+" : "-"}{fmtIDR(ph.amount)}
+            {isIncome ? "+" : "-"}{fmtIDR(
+              ph.note === "Lunas saat transaksi dibuat"
+                ? Number(t.value) - (Number(t.outstanding) || 0)
+                : ph.amount
+            )}
           </td>
         )}
         {colTotalNilai  && <td />}
@@ -822,7 +832,11 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                           <td /><td /><td /><td />
                           {colSudahDibayar && (
                             <td className="td-right" style={{ color: phAmountColor, fontWeight: 700, fontSize: 12 }}>
-                              {isIncome ? "+" : "-"}{fmtIDR(ph.amount)}
+                              {isIncome ? "+" : "-"}{fmtIDR(
+                                ph.note === "Lunas saat transaksi dibuat"
+                                  ? Number(t.value) - (Number(t.outstanding) || 0)
+                                  : ph.amount
+                              )}
                             </td>
                           )}
                           {colTotalNilai  && <td />}
