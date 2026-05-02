@@ -91,6 +91,12 @@ const ReportModal = ({
 
   const grandTotalPaid = table1Total + table2Total;
 
+  const grandTotalNilai = (printTable1 ? transactions.reduce((sum, t) => {
+    const contrib = getMultiItemContribution(t, selectedItems);
+    const nilai = contrib ? contrib.combinedSubtotal : Number(t.value) || 0;
+    return t.type === "income" ? sum + nilai : sum - nilai;
+  }, 0) : 0);
+
   const filteredIds = new Set(transactions.map((t) => t.id));
 
   const orphanPaymentGroups = allTransactions.flatMap((t) => {
@@ -526,9 +532,17 @@ const ReportModal = ({
 
         {/* Grand total */}
         <div style={s.section}>
-          <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: 8, color: "#1e3a5f", borderTop: "2px solid #1e3a5f" }}>
-            Grand Total IDR{" "}
-            <span style={{ color: grandTotalPaid >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>{fmtIDR(grandTotalPaid)}</span>
+          <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: "8px 8px 4px", color: "#1e3a5f", borderTop: "2px solid #1e3a5f" }}>
+            Grand Total Nilai{" "}
+            <span style={{ color: grandTotalNilai >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>
+              {fmtIDR(grandTotalNilai)}
+            </span>
+          </div>
+          <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: "4px 8px 8px", color: "#1e3a5f" }}>
+            Total Sudah Dibayar{" "}
+            <span style={{ color: grandTotalPaid >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>
+              {fmtIDR(grandTotalPaid)}
+            </span>
           </div>
         </div>
 

@@ -148,6 +148,14 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     return filteredNet + allPaymentsNet;
   }, [filtered, transactions, dateFrom, dateTo, selectedItems]);
 
+  const grandTotalNilai = useMemo(() => {
+    return filtered.reduce((sum, t) => {
+      const contrib = getMultiItemContribution(t, selectedItems);
+      const nilai = contrib ? contrib.combinedSubtotal : Number(t.value) || 0;
+      return t.type === "income" ? sum + nilai : sum - nilai;
+    }, 0);
+  }, [filtered, selectedItems]);
+
   const exportCSV = () => {
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const pmtFilter = (ph) =>
@@ -880,9 +888,9 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
           )}
           <span style={{ color: "#6b7280" }}>|</span>
           <span>
-            Grand Total Sudah Dibayar:{" "}
-            <span style={{ fontWeight: 700, color: grandTotalPaid >= 0 ? "#10b981" : "#ef4444" }}>
-              {fmtIDR(grandTotalPaid)}
+            Grand Total Nilai:{" "}
+            <span style={{ fontWeight: 700, color: grandTotalNilai >= 0 ? "#10b981" : "#ef4444" }}>
+              {fmtIDR(grandTotalNilai)}
             </span>
           </span>
         </div>
