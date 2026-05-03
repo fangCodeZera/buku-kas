@@ -1676,6 +1676,35 @@ Added two missing indexes to the `activity_log` Supabase table via MCP: `idx_act
 
 ---
 
+### T87 (2026-05-04): Laporan print column cap
+
+**Problem:** The Tampilkan kolom bar offered 5 optional columns (Sudah Dibayar, Sisa Tagihan, Jenis, Total Nilai, Piutang/Hutang). Enabling 3 or more caused column overflow and visual overlap in the browser's A4 landscape print preview.
+
+**Solution — two-part:**
+
+**Part 1 — Remove 2 columns from print toggle bar (`Reports.js`):**
+- `colTotalNilai` and `colPiutang` toggle buttons removed from the UI bar entirely.
+- State variables `const [colTotalNilai] = useState(false)` and `const [colPiutang] = useState(false)` retained (no setter destructured) — they still control screen table columns and CSV export. The `setColTotalNilai`/`setColPiutang` setters are simply never needed since the value stays `false`.
+- The remaining 3 toggle buttons (Sudah Dibayar, Sisa Tagihan, Jenis) are rendered inside an IIFE that computes `printOptCount = [colSudahDibayar, colSisaTagihan, colJenis].filter(Boolean).length`.
+- When `printOptCount >= 2`, any button that is currently OFF is rendered with `disabled={true}`, `opacity: 0.4`, `cursor: "not-allowed"`.
+- An amber warning paragraph `"Maksimal 2 kolom tambahan dapat dicetak. Nonaktifkan salah satu untuk memilih kolom lain."` appears below the buttons when `printOptCount >= 2`.
+
+**Part 2 — ReportModal defensive override (`ReportModal.js`):**
+- Props `colTotalNilai` and `colPiutang` are still accepted in the destructuring (with `// eslint-disable-line no-unused-vars` comments) so the call site doesn't need to change.
+- Two `const` overrides at the top of the component body:
+  ```js
+  const effectiveTotalNilai = false;
+  const effectivePiutang = false;
+  ```
+- All references to `colTotalNilai` in the component body replaced with `effectiveTotalNilai`; all `colPiutang` replaced with `effectivePiutang`. These columns are never rendered in print regardless of what the parent passes.
+- This ensures the print modal can never accidentally show those columns even if the prop is somehow `true` in a future regression.
+
+**Unchanged:** Screen table columns, CSV export rows, grand total calculation, all other optional columns, all other print options.
+
+**Files:** `src/pages/Reports.js`, `src/components/ReportModal.js`
+
+---
+
 ## 16. What Is NOT Yet Done
 
 ### Penjualan/Pembelian audit (partial)

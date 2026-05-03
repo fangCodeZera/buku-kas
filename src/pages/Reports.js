@@ -40,9 +40,9 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
   // Column visibility toggles — reset to default on every page load (no persistence)
   // Sudah Dibayar is visible by default; others hidden. Role-sensitive cols gated by isOwner.
   const [colSudahDibayar, setColSudahDibayar] = useState(true);
-  const [colTotalNilai,   setColTotalNilai]   = useState(false);
+  const [colTotalNilai] = useState(false); // toggle removed from UI; still used in screen table + CSV
   const [colSisaTagihan,  setColSisaTagihan]  = useState(false);
-  const [colPiutang,      setColPiutang]      = useState(false);
+  const [colPiutang] = useState(false); // toggle removed from UI; still used in screen table + CSV
   const [colJenis,        setColJenis]        = useState(false);
   const [table1Open,      setTable1Open]      = useState(true);
   const [table2Open,      setTable2Open]      = useState(true);
@@ -536,25 +536,37 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
 
       {/* Transaction table — Table 1: Transactions in period */}
       <div className="table-card" style={{ marginBottom: 16 }}>
-        {/* Column toggle bar */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", padding: "8px 12px 4px", borderBottom: "1px solid #e2e8f0" }}>
-          <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, marginRight: 2 }}>Tampilkan kolom:</span>
-          {[
-            ["Sudah Dibayar", colSudahDibayar, setColSudahDibayar],
-            ["Total Nilai",   colTotalNilai,   setColTotalNilai],
-            ["Sisa Tagihan",  colSisaTagihan,  setColSisaTagihan],
-            ["Piutang/Hutang",colPiutang,      setColPiutang],
-            ["Jenis",         colJenis,        setColJenis],
-          ].map(([label, on, setter]) => (
-            <button
-              key={label}
-              onClick={() => setter((v) => !v)}
-              className={`filter-btn${on ? " filter-btn--active" : ""}`}
-              style={{ fontSize: 11, padding: "2px 10px" }}
-              aria-pressed={on}
-            >{label}</button>
-          ))}
-        </div>
+        {/* Column toggle bar — max 2 optional columns for print layout */}
+        {(() => {
+          const printOptCount = [colSudahDibayar, colSisaTagihan, colJenis].filter(Boolean).length;
+          return (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", padding: "8px 12px 4px", borderBottom: "1px solid #e2e8f0" }}>
+              <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, marginRight: 2 }}>Tampilkan kolom:</span>
+              {[
+                ["Sudah Dibayar", colSudahDibayar, setColSudahDibayar],
+                ["Sisa Tagihan",  colSisaTagihan,  setColSisaTagihan],
+                ["Jenis",         colJenis,        setColJenis],
+              ].map(([label, on, setter]) => {
+                const isDisabled = printOptCount >= 2 && !on;
+                return (
+                  <button
+                    key={label}
+                    onClick={() => !isDisabled && setter((v) => !v)}
+                    className={`filter-btn${on ? " filter-btn--active" : ""}`}
+                    style={{ fontSize: 11, padding: "2px 10px", ...(isDisabled ? { opacity: 0.4, cursor: "not-allowed" } : {}) }}
+                    disabled={isDisabled}
+                    aria-pressed={on}
+                  >{label}</button>
+                );
+              })}
+              {printOptCount >= 2 && (
+                <p style={{ width: "100%", fontSize: 12, color: "#f59e0b", margin: "6px 0 0 0" }}>
+                  Maksimal 2 kolom tambahan dapat dicetak. Nonaktifkan salah satu untuk memilih kolom lain.
+                </p>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Table 1 collapse header */}
         <div

@@ -25,12 +25,16 @@ const ReportModal = ({
   dateTo,
   selectedItems = [],
   colSudahDibayar = true,
-  colTotalNilai = false,
+  colTotalNilai = false, // eslint-disable-line no-unused-vars
   colSisaTagihan = false,
-  colPiutang = false,
+  colPiutang = false, // eslint-disable-line no-unused-vars
   colJenis = false,
   onClose,
 }) => {
+  // Defensive override: ignore these columns regardless of prop — print layout cap is 2 optional cols
+  const effectiveTotalNilai = false;
+  const effectivePiutang = false;
+
   const [showCompanyName, setShowCompanyName] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [table1Open, setTable1Open] = useState(true);
@@ -174,9 +178,9 @@ const ReportModal = ({
     return (
       <>
         {colSudahDibayar && <td style={{ ...s.td, ...s.tdR, fontWeight: isSubtotal ? 700 : 600, color: isSubtotal ? "#10b981" : undefined }}>{fmtIDR(effectivePaid)}</td>}
-        {colTotalNilai   && <td style={{ ...s.td, ...s.tdR, fontWeight: 600 }}>{fmtIDR(contrib ? contrib.combinedSubtotal : t.value)}</td>}
+        {effectiveTotalNilai   && <td style={{ ...s.td, ...s.tdR, fontWeight: 600 }}>{fmtIDR(contrib ? contrib.combinedSubtotal : t.value)}</td>}
         {colSisaTagihan  && <td style={{ ...s.td, ...s.tdR }}>{effectiveOutstanding > 0 ? fmtIDR(effectiveOutstanding) : "Lunas"}</td>}
-        {colPiutang      && <td style={{ ...s.td, ...s.tdC }}>
+        {effectivePiutang      && <td style={{ ...s.td, ...s.tdC }}>
           {/* Piutang/Hutang badge uses raw outstanding — transaction-level status */}
           {Number(t.outstanding) > 0
             ? (t.type === "income" ? "Piutang" : "Hutang")
@@ -191,9 +195,9 @@ const ReportModal = ({
   const optCellsBlank = () => (
     <>
       {colSudahDibayar && <td style={s.td} />}
-      {colTotalNilai   && <td style={s.td} />}
+      {effectiveTotalNilai   && <td style={s.td} />}
       {colSisaTagihan  && <td style={s.td} />}
-      {colPiutang      && <td style={s.td} />}
+      {effectivePiutang      && <td style={s.td} />}
       {colJenis        && <td style={s.td} />}
     </>
   );
@@ -235,13 +239,13 @@ const ReportModal = ({
             {isIncome ? "+" : "−"}{fmtIDR(ph.amount)}
           </td>
         )}
-        {colTotalNilai  && <td style={s.td} />}
+        {effectiveTotalNilai  && <td style={s.td} />}
         {colSisaTagihan && (
           <td style={{ ...s.td, ...s.tdR, fontSize: 10, color: "#475569" }}>
             {Number(ph.outstandingAfter) > 0 ? fmtIDR(ph.outstandingAfter) : "Lunas ✓"}
           </td>
         )}
-        {colPiutang && <td style={s.td} />}
+        {effectivePiutang && <td style={s.td} />}
         {colJenis   && <td style={s.td} />}
       </tr>
     ));
@@ -363,9 +367,9 @@ const ReportModal = ({
               <col style={{ width: "5%" }} />
               <col style={{ width: "9%" }} />
               {colSudahDibayar && <col style={{ width: "9%" }} />}
-              {colTotalNilai   && <col style={{ width: "9%" }} />}
+              {effectiveTotalNilai   && <col style={{ width: "9%" }} />}
               {colSisaTagihan  && <col style={{ width: "9%" }} />}
-              {colPiutang      && <col style={{ width: "8%" }} />}
+              {effectivePiutang      && <col style={{ width: "8%" }} />}
               {colJenis        && <col style={{ width: "7%" }} />}
             </colgroup>
             <thead>
@@ -379,9 +383,9 @@ const ReportModal = ({
                 <th style={{ ...s.th, ...s.thR }}>Krg</th>
                 <th style={{ ...s.th, ...s.thR }}>Subtotal</th>
                 {colSudahDibayar && <th style={{ ...s.th, ...s.thR }}>Sudah Dibayar</th>}
-                {colTotalNilai   && <th style={{ ...s.th, ...s.thR }}>Total Nilai</th>}
+                {effectiveTotalNilai   && <th style={{ ...s.th, ...s.thR }}>Total Nilai</th>}
                 {colSisaTagihan  && <th style={{ ...s.th, ...s.thR }}>Sisa Tagihan</th>}
-                {colPiutang      && <th style={{ ...s.th, ...s.thR }}>Piutang/Hutang</th>}
+                {effectivePiutang      && <th style={{ ...s.th, ...s.thR }}>Piutang/Hutang</th>}
                 {colJenis        && <th style={{ ...s.th, ...s.thC }}>Jenis</th>}
               </tr>
             </thead>
@@ -498,9 +502,9 @@ const ReportModal = ({
                   <col style={{ width: "5%" }} />
                   <col style={{ width: "9%" }} />
                   {colSudahDibayar && <col style={{ width: "9%" }} />}
-                  {colTotalNilai   && <col style={{ width: "9%" }} />}
+                  {effectiveTotalNilai   && <col style={{ width: "9%" }} />}
                   {colSisaTagihan  && <col style={{ width: "9%" }} />}
-                  {colPiutang      && <col style={{ width: "8%" }} />}
+                  {effectivePiutang      && <col style={{ width: "8%" }} />}
                   {colJenis        && <col style={{ width: "7%" }} />}
                 </colgroup>
                 <thead>
@@ -514,9 +518,9 @@ const ReportModal = ({
                     <th style={{ ...s.th, ...s.thR }}>Krg</th>
                     <th style={{ ...s.th, ...s.thR }}>Subtotal</th>
                     {colSudahDibayar && <th style={{ ...s.th, ...s.thR }}>Sudah Dibayar</th>}
-                    {colTotalNilai   && <th style={{ ...s.th, ...s.thR }}>Total Nilai</th>}
+                    {effectiveTotalNilai   && <th style={{ ...s.th, ...s.thR }}>Total Nilai</th>}
                     {colSisaTagihan  && <th style={{ ...s.th, ...s.thR }}>Sisa Tagihan</th>}
-                    {colPiutang      && <th style={{ ...s.th, ...s.thR }}>Piutang/Hutang</th>}
+                    {effectivePiutang      && <th style={{ ...s.th, ...s.thR }}>Piutang/Hutang</th>}
                     {colJenis        && <th style={{ ...s.th, ...s.thC }}>Jenis</th>}
                   </tr>
                 </thead>
