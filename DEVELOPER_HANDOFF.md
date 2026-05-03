@@ -1496,8 +1496,10 @@ Subtotal column amounts in the Laporan screen table and Cetak Laporan print moda
 Applied to 4 locations across 2 files:
 1. **`Reports.js` — single-item row subtotal** (line 680): Added `color: t.type === "income" ? "#10b981" : "#ef4444"` to existing `style={{ fontWeight: 700 }}`.
 2. **`Reports.js` — multi-item subtotal row amount** (line 732): Same color rule added to `style={{ fontWeight: 700 }}`.
-3. **`ReportModal.js` — single-item row subtotal** (line 442): Added `color` + `fontWeight: 700` to the inline style.
-4. **`ReportModal.js` — multi-item subtotal row amount** (line 459): Replaced `color: "#1e3a5f"` (navy) entirely with `color: t.type === "income" ? "#10b981" : "#ef4444"`. No navy fallback — green/red is the correct value.
+3. **`ReportModal.js` — single-item row subtotal** (line 415, single-item path, before `{optCellsForRow(t)}`): Added `color` + `fontWeight: 700` to the inline style. **Note:** Initial implementation incorrectly colored line 442 (individual item rows inside `items.map()`, before `{optCellsBlank()}`) — corrected in a follow-up fix during the same session.
+4. **`ReportModal.js` — multi-item subtotal row amount** (line 459, before `{optCellsForRow(t, true, contrib)}`): Replaced `color: "#1e3a5f"` (navy) entirely with `color: t.type === "income" ? "#10b981" : "#ef4444"`. No navy fallback — green/red is the correct value.
+
+Individual item rows inside multi-item transactions (`items.map()` loop, line 442) are intentionally NOT colored — only the subtotal row gets the type color.
 
 Sudah Dibayar column, payment rows (inline and orphan), and grand total bar are untouched.
 
