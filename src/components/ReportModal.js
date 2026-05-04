@@ -137,11 +137,12 @@ const ReportModal = ({
     th: {
       background: "#1e3a5f", color: "#fff", padding: "6px 8px",
       textAlign: "left", fontSize: 10, fontWeight: 600,
-      textTransform: "uppercase", letterSpacing: 0.3, whiteSpace: "nowrap",
+      textTransform: "uppercase", letterSpacing: 0.3, whiteSpace: "normal", wordBreak: "break-word",
     },
     thR: { textAlign: "right" },
     thC: { textAlign: "center" },
-    td: { padding: "5px 8px", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" },
+    td: { padding: "5px 8px", borderBottom: "1px solid #e2e8f0", wordBreak: "break-word",
+          verticalAlign: "top" },
     tdR: { textAlign: "right" },
     tdC: { textAlign: "center" },
     rowAlt: { background: "#f8fafc" },
@@ -177,9 +178,9 @@ const ReportModal = ({
     const effectiveOutstanding = contrib ? contrib.combinedProportionalOutstanding : Number(t.outstanding) || 0;
     return (
       <>
-        {colSudahDibayar && <td style={{ ...s.td, ...s.tdR, fontWeight: isSubtotal ? 700 : 600, color: isSubtotal ? "#10b981" : undefined }}>{fmtIDR(effectivePaid)}</td>}
-        {effectiveTotalNilai   && <td style={{ ...s.td, ...s.tdR, fontWeight: 600 }}>{fmtIDR(contrib ? contrib.combinedSubtotal : t.value)}</td>}
-        {colSisaTagihan  && <td style={{ ...s.td, ...s.tdR }}>{effectiveOutstanding > 0 ? fmtIDR(effectiveOutstanding) : "Lunas"}</td>}
+        {colSudahDibayar && <td style={{ ...s.td, ...s.tdR, fontSize: 10, fontWeight: isSubtotal ? 700 : 600, color: isSubtotal ? "#10b981" : undefined }}>{fmtIDR(effectivePaid)}</td>}
+        {effectiveTotalNilai   && <td style={{ ...s.td, ...s.tdR, fontSize: 10, fontWeight: 600 }}>{fmtIDR(contrib ? contrib.combinedSubtotal : t.value)}</td>}
+        {colSisaTagihan  && <td style={{ ...s.td, ...s.tdR, fontSize: 10 }}>{effectiveOutstanding > 0 ? fmtIDR(effectiveOutstanding) : "Lunas"}</td>}
         {effectivePiutang      && <td style={{ ...s.td, ...s.tdC }}>
           {/* Piutang/Hutang badge uses raw outstanding — transaction-level status */}
           {Number(t.outstanding) > 0
@@ -358,19 +359,19 @@ const ReportModal = ({
           </div>
           {!table1Open ? null : <table style={s.table}>
             <colgroup>
-              <col style={{ width: "4%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "8%" }} />
-              <col style={{ width: "11%" }} />
-              <col />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "5%" }} />
-              <col style={{ width: "9%" }} />
+              <col style={{ width: "3%" }} />   {/* NO */}
+              <col style={{ width: "9%" }} />   {/* NO. INVOICE */}
+              <col style={{ width: "7%" }} />   {/* TANGGAL */}
+              <col style={{ width: "10%" }} />  {/* KLIEN */}
+              <col style={{ width: "18%" }} />  {/* BARANG — explicit, guaranteed minimum */}
+              <col style={{ width: "13%" }} />  {/* BERAT KG @ HARGA */}
+              <col style={{ width: "4%" }} />   {/* KRG */}
+              <col style={{ width: "9%" }} />   {/* SUBTOTAL */}
               {colSudahDibayar && <col style={{ width: "9%" }} />}
-              {effectiveTotalNilai   && <col style={{ width: "9%" }} />}
-              {colSisaTagihan  && <col style={{ width: "9%" }} />}
-              {effectivePiutang      && <col style={{ width: "8%" }} />}
-              {colJenis        && <col style={{ width: "7%" }} />}
+              {effectiveTotalNilai && <col style={{ width: "9%" }} />}
+              {colSisaTagihan && <col style={{ width: "9%" }} />}
+              {effectivePiutang && <col style={{ width: "8%" }} />}
+              {colJenis && <col style={{ width: "9%" }} />}
             </colgroup>
             <thead>
               <tr>
@@ -416,7 +417,7 @@ const ReportModal = ({
                       <td style={s.td}>{it.itemName}</td>
                       <td style={{ ...s.td, fontSize: 10 }}>{beratHarga}</td>
                       <td style={{ ...s.td, ...s.tdR }}>{it.sackQty != null ? fmtQty(it.sackQty) : "—"}</td>
-                      <td style={{ ...s.td, ...s.tdR, fontWeight: 700, color: t.type === "income" ? "#10b981" : "#ef4444" }}>{fmtIDR(it.subtotal)}</td>
+                      <td style={{ ...s.td, ...s.tdR, fontSize: 10, fontWeight: 700, color: t.type === "income" ? "#10b981" : "#ef4444" }}>{fmtIDR(it.subtotal)}</td>
                       {optCellsForRow(t)}
                     </tr>,
                     ...mkPaymentRows(t, inlinePayments, "iph", true),
@@ -443,7 +444,7 @@ const ReportModal = ({
                       <td style={{ ...s.td, paddingLeft: isFirst ? undefined : 16 }}>{it.itemName}</td>
                       <td style={{ ...s.td, fontSize: 10 }}>{beratHarga}</td>
                       <td style={{ ...s.td, ...s.tdR }}>{it.sackQty != null ? fmtQty(it.sackQty) : "—"}</td>
-                      <td style={{ ...s.td, ...s.tdR }}>{fmtIDR(it.subtotal)}</td>
+                      <td style={{ ...s.td, ...s.tdR, fontSize: 10 }}>{fmtIDR(it.subtotal)}</td>
                       {optCellsBlank()}
                     </tr>
                   );
@@ -460,7 +461,7 @@ const ReportModal = ({
                           </>
                         : "Total:"}
                     </td>
-                    <td style={{ ...s.td, ...s.tdR, fontWeight: 700, color: t.type === "income" ? "#10b981" : "#ef4444" }}>
+                    <td style={{ ...s.td, ...s.tdR, fontSize: 10, fontWeight: 700, color: t.type === "income" ? "#10b981" : "#ef4444" }}>
                       {contrib ? fmtIDR(contrib.combinedSubtotal) : fmtIDR(t.value)}
                     </td>
                     {optCellsForRow(t, true, contrib)}
@@ -493,19 +494,19 @@ const ReportModal = ({
             {table2Open && (
               <table style={s.table}>
                 <colgroup>
-                  <col style={{ width: "4%" }} />
-                  <col style={{ width: "10%" }} />
-                  <col style={{ width: "8%" }} />
-                  <col style={{ width: "11%" }} />
-                  <col />
-                  <col style={{ width: "14%" }} />
-                  <col style={{ width: "5%" }} />
-                  <col style={{ width: "9%" }} />
+                  <col style={{ width: "3%" }} />   {/* NO */}
+                  <col style={{ width: "9%" }} />   {/* NO. INVOICE */}
+                  <col style={{ width: "7%" }} />   {/* TANGGAL */}
+                  <col style={{ width: "10%" }} />  {/* KLIEN */}
+                  <col style={{ width: "18%" }} />  {/* BARANG — explicit, guaranteed minimum */}
+                  <col style={{ width: "13%" }} />  {/* BERAT KG @ HARGA */}
+                  <col style={{ width: "4%" }} />   {/* KRG */}
+                  <col style={{ width: "9%" }} />   {/* SUBTOTAL */}
                   {colSudahDibayar && <col style={{ width: "9%" }} />}
-                  {effectiveTotalNilai   && <col style={{ width: "9%" }} />}
-                  {colSisaTagihan  && <col style={{ width: "9%" }} />}
-                  {effectivePiutang      && <col style={{ width: "8%" }} />}
-                  {colJenis        && <col style={{ width: "7%" }} />}
+                  {effectiveTotalNilai && <col style={{ width: "9%" }} />}
+                  {colSisaTagihan && <col style={{ width: "9%" }} />}
+                  {effectivePiutang && <col style={{ width: "8%" }} />}
+                  {colJenis && <col style={{ width: "9%" }} />}
                 </colgroup>
                 <thead>
                   <tr>
@@ -597,6 +598,7 @@ const ReportModal = ({
                     body { margin: 0; background: #fff; font-family: 'Segoe UI', 'Inter', sans-serif; color: #1e293b;
                            -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                     * { box-sizing: border-box; }
+                    td, th { word-break: break-word; vertical-align: top; }
                     @media print {
                       thead { display: table-header-group; }
                       tr { page-break-inside: avoid; }

@@ -1705,6 +1705,50 @@ Added two missing indexes to the `activity_log` Supabase table via MCP: `idx_act
 
 ---
 
+### T88 (2026-05-04): ReportModal print layout — column widths + text wrapping
+
+**Problem:** Two issues in the A4 landscape print preview: (1) column headers "SUDAH DIBAYAR" and "SISA TAGIHAN" were cramped and visually overlapping due to `whiteSpace: "nowrap"` on `s.th`; (2) large currency values like Rp 1.156.483.575 overflowed their cell into adjacent columns due to `whiteSpace: "nowrap"` on `s.td`.
+
+**Fix — four parts:**
+
+1. **`s.td`:** Removed `whiteSpace: "nowrap"`. Replaced with `wordBreak: "break-word"` and `verticalAlign: "top"`. `verticalAlign: "top"` ensures wrapped content in a tall row aligns to the top rather than centering vertically — cleaner for financial tables.
+
+2. **`s.th`:** Removed `whiteSpace: "nowrap"`. Replaced with `whiteSpace: "normal"` and `wordBreak: "break-word"`. Header text can now wrap cleanly onto two lines rather than overflowing.
+
+3. **Colgroup widths (both Table 1 and Table 2 — verified identical):** Previous widths allocated too little space to BARANG (flex/auto) when optional columns were active. New explicit widths: NO=3%, NO.INVOICE=9%, TANGGAL=7%, KLIEN=10%, BARANG=18%, BERAT KG @ HARGA=13%, KRG=4%, SUBTOTAL=9%. Fixed cols sum = 73%. With 2 optional cols at 9% each: 91% used, browser distributes remaining 9% to BARANG → ~27% effective. `tableLayout: "fixed"` retained — required for percentage widths to be respected.
+
+4. **Print style string:** Added `td, th { word-break: break-word; vertical-align: top; }` to the `<style>` block inside the `onClick` print handler. This ensures the `outerHTML` captured by `printWithPortal` also respects wrapping (inline styles apply in the live DOM; the print style string applies when rendered in `#print-portal`).
+
+**Not affected:** `Reports.js` screen table, CSV export, colSpan values, DotMatrixPrintModal, StockReportModal, InvoiceModal, SuratJalanModal.
+
+**File:** `src/components/ReportModal.js`
+
+---
+
+### T89 (2026-05-04): ReportModal currency cell font size
+
+**Problem:** After T88, Rp 1.156.483.575 still wrapped to 2 lines in the Subtotal column. Root cause: `fontWeight: 700` on the subtotal cell makes bold text slightly wider than normal weight — just enough to push the 13-character value beyond the 9% column width (~25mm on A4 landscape).
+
+**Fix:** Added `fontSize: 10` to all `fmtIDR()` currency cells in the table tbody. Reducing from the table-level 11px to 10px gives sufficient clearance for large Rp values to fit on one line within a 9% column.
+
+**Lines modified (6 total):**
+- Line 181 — `optCellsForRow` Sudah Dibayar cell
+- Line 182 — `optCellsForRow` Total Nilai cell (effectiveTotalNilai path)
+- Line 183 — `optCellsForRow` Sisa Tagihan cell
+- Line 420 — single-item Subtotal cell
+- Line 447 — multi-item item row Subtotal cell
+- Line 464 — multi-item subtotal row Subtotal cell
+
+**Already had `fontSize: 10` (unchanged):**
+- mkPaymentRows Sudah Dibayar cell (line 238)
+- mkPaymentRows Sisa Tagihan cell (line 245)
+
+**Not touched:** Barang cells, Klien cells, header cells, `s.td`, `tableLayout`.
+
+**File:** `src/components/ReportModal.js`
+
+---
+
 ## 16. What Is NOT Yet Done
 
 ### Penjualan/Pembelian audit (partial)
