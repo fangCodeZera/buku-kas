@@ -76,6 +76,8 @@ const TransactionPage = ({
   const [flashIds,          setFlashIds]          = useState(new Set());
   const [detailTx,          setDetailTx]          = useState(null);
 
+  const displayUnit = (unit) => (!unit || unit === "karung") ? "SACK" : unit;
+
   const tableRef       = useRef(null);
   const searchInputRef = useRef(null);
   const dateNavRef     = useRef(null);
@@ -524,7 +526,7 @@ const TransactionPage = ({
                             {t.items.map((item, idx) => (
                               <div key={idx} className="item-list__row" style={{ justifyContent: "center", minHeight: 28, alignItems: "flex-start" }}>
                                 <span className="stock-delta" style={{ color: type === "income" ? "#ef4444" : "#10b981" }}>
-                                  {type === "income" ? "-" : "+"}{fmtQty(item.sackQty)} {t.stockUnit || "karung"}
+                                  {type === "income" ? "-" : "+"}{fmtQty(item.sackQty)} {displayUnit(t.stockUnit)}
                                 </span>
                               </div>
                             ))}
@@ -534,7 +536,7 @@ const TransactionPage = ({
                             className="stock-delta"
                             style={{ color: type === "income" ? "#ef4444" : "#10b981" }}
                           >
-                            {type === "income" ? "-" : "+"}{fmtQty(t.stockQty)} {t.stockUnit}
+                            {type === "income" ? "-" : "+"}{fmtQty(t.stockQty)} {displayUnit(t.stockUnit)}
                           </span>
                         )}
                       </td>

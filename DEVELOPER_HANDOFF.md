@@ -40,7 +40,7 @@ src/
     balanceUtils.js                 72  computeARandAP, computeCashIncome, computeCashExpense, computeNetCash
     printUtils.js                   47  printWithPortal, escapeHtml
     stockUtils.js                  114  computeStockMap, computeStockMapForDate
-    textFormatter.js               416  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText); formatSuratJalanFooter removes sigLine + brackets (T67); when no catatan: one blank line before labels (T68); when catatan: blank line after catatan (T68); formatInvoiceFooter: else branch adds blank line when no bank accounts, sigLine + brackets removed (T70)
+    textFormatter.js              ~420  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText); formatSuratJalanFooter removes sigLine + brackets (T67); when no catatan: one blank line before labels (T68); when catatan: blank line after catatan (T68); formatInvoiceFooter: else branch adds blank line when no bank accounts, sigLine + brackets removed (T70); T90: added KARUNG column to formatItemsTable (6-col layout, COL_KARUNG=10, COL_BARANG 28→20, COL_BERAT 14→13, COL_HARGA 16→15, COL_TOTAL 14→16); formatSuratJalanItems unit hardcoded to "SACK"
     AuthContext.js                 175  AuthProvider, useAuth — session state, signIn (with login audit log), signOut, 15-min idle timeout; `ignoringSessionRef` guards onAuthStateChange during idle sign-out (T23); clears #access_token hash on auth state change to prevent PASSWORD_RECOVERY re-trigger on reload
     supabaseClient.js               19  Creates Supabase client (anon key only, env var validated)
     supabaseStorage.js             445  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog, getNextTxnSerial, isSupabaseReachable
@@ -51,8 +51,8 @@ src/
   pages/
     Penjualan.js                    18  Income page — thin wrapper: TransactionPage type="income"
     Pembelian.js                    18  Expense page — thin wrapper: TransactionPage type="expense"
-    Inventory.js                  ~1884  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "karung" (T48/T49); base item rows hidden when zero stock AND zero transactions (T50); subtype rows with 0 stock + 0 txCount + 0 adjCount hidden by default (T55) — "Tampilkan item tanpa stok & transaksi" toggle reveals them (label updated T72); handleAddSubtype checks both subtypes+archivedSubtypes for duplicates (T60); rename guard checks all catalog entries not just stockMap (T60); hasTx checks include archivedSubtypes (T60); uncatalogued item delete requires typing "hapus" (T60); ledgerEntries sort uses date+time only, ignoring createdAt (T71)
-    Contacts.js                    672  Contact list + detail panel + transaction history; handleSave uses editingContact (from contacts array) not sel (from filtered withBalance) — prevents silent add-instead-of-edit when search is active (T61); archive/delete confirm handlers call setEditMode(false) (T61); progress bar at 0% returns null not "0%" text (T61); payment history colSpan corrected 8→9 (T62)
+    Inventory.js                  ~1884  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "SACK" (T48/T49/T93); base item rows hidden when zero stock AND zero transactions (T50); subtype rows with 0 stock + 0 txCount + 0 adjCount hidden by default (T55) — "Tampilkan item tanpa stok & transaksi" toggle reveals them (label updated T72); handleAddSubtype checks both subtypes+archivedSubtypes for duplicates (T60); rename guard checks all catalog entries not just stockMap (T60); hasTx checks include archivedSubtypes (T60); uncatalogued item delete requires typing "hapus" (T60); ledgerEntries sort uses date+time only, ignoring createdAt (T71); T93: displayUnit() normalizer maps null/undefined/empty/"karung"→"SACK" at all display points (openAdj, handleAdjConfirm, expandedItemInfo, tableGroups base/subtype/uncatalogued, ledgerEntries, renderLedgerPanel, handleUpdateCatalogItem); summary cards updated to "SACK"
+    Contacts.js                    672  Contact list + detail panel + transaction history; handleSave uses editingContact (from contacts array) not sel (from filtered withBalance) — prevents silent add-instead-of-edit when search is active (T61); archive/delete confirm handlers call setEditMode(false) (T61); progress bar at 0% returns null not "0%" text (T61); payment history colSpan corrected 8→9 (T62); T97: displayUnit() normalizer — multi-item hardcoded "karung"→"SACK", single-item t.stockUnit normalized via displayUnit()
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
     Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table); chip dismiss + Reset Filter both sync inventoryFilterItem↔selectedItems (T63); orphanPayments + paymentCount both respect typeFilter (T63); Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84)
     Outstanding.js                 557  AR/AP outstanding transactions view
@@ -62,18 +62,19 @@ src/
     ActivityLog.js                 351  Audit trail viewer — Pemilik-only, reads activity_log table; loadMoreError state separates load-more failures from initial-load failures so first-page data stays visible on retry (T65)
 
   components/
-    TransactionPage.js             652  Shared base: Penjualan + Pembelian day-view
-    TransactionForm.js            1531  Full transaction input form (multi-item, catalog autocomplete); Tipe field required — missing-type blocking modal (T52); stock qty display uses fmtQtyDisplay (integer=no decimals, float=2dp) at all 5 locations (T82); Nama Barang autocomplete hides stock hint for base items with subtypes (T82)
+    TransactionPage.js             652  Shared base: Penjualan + Pembelian day-view; T94: displayUnit() normalizer — multi-item and single-item STOK column unit normalized ("karung"/null→"SACK")
+    TransactionForm.js            1531  Full transaction input form (multi-item, catalog autocomplete); Tipe field required — missing-type blocking modal (T52); stock qty display uses fmtQtyDisplay (integer=no decimals, float=2dp) at all 5 locations (T82); Nama Barang autocomplete hides stock hint for base items with subtypes (T82); T95: displayUnit() normalizer — blank stockUnit "karung"→"SACK", handleSubmit unit fallback, type autocomplete hints, stock display, "Jumlah Karung"→"Jumlah SACK", "satuan: karung"→"satuan: SACK", stock delta preview, validation message "Jumlah SACK harus lebih dari 0"
     PaymentHistoryPanel.js         334  Expandable payment timeline — newest-first order (T29); PendingNode at top
     PaymentUpdateModal.js          183  Record payment modal
     DeleteConfirmModal.js          125  Dual-mode (transaction/contact) delete confirm — requires typing "hapus" to enable confirm button
-    InvoiceModal.js                337  Printable A4 invoice
-    SuratJalanModal.js             289  Printable A4 delivery note
+    InvoiceModal.js                337  Printable A4 invoice; T91: Karung column unit "krg"→"SACK"; Sisa Tagihan + Total Terhutang/Lunas + lunas note hidden from print via data-no-print (Subtotal stays visible)
+    SuratJalanModal.js             289  Printable A4 delivery note; T92: unit values "karung"→"SACK" in item table and total line
+    TransactionDetailModal.js      ~320  Full transaction detail modal — items table, payment summary block, payment history timeline; T96: Karung column cell values "krg"→"SACK"; edit log "krg"→"SACK", "Krg:"→"SACK:" (column header "Karung" unchanged)
     DotMatrixPrintModal.js         127  Dot matrix preview + print modal (invoice & surat jalan); both modes render single `<pre>` on screen and print — surat jalan bold-title split removed (T67); modal-box maxWidth 750; `<pre>` style lineHeight:1.2 only (T69 final). Print uses `@page { margin: 4mm }` to suppress browser headers/footers and eliminate right-side gap (T85)
     ToggleSwitch.js                 65  Reusable toggle switch — track+thumb, #007bff/#cbd5e1, keyboard accessible (role=switch, Space/Enter)
     ReportModal.js                 590  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR. Defaults (T25): showCompanyName=false, showSummary=false, printTable1=true, printTable2=false. grandTotalPaid = table1Total + table2Total (T26 — each 0 when its toggle is off). Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84)
     StockWarningModal.js            77  Negative-stock warning
-    StockReportModal.js            ~430  Printable stock report — derives groupings from itemCatalog prop (active entries = groups, active subtypes = members, uncatalogued → "Lainnya", archived → "Barang Diarsipkan"). Toggles: showZeroStock, showCompanyName (default OFF — T53), showArchivedItems (default OFF). Base rows hidden when baseQty===0 && baseTxCount===0 even with showZeroStock ON (T53 — mirrors Inventory T50)
+    StockReportModal.js            ~430  Printable stock report — derives groupings from itemCatalog prop (active entries = groups, active subtypes = members, uncatalogued → "Lainnya", archived → "Barang Diarsipkan"). Toggles: showZeroStock, showCompanyName (default OFF — T53), showArchivedItems (default OFF). Base rows hidden when baseQty===0 && baseTxCount===0 even with showZeroStock ON (T53 — mirrors Inventory T50); T98: displayUnit() normalizer added — all 6 unit fallbacks in groupedData useMemo normalized; zero-stock fallbacks hardcoded to "SACK"
     Badge.js                       113  StatusBadge, TypeBadge (named exports)
     DueBadge.js                     32  Due date status badge
     ErrorBoundary.js               118  React class error boundary — catches unhandled render errors, auto-retries up to 3× (3s delay each); shows "Coba Lagi" + "Muat Ulang" buttons
@@ -1749,7 +1750,169 @@ Added two missing indexes to the `activity_log` Supabase table via MCP: `idx_act
 
 ---
 
+### T90 (2026-05-12): Dot matrix invoice — add KARUNG column + rename unit to SACK
+
+**Problem:** Dot matrix invoice was missing the KARUNG column that exists in the A4 invoice. Column order was: No | Jenis Barang | Berat (Kg) | Harga | Total.
+
+**Fix — two parts:**
+
+**Part 1 — formatItemsTable() in textFormatter.js:**
+- Added COL_KARUNG = 10 between COL_BARANG and COL_BERAT
+- Redistributed widths: COL_BARANG 28→20, COL_BERAT 14→13, COL_HARGA 16→15, COL_TOTAL 14→16; sum still 80
+- mkRow updated to 6 params: (no, barang, karung, berat, harga, total)
+- Header row: "KARUNG" (column header label — not "SACK")
+- Data rows: karungStr = fmtNum(it.sackQty) + " SACK" (or "—" when qty 0/null)
+- Continuation rows updated to pass 6 empty strings
+
+**Part 2 — formatSuratJalanItems() in textFormatter.js:**
+- `const unit = transaction.stockUnit || "karung"` → `const unit = "SACK"`
+- JUMLAH BARANG column now shows "X SACK" instead of "X karung"
+
+**T90-FIX:** COL_BARANG further reduced 22→20, COL_TOTAL increased 14→16 to eliminate Harga/Total value collision ("Rp 20.000Rp 122.364.000" was rendering with no space between columns).
+
+**File:** `src/utils/textFormatter.js`
+
+---
+
+### T91 (2026-05-12): A4 invoice — unit "krg"→"SACK" + remove Sisa Tagihan/Total Terhutang from print
+
+**Two independent changes:**
+
+**Change 1 — Karung column unit:**
+- `${parseFloat(it.sackQty).toLocaleString("id-ID")} krg` → `... SACK`
+- Applies to screen display and print output
+
+**Change 2 — Hide payment status from print:**
+- `data-no-print="true"` added individually to: Sisa Tagihan row, grand row (TOTAL TERHUTANG/LUNAS), "Semua tagihan telah lunas" note
+- totalsWrap div itself has no data-no-print — Subtotal row stays visible in print
+- Screen display completely unchanged for all four elements
+- T91-FIX: Initial implementation incorrectly put data-no-print on totalsWrap (hiding Subtotal too). Fixed by moving data-no-print to the three individual inner elements only.
+
+**File:** `src/components/InvoiceModal.js`
+
+---
+
+### T92 (2026-05-12): A4 Surat Jalan — unit values "karung"→"SACK"
+
+- `getSuratJalanItems()`: both `unit: t.stockUnit || "karung"` fallbacks → `unit: "SACK"`
+- Total line: `{fmtQty(totalKarung)} karung` → `{fmtQty(totalKarung)} SACK`
+- Variable name `totalKarung` unchanged
+
+**File:** `src/components/SuratJalanModal.js`
+
+---
+
+### T93 (2026-05-12): Inventory — normalize all "karung" unit display → "SACK"
+
+**Strategy:** displayUnit() normalizer added at top of component. Maps null/undefined/empty/"karung" → "SACK". Any other unit passes through unchanged (future-proof).
+
+**Changes:**
+1. `openAdj`: `unit || "karung"` → `displayUnit(unit)`
+2. `handleAdjConfirm`: `adjTarget.unit || "karung"` → `adjTarget.unit || "SACK"` (new adjustments saved to DB with "SACK")
+3. `expandedItemInfo`: `stock?.unit || "karung"` → `displayUnit(stock?.unit)`
+4. `tableGroups` base row: `baseStock?.unit || cat.defaultUnit || "karung"` → `displayUnit(baseStock?.unit || cat.defaultUnit)`
+5. `tableGroups` subtype row: same pattern
+6. `tableGroups` uncatalogued row: `stock.unit || "karung"` → `displayUnit(stock.unit)`
+7. `handleAddCatalogItem`: `defaultUnit: "karung"` → `"SACK"` (new catalog items saved with correct unit)
+8. Summary cards: label "Total Karung di Gudang"→"Total SACK di Gudang", format string, subtitle
+
+**T93-FIX:** 6 additional locations missed in initial pass:
+- `ledgerEntries` transaction unit: `t.stockUnit || "karung"` → `displayUnit(t.stockUnit)`
+- `ledgerEntries` adjustment unit: `a.unit || "karung"` → `displayUnit(a.unit)`
+- `renderLedgerPanel` itemUnit: `|| unit || "karung"` → `displayUnit(|| unit)`
+- `handleUpdateCatalogItem`: both `|| "karung"` fallbacks → `|| "SACK"`
+
+**File:** `src/pages/Inventory.js`
+
+---
+
+### T94 (2026-05-12): TransactionPage — normalize "karung" in STOK column
+
+- displayUnit() normalizer added: `(!unit || unit === "karung") ? "SACK" : unit`
+- Multi-item STOK cell: `{t.stockUnit || "karung"}` → `{displayUnit(t.stockUnit)}`
+- Single-item STOK cell: `{t.stockUnit}` → `{displayUnit(t.stockUnit)}`
+- Existing transactions with stockUnit "karung" in DB display "SACK" via normalizer
+
+**File:** `src/components/TransactionPage.js`
+
+---
+
+### T95 (2026-05-12): TransactionForm — normalize all "karung" display strings → "SACK"
+
+**9 changes:**
+1. displayUnit() normalizer added
+2. `blank` object: `stockUnit: "karung"` → `"SACK"` (new transactions saved with correct unit)
+3. `handleSubmit` unit fallback: `|| "karung"` → `displayUnit(...)`
+4. Type autocomplete hints: both `|| "karung"` → `displayUnit(...)`
+5. Stock display existing: `curStock.unit || "karung"` → `displayUnit(curStock.unit)`
+6. Stock display zero: `"Stok: 0 karung"` → `"Stok: 0 SACK"`
+7. Field label: `"Jumlah Karung"` → `"Jumlah SACK"`
+8. Field helper text: `"satuan: karung"` → `"satuan: SACK"`
+9. Stock delta preview: `karung` → `SACK`
+10. Validation message: `"Jumlah karung harus lebih dari 0"` → `"Jumlah SACK harus lebih dari 0"`
+
+**File:** `src/components/TransactionForm.js`
+
+---
+
+### T96 (2026-05-12): TransactionDetailModal — normalize "karung"/"krg" → "SACK"
+
+- Karung column header ("Karung") unchanged — column header rule applies
+- Cell values: `${fmtQty(it.sackQty)} ${t.stockUnit || "krg"}` → `${fmtQty(it.sackQty)} SACK`
+- Edit log items added: `{it.sackQty} krg` → `{it.sackQty} SACK`
+- Edit log items changed label: `"Krg:"` → `"SACK:"`
+
+**File:** `src/components/TransactionDetailModal.js`
+
+---
+
+### T97 (2026-05-12): Contacts — normalize "karung" in transaction history STOK column
+
+- displayUnit() normalizer added
+- Multi-item: hardcoded `karung` → `SACK`
+- Single-item: `{t.stockUnit}` → `{displayUnit(t.stockUnit)}`
+
+**File:** `src/pages/Contacts.js`
+
+---
+
+### T98 (2026-05-12): StockReportModal + TransactionForm — final karung cleanup
+
+**StockReportModal.js — 6 unit fallbacks in groupedData useMemo:**
+- displayUnit() normalizer added
+- base item with stock: `baseEntry.unit || "karung"` → `displayUnit(baseEntry.unit)`
+- base item zero-stock: `unit: "karung"` → `unit: "SACK"`
+- subtype with stock: `subEntry.unit || "karung"` → `displayUnit(subEntry.unit)`
+- subtype zero-stock: `unit: "karung"` → `unit: "SACK"`
+- archived items: `entry.unit || "karung"` → `displayUnit(entry.unit)`
+- uncatalogued items: `entry.unit || "karung"` → `displayUnit(entry.unit)`
+
+**TransactionForm.js — validation message:**
+- `"Jumlah karung harus lebih dari 0"` → `"Jumlah SACK harus lebih dari 0"`
+
+**Files:** `src/components/StockReportModal.js`, `src/components/TransactionForm.js`
+
+---
+
 ## 16. What Is NOT Yet Done
 
 ### Penjualan/Pembelian audit (partial)
-Code audit complete — no bugs found worth fixing. Runtime test checklist not yet executed. Edge cases to manually verify: multi-item stock delta display, search persistence across date navigation, overdue banner showing correct type (hutang vs piutang), payment partial→full flow, edit on past date, concurrent edit conflict detection.
+Code audit complete — no bugs found worth fixing. Runtime test checklist
+not yet executed. Edge cases to manually verify: multi-item stock delta
+display, search persistence across date navigation, overdue banner showing
+correct type (hutang vs piutang), payment partial→full flow, edit on past
+date, concurrent edit conflict detection.
+
+### T85 physical Epson print verification — CRITICAL UNRESOLVED
+T85 added `@page { margin: 4mm }` to suppress browser date/URL headers and
+fix right-side gap on physical Epson LX-300+II prints. No complaint from
+client but no formal physical verification has been done. If gap persists
+after physical test: change `font-size: 12pt` → `13pt` in the `<style>` block
+inside `handlePrint` in `DotMatrixPrintModal.js`. Do not touch `textFormatter.js`.
+
+### "karung" in data layer (intentional — do not fix)
+Remaining "karung" strings in `App.js`, `stockUtils.js`, `storage.js`, and
+`supabaseStorage.js` are internal data-layer fallbacks. They are intentionally
+left as-is. Every display component has a `displayUnit()` normalizer that
+maps "karung"→"SACK" at render time. Changing the data layer risks DB
+integrity with zero user-visible benefit.

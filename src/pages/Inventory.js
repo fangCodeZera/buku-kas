@@ -75,6 +75,9 @@ const Inventory = ({
   onUnarchiveSubtype    = () => {},
   onNavigateToArchive   = () => {},
 }) => {
+  // Normalize unit strings — maps "karung" (legacy DB value) to "SACK" for display
+  const displayUnit = (unit) => (!unit || unit === "karung") ? "SACK" : unit;
+
   // Search / sort state
   const [search,         setSearch]         = useState("");
   const [sortBy,         setSortBy]         = useState("name");
@@ -276,7 +279,7 @@ const Inventory = ({
   };
 
   const openAdj = (itemName, unit) => {
-    setAdjTarget({ itemName, unit: unit || "karung" });
+    setAdjTarget({ itemName, unit: displayUnit(unit) });
     setAdjDir("add"); setAdjQtyStr(""); setAdjReason(""); setAdjError("");
     setAdjQtyError(""); setAdjReasonError("");
   };
@@ -310,7 +313,7 @@ const Inventory = ({
       time:          nowTime(),
       itemName,
       adjustmentQty,
-      unit:          adjTarget.unit || "karung",
+      unit:          adjTarget.unit || "SACK",
       reason:        adjReason.trim(),
       adjustedBy:    null,
     });
@@ -358,7 +361,7 @@ const Inventory = ({
           txType:       t.type,
           txnId:        t.txnId,
           createdAt:    t.createdAt || "",
-          unit:         t.stockUnit || "karung",
+          unit:         displayUnit(t.stockUnit),
         });
       }
     }
@@ -373,7 +376,7 @@ const Inventory = ({
         delta:     a.adjustmentQty || 0,
         reason:    a.reason || "",
         createdAt: a.createdAt || "",
-        unit:      a.unit || "karung",
+        unit:      displayUnit(a.unit),
       });
     }
 
@@ -465,7 +468,7 @@ const Inventory = ({
     return {
       key:         expandedStockItem,
       displayName: stock?.displayName || expandedStockItem,
-      unit:        stock?.unit || "karung",
+      unit:        displayUnit(stock?.unit),
       qty:         stock?.qty ?? 0,
     };
   }, [expandedStockItem, activeStockMap]);
@@ -494,7 +497,7 @@ const Inventory = ({
           key:         baseKey,
           displayName: cat.name,
           qty:         baseStock?.qty      ?? 0,
-          unit:        baseStock?.unit     || cat.defaultUnit || "karung",
+          unit:        displayUnit(baseStock?.unit || cat.defaultUnit),
           lastDate:    baseStock?.lastDate || null,
           lastTime:    baseStock?.lastTime || null,
           txCount:     baseStock?.txCount  || 0,
@@ -520,7 +523,7 @@ const Inventory = ({
           key,
           displayName:       fullName,
           qty:               stock?.qty      ?? 0,
-          unit:              stock?.unit     || cat.defaultUnit || "karung",
+          unit:              displayUnit(stock?.unit || cat.defaultUnit),
           lastDate:          stock?.lastDate || null,
           lastTime:          stock?.lastTime || null,
           txCount:           stock?.txCount  || 0,
@@ -539,7 +542,7 @@ const Inventory = ({
           key,
           displayName: stock.displayName || key,
           qty:         stock.qty      ?? 0,
-          unit:        stock.unit     || "karung",
+          unit:        displayUnit(stock.unit),
           lastDate:    stock.lastDate || null,
           lastTime:    stock.lastTime || null,
           txCount:     stock.txCount  || 0,
@@ -625,7 +628,7 @@ const Inventory = ({
     setSubmitting(true);
     onAddCatalogItem({
       name,
-      defaultUnit: "karung",
+      defaultUnit: "SACK",
       subtypes: subtypes.map(normalizeTitleCase),
     });
     setCatalogForm(null); setCatalogFormError(""); setCatalogSubtypeError("");
@@ -651,7 +654,7 @@ const Inventory = ({
     const updatedItem = {
       ...catalogForm,
       subtypes:    subtypes.map(normalizeTitleCase),
-      defaultUnit: (catalogForm.defaultUnit || "karung").trim() || "karung",
+      defaultUnit: (catalogForm.defaultUnit || "SACK").trim() || "SACK",
     };
 
     // Catalog rename is handled atomically by App.js renameInventoryItem
@@ -775,7 +778,7 @@ const Inventory = ({
     const currentQtyColor =
       ledgerSummary.currentQty < 0      ? "#ef4444" :
       ledgerSummary.currentQty <= threshold ? "#f59e0b" : "#007bff";
-    const itemUnit = activeStockMap[expandedStockItem]?.unit || unit || "karung";
+    const itemUnit = displayUnit(activeStockMap[expandedStockItem]?.unit || unit);
 
     return (
       <div className="stock-ledger-wrap">
@@ -1492,15 +1495,15 @@ const Inventory = ({
             c: "#007bff",
           },
           {
-            l: "Total Karung di Gudang",
+            l: "Total SACK di Gudang",
             sub: "Jumlah seluruh stok",
             v: items.reduce((sum, it) => sum + (it.qty > 0 ? it.qty : 0), 0),
-            fmt: (v) => `${Number(v).toLocaleString("id-ID")} karung`,
+            fmt: (v) => `${Number(v).toLocaleString("id-ID")} SACK`,
             c: "#10b981",
           },
           {
             l: "Stok Menipis",
-            sub: `Stok ≤ ${threshold} karung`,
+            sub: `Stok ≤ ${threshold} SACK`,
             v: lowItems.length + negItems.length,
             fmt: (v) => `${v} item`,
             c: lowItems.length + negItems.length > 0 ? "#f59e0b" : "#10b981",

@@ -27,13 +27,13 @@ function getSuratJalanItems(t) {
     return t.items.map((it) => ({
       nama:   it.itemName || "—",
       jumlah: parseFloat(it.sackQty) || 0,
-      unit:   t.stockUnit || "karung",
+      unit:   "SACK",
     }));
   }
   return [{
     nama:   t.itemName || "—",
     jumlah: parseFloat(t.sackQty ?? t.stockQty) || 0,
-    unit:   t.stockUnit || "karung",
+    unit:   "SACK",
   }];
 }
 
@@ -238,7 +238,7 @@ const SuratJalanModal = ({ transaction, contacts = [], onClose }) => {
 
             {/* Total */}
             <div className="surat-jalan-doc__total">
-              Total: {fmtQty(totalKarung)} karung
+              Total: {fmtQty(totalKarung)} SACK
             </div>
 
             {/* Transaction notes */}

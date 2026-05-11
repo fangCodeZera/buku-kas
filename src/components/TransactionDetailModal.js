@@ -125,7 +125,7 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
                     <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc" }}>
                       <td style={{ padding: "7px 8px", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: "#1e293b" }}>{it.itemName || "—"}</td>
                       <td style={{ padding: "7px 8px", borderBottom: "1px solid #f1f5f9", textAlign: "right", color: "#374151" }}>
-                        {Number(it.sackQty) > 0 ? `${fmtQty(it.sackQty)} ${t.stockUnit || "krg"}` : "—"}
+                        {Number(it.sackQty) > 0 ? `${fmtQty(it.sackQty)} SACK` : "—"}
                       </td>
                       <td style={{ padding: "7px 8px", borderBottom: "1px solid #f1f5f9", textAlign: "right", color: "#374151" }}>
                         {Number(it.weightKg) > 0 ? `${fmtQty(it.weightKg)} kg` : "—"}
@@ -234,7 +234,7 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
                               {ph.dueDateBefore !== undefined && <div>Jatuh Tempo: {fmtDate(ph.dueDateBefore)} → {fmtDate(ph.dueDateAfter)}</div>}
                               {ph.notesBefore !== undefined && <div>Catatan: {ph.notesBefore || "(kosong)"} → {ph.notesAfter || "(kosong)"}</div>}
                               {ph.itemsAdded?.length > 0 && ph.itemsAdded.map((it, idx) => (
-                                <div key={idx}>Barang Ditambah: {it.itemName} ({it.sackQty} krg, {it.weightKg} kg, {fmtIDR(it.pricePerKg)}/kg)</div>
+                                <div key={idx}>Barang Ditambah: {it.itemName} ({it.sackQty} SACK, {it.weightKg} kg, {fmtIDR(it.pricePerKg)}/kg)</div>
                               ))}
                               {ph.itemsRemoved?.length > 0 && ph.itemsRemoved.map((it, idx) => (
                                 <div key={idx}>Barang Dihapus: {it.itemName}</div>
@@ -242,7 +242,7 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
                               {ph.itemsChanged?.length > 0 && ph.itemsChanged.map((it, idx) => (
                                 <div key={idx}>
                                   <div>Barang Diubah: {it.itemName}</div>
-                                  {it.before.sackQty !== undefined && <div style={{ paddingLeft: 8 }}>Krg: {it.before.sackQty} → {it.after.sackQty}</div>}
+                                  {it.before.sackQty !== undefined && <div style={{ paddingLeft: 8 }}>SACK: {it.before.sackQty} → {it.after.sackQty}</div>}
                                   {it.before.weightKg !== undefined && <div style={{ paddingLeft: 8 }}>Berat: {it.before.weightKg} kg → {it.after.weightKg} kg</div>}
                                   {it.before.pricePerKg !== undefined && <div style={{ paddingLeft: 8 }}>Harga: {fmtIDR(it.before.pricePerKg)} → {fmtIDR(it.after.pricePerKg)}</div>}
                                 </div>

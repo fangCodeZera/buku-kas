@@ -231,7 +231,7 @@ const InvoiceModal = ({ transactions, settings, contacts = [], onClose }) => {
 
                   </td>
                   <td style={{ ...s.td, ...s.tdR }}>
-                    {parseFloat(it.sackQty) > 0 ? `${parseFloat(it.sackQty).toLocaleString("id-ID")} krg` : "—"}
+                    {parseFloat(it.sackQty) > 0 ? `${parseFloat(it.sackQty).toLocaleString("id-ID")} SACK` : "—"}
                   </td>
                   <td style={{ ...s.td, ...s.tdR }}>
                     {parseFloat(it.weightKg) > 0 ? `${parseFloat(it.weightKg).toLocaleString("id-ID")} kg` : "—"}
@@ -255,12 +255,12 @@ const InvoiceModal = ({ transactions, settings, contacts = [], onClose }) => {
             <span style={{ fontWeight: 700 }}>{fmtIDR(subtotal)}</span>
           </div>
           {outstanding > 0 && (
-            <div style={{ ...s.totalRow, color: "#f59e0b" }}>
+            <div data-no-print="true" style={{ ...s.totalRow, color: "#f59e0b" }}>
               <span>Sisa Tagihan</span>
               <span style={{ fontWeight: 700 }}>{fmtIDR(outstanding)}</span>
             </div>
           )}
-          <div style={{
+          <div data-no-print="true" style={{
             ...s.grandRow,
             color: outstanding === 0 ? "#10b981" : "#ef4444",
             borderTopColor: outstanding === 0 ? "#10b981" : "#ef4444",
@@ -269,7 +269,7 @@ const InvoiceModal = ({ transactions, settings, contacts = [], onClose }) => {
             <span>{outstanding === 0 ? fmtIDR(subtotal) : fmtIDR(outstanding)}</span>
           </div>
           {outstanding === 0 && (
-            <div style={{ fontSize: 11, color: "#10b981", marginTop: 4, textAlign: "right" }}>
+            <div data-no-print="true" style={{ fontSize: 11, color: "#10b981", marginTop: 4, textAlign: "right" }}>
               Semua tagihan telah lunas. Terima kasih!
             </div>
           )}

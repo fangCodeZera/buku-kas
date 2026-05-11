@@ -80,6 +80,8 @@ const TransactionForm = ({
   const fmtQtyDisplay = (n) =>
     Number.isInteger(n) ? n.toLocaleString("id-ID") : Number(n).toFixed(2);
 
+  const displayUnit = (unit) => (!unit || unit === "karung") ? "SACK" : unit;
+
   /**
    * Map an existing itemName string back to its catalog entry for edit-mode pre-fill.
    * Returns { itemNameInput, itemTypeInput, catalogItemId, matchedCatalog }.
@@ -102,7 +104,7 @@ const TransactionForm = ({
   const blank = {
     date: today(), time: nowTime(),
     counterparty: "",
-    stockUnit: "karung", customUnit: "", value: 0,
+    stockUnit: "SACK", customUnit: "", value: 0,
     type: initType, status: STATUS.LUNAS, outstanding: 0, notes: "",
     items: [blankItem()],
   };
@@ -483,7 +485,7 @@ const TransactionForm = ({
       if (it.sackQty === "" || it.sackQty == null || isNaN(it.sackQty) || Number(it.sackQty) < 0)
         ie.sackQty = "Masukkan angka valid";
       else if (Number(it.sackQty) === 0)
-        ie.sackQty = "Jumlah karung harus lebih dari 0";
+        ie.sackQty = "Jumlah SACK harus lebih dari 0";
       if (Number(it.pricePerKg) > 0 && (!it.weightKg || Number(it.weightKg) <= 0))
         ie.weightKg = "Isi berat untuk menghitung total otomatis";
       if (!it.subtotal || Number(it.subtotal) <= 0)
@@ -585,7 +587,7 @@ const TransactionForm = ({
     const freshFirstCat = firstItem?.catalogItemId
       ? itemCatalog.find((c) => c.id === firstItem.catalogItemId)
       : null;
-    const unit = freshFirstCat?.defaultUnit || firstItem?.matchedCatalog?.defaultUnit || "karung";
+    const unit = displayUnit(freshFirstCat?.defaultUnit || firstItem?.matchedCatalog?.defaultUnit);
 
     // Check for new items/subtypes before saving — build confirmation list
     const toConfirm = form.items.map(getItemStatus).filter((s) => s.status !== "matched");
@@ -1072,8 +1074,8 @@ const TransactionForm = ({
                                   <span>{sub}</span>
                                   <span className="autocomplete-stock-hint">
                                     {sq
-                                      ? `${fmtQtyDisplay(Number(sq.qty))} ${sq.unit || "karung"}`
-                                      : `0 ${freshCatalog.defaultUnit || "karung"}`}
+                                      ? `${fmtQtyDisplay(Number(sq.qty))} ${displayUnit(sq.unit)}`
+                                      : `0 ${displayUnit(freshCatalog.defaultUnit)}`}
                                   </span>
                                 </div>
                               );
@@ -1094,11 +1096,11 @@ const TransactionForm = ({
                           const color = aq > 0 ? "#10b981" : "#ef4444";
                           return (
                             <span style={{ color }}>
-                              Stok: {fmtQtyDisplay(aq)} {curStock.unit || "karung"}
+                              Stok: {fmtQtyDisplay(aq)} {displayUnit(curStock.unit)}
                             </span>
                           );
                         })()
-                      : <span style={{ color: "#9ca3af" }}>Stok: 0 karung</span>
+                      : <span style={{ color: "#9ca3af" }}>Stok: 0 SACK</span>
                     }
                   </div>
                 )}
@@ -1106,7 +1108,7 @@ const TransactionForm = ({
                 {/* Karung | Harga/Kg | Berat (Kg) | Subtotal */}
                 <div className="item-fields-row">
                   <div>
-                    <label className="item-field-label">Jumlah Karung</label>
+                    <label className="item-field-label">Jumlah SACK</label>
                     <QtyInput
                       value={Number(item.sackQty) || 0}
                       onChange={(n) => setItem(idx, "sackQty", n)}
@@ -1114,7 +1116,7 @@ const TransactionForm = ({
                       placeholder="0"
                     />
                     {ie.sackQty && <span className="field-error">{ie.sackQty}</span>}
-                    <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>satuan: karung</div>
+                    <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>satuan: SACK</div>
                   </div>
 
                   <div>
@@ -1175,7 +1177,7 @@ const TransactionForm = ({
                           </strong>
                           {" → "}
                           <strong style={{ color: "#007bff" }}>
-                            {fmtQtyDisplay(projected)} karung
+                            {fmtQtyDisplay(projected)} SACK
                           </strong>
                         </>
                       );

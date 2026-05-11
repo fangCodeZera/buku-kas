@@ -57,6 +57,8 @@ const Contacts = ({
   const [selectedTxDetail, setSelectedTxDetail] = useState(null);
   const nameInputRef = useRef(null);
 
+  const displayUnit = (unit) => (!unit || unit === "karung") ? "SACK" : unit;
+
 
 
   // Active (non-archived) contacts — drives main list, alpha filter, count
@@ -491,13 +493,13 @@ const Contacts = ({
                             {t.items.map((item, idx) => (
                               <div key={idx} className="item-list__row" style={{ justifyContent: "center" }}>
                                 <span className="stock-delta" style={{ color: t.type === "income" ? "#ef4444" : "#10b981" }}>
-                                  {t.type === "income" ? "-" : "+"}{parseFloat(item.sackQty) || 0} karung
+                                  {t.type === "income" ? "-" : "+"}{parseFloat(item.sackQty) || 0} SACK
                                 </span>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <>{t.type === "income" ? "-" : "+"}{parseFloat(t.stockQty) || 0} {t.stockUnit}</>
+                          <>{t.type === "income" ? "-" : "+"}{parseFloat(t.stockQty) || 0} {displayUnit(t.stockUnit)}</>
                         )}
                       </td>
                       <td className="td-center"><StatusBadge status={t.status} /></td>

@@ -179,27 +179,29 @@ const formatInvoiceMeta = (transactions, contacts = [], note = "") => {
 };
 
 /**
- * Items table — 5 columns, no Krg column.
- * Columns (total 80): No(6) + Jenis Barang(32) + Berat(14) + Harga(14) + Total(14)
+ * Items table — 6 columns, with KARUNG column.
+ * Columns (total 80): No(6) + Jenis Barang(20) + KARUNG(10) + Berat(13) + Harga(15) + Total(16)
  * No trailing separator — formatInvoiceFooter adds SEP_MAJOR after total row.
  * Flattens all items across all transactions.
  */
 const formatItemsTable = (transactions) => {
   const COL_NO     = 6;
-  const COL_BARANG = 28;
-  const COL_BERAT  = 14;
-  const COL_HARGA  = 16;
+  const COL_BARANG = 20;
+  const COL_KARUNG = 10;
+  const COL_BERAT  = 13;
+  const COL_HARGA  = 15;
   const COL_TOTAL  = 16;
-  // 6 + 28 + 14 + 16 + 16 = 80
+  // 6 + 20 + 10 + 13 + 15 + 16 = 80
 
-  const mkRow = (no, barang, berat, harga, total) =>
-    padRight(no,    COL_NO)    +
+  const mkRow = (no, barang, karung, berat, harga, total) =>
+    padRight(no,     COL_NO)     +
     padRight(barang, COL_BARANG) +
-    padLeft(berat,  COL_BERAT) +
-    padLeft(harga,  COL_HARGA) +
-    padLeft(total,  COL_TOTAL);
+    padLeft(karung,  COL_KARUNG) +
+    padLeft(berat,   COL_BERAT)  +
+    padLeft(harga,   COL_HARGA)  +
+    padLeft(total,   COL_TOTAL);
 
-  const header  = mkRow("No", "Jenis Barang", "Berat (Kg)", "Harga", "Total");
+  const header  = mkRow("No", "Jenis Barang", "KARUNG", "Berat (Kg)", "Harga", "Total");
   const divider = SEP_MINOR;
 
   // Flatten all items across all transactions
@@ -208,12 +210,15 @@ const formatItemsTable = (transactions) => {
   );
 
   const rows = lineItems.flatMap((it, i) => {
+    const karungStr = it.sackQty != null && it.sackQty !== 0
+      ? fmtNum(it.sackQty) + " SACK"
+      : "—";
     const beratStr = it.weightKg   ? fmtNum(it.weightKg)   + " kg" : "—";
     const hargaStr = it.pricePerKg ? "Rp " + fmtNum(it.pricePerKg) : "—";
     const totalStr = "Rp " + fmtNum(it.subtotal || 0);
     const nameLines = wrapText(it.itemName || "—", COL_BARANG);
-    const firstRow  = mkRow(String(i + 1), nameLines[0], beratStr, hargaStr, totalStr);
-    const contRows  = nameLines.slice(1).map((line) => mkRow("", line, "", "", ""));
+    const firstRow = mkRow(String(i + 1), nameLines[0], karungStr, beratStr, hargaStr, totalStr);
+    const contRows = nameLines.slice(1).map((line) => mkRow("", line, "", "", "", ""));
     return [firstRow, ...contRows];
   });
 
@@ -327,7 +332,7 @@ const formatSuratJalanItems = (transaction) => {
   const header  = mkRow("NO.", "JENIS BARANG", "JUMLAH BARANG");
   const divider = SEP_MINOR;
 
-  const unit = transaction.stockUnit || "karung";
+  const unit = "SACK";
   const items = getItemsArray(transaction).flatMap((it, i) => {
     const qty = it.sackQty != null ? it.sackQty : 0;
     const jmlStr = fmtNum(qty) + " " + unit;

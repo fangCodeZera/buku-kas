@@ -36,6 +36,8 @@ const StockReportModal = ({
   const [showArchivedItems, setShowArchivedItems] = useState(false);
   const docRef = useRef(null);
 
+  const displayUnit = (unit) => (!unit || unit === "karung") ? "SACK" : unit;
+
   useEffect(() => {
     const handleKeyDown = (e) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", handleKeyDown);
@@ -77,7 +79,7 @@ const StockReportModal = ({
               items.push({
                 displayName: baseEntry.displayName || normalizeTitleCase(cat.name),
                 qty: baseEntry.qty,
-                unit: baseEntry.unit || "karung",
+                unit: displayUnit(baseEntry.unit),
               });
             }
           } else if (showZeroStock) {
@@ -85,7 +87,7 @@ const StockReportModal = ({
             items.push({
               displayName: normalizeTitleCase(cat.name),
               qty: 0,
-              unit: "karung",
+              unit: "SACK",
             });
           }
         }
@@ -104,7 +106,7 @@ const StockReportModal = ({
             items.push({
               displayName: subEntry.displayName || normalizeTitleCase(`${cat.name} ${sub}`),
               qty: subEntry.qty,
-              unit: subEntry.unit || "karung",
+              unit: displayUnit(subEntry.unit),
             });
           }
         } else if (showZeroStock) {
@@ -112,7 +114,7 @@ const StockReportModal = ({
           items.push({
             displayName: normalizeTitleCase(`${cat.name} ${sub}`),
             qty: 0,
-            unit: "karung",
+            unit: "SACK",
           });
         }
       }
@@ -143,13 +145,13 @@ const StockReportModal = ({
         archivedItems.push({
           displayName: entry.displayName || normName,
           qty: entry.qty,
-          unit: entry.unit || "karung",
+          unit: displayUnit(entry.unit),
         });
       } else {
         uncatItems.push({
           displayName: entry.displayName || normName,
           qty: entry.qty,
-          unit: entry.unit || "karung",
+          unit: displayUnit(entry.unit),
         });
       }
     }
