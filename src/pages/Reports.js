@@ -156,6 +156,8 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     }, 0);
   }, [filtered, selectedItems]);
 
+  const grandTotalBelumDibayar = grandTotalNilai - grandTotalPaid;
+
   const exportCSV = () => {
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const pmtFilter = (ph) =>
@@ -899,6 +901,20 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
             </>
           )}
           <span style={{ color: "#6b7280" }}>|</span>
+          <span>
+            Total Sudah Dibayar:{" "}
+            <span style={{ fontWeight: 700, color: grandTotalPaid >= 0 ? "#10b981" : "#ef4444" }}>
+              {fmtIDR(grandTotalPaid)}
+            </span>
+          </span>
+          <span style={{ color: "#6b7280" }}>·</span>
+          <span>
+            Total Belum Dibayar:{" "}
+            <span style={{ fontWeight: 700, color: "#f59e0b" }}>
+              {fmtIDR(grandTotalBelumDibayar)}
+            </span>
+          </span>
+          <span style={{ color: "#6b7280" }}>·</span>
           <span>
             Grand Total Nilai:{" "}
             <span style={{ fontWeight: 700, color: grandTotalNilai >= 0 ? "#10b981" : "#ef4444" }}>

@@ -54,7 +54,7 @@ src/
     Inventory.js                  ~1884  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "SACK" (T48/T49/T93); base item rows hidden when zero stock AND zero transactions (T50); subtype rows with 0 stock + 0 txCount + 0 adjCount hidden by default (T55) — "Tampilkan item tanpa stok & transaksi" toggle reveals them (label updated T72); handleAddSubtype checks both subtypes+archivedSubtypes for duplicates (T60); rename guard checks all catalog entries not just stockMap (T60); hasTx checks include archivedSubtypes (T60); uncatalogued item delete requires typing "hapus" (T60); ledgerEntries sort uses date+time only, ignoring createdAt (T71); T93: displayUnit() normalizer maps null/undefined/empty/"karung"→"SACK" at all display points (openAdj, handleAdjConfirm, expandedItemInfo, tableGroups base/subtype/uncatalogued, ledgerEntries, renderLedgerPanel, handleUpdateCatalogItem); summary cards updated to "SACK"
     Contacts.js                    672  Contact list + detail panel + transaction history; handleSave uses editingContact (from contacts array) not sel (from filtered withBalance) — prevents silent add-instead-of-edit when search is active (T61); archive/delete confirm handlers call setEditMode(false) (T61); progress bar at 0% returns null not "0%" text (T61); payment history colSpan corrected 8→9 (T62); T97: displayUnit() normalizer — multi-item hardcoded "karung"→"SACK", single-item t.stockUnit normalized via displayUnit()
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
-    Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table); chip dismiss + Reset Filter both sync inventoryFilterItem↔selectedItems (T63); orphanPayments + paymentCount both respect typeFilter (T63); Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84)
+    Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table); chip dismiss + Reset Filter both sync inventoryFilterItem↔selectedItems (T63); orphanPayments + paymentCount both respect typeFilter (T63); Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84); T100: grandTotalBelumDibayar = grandTotalNilai - grandTotalPaid added; screen footer now shows Total Sudah Dibayar + Total Belum Dibayar (amber #f59e0b) + Grand Total Nilai
     Outstanding.js                 557  AR/AP outstanding transactions view
     Settings.js                    617  Business settings + JSON/CSV backup/restore + printer type toggle; handleSave flushes unblurred numeric fields into finalForm (T64); import syncs form/dueDaysStr/lowStockStr/maxBankStr from parsed.settings on success (T64); NORM_VERSION from storage.js (T64)
     ArchivedItems.js               286  Archived catalog items — restore or delete
@@ -72,7 +72,7 @@ src/
     TransactionDetailModal.js      ~320  Full transaction detail modal — items table, payment summary block, payment history timeline; T96: Karung column cell values "krg"→"SACK"; edit log "krg"→"SACK", "Krg:"→"SACK:" (column header "Karung" unchanged)
     DotMatrixPrintModal.js         127  Dot matrix preview + print modal (invoice & surat jalan); both modes render single `<pre>` on screen and print — surat jalan bold-title split removed (T67); modal-box maxWidth 750; `<pre>` style lineHeight:1.2 only (T69 final). Print uses `@page { margin: 4mm }` to suppress browser headers/footers and eliminate right-side gap (T85)
     ToggleSwitch.js                 65  Reusable toggle switch — track+thumb, #007bff/#cbd5e1, keyboard accessible (role=switch, Space/Enter)
-    ReportModal.js                 590  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR. Defaults (T25): showCompanyName=false, showSummary=false, printTable1=true, printTable2=false. grandTotalPaid = table1Total + table2Total (T26 — each 0 when its toggle is off). Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84)
+    ReportModal.js                 590  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR. Defaults (T25): showCompanyName=false, showSummary=false, printTable1=true, printTable2=false. grandTotalPaid = table1Total + table2Total (T26 — each 0 when its toggle is off). Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84); T100: Total Belum Dibayar row (amber) inserted between Total Sudah Dibayar and Grand Total Nilai in print footer
     StockWarningModal.js            77  Negative-stock warning
     StockReportModal.js            ~430  Printable stock report — derives groupings from itemCatalog prop (active entries = groups, active subtypes = members, uncatalogued → "Lainnya", archived → "Barang Diarsipkan"). Toggles: showZeroStock, showCompanyName (default OFF — T53), showArchivedItems (default OFF). Base rows hidden when baseQty===0 && baseTxCount===0 even with showZeroStock ON (T53 — mirrors Inventory T50); T98: displayUnit() normalizer added — all 6 unit fallbacks in groupedData useMemo normalized; zero-stock fallbacks hardcoded to "SACK"
     Badge.js                       113  StatusBadge, TypeBadge (named exports)
@@ -1891,6 +1891,41 @@ Added two missing indexes to the `activity_log` Supabase table via MCP: `idx_act
 - `"Jumlah karung harus lebih dari 0"` → `"Jumlah SACK harus lebih dari 0"`
 
 **Files:** `src/components/StockReportModal.js`, `src/components/TransactionForm.js`
+
+### T100 (2026-05-14): Laporan — add "Total Belum Dibayar" to screen footer and print output
+
+**Request:** Client wanted a "Total Belum Dibayar" row between "Total Sudah
+Dibayar" and "Grand Total Nilai" in all three report types (Semua, Penjualan,
+Pembelian) on both the screen and the printed Cetak Laporan output.
+
+**Formula:** `grandTotalBelumDibayar = grandTotalNilai - grandTotalPaid`
+
+**Color:** `#f59e0b` (amber — same as Sisa Tagihan elsewhere in the app)
+
+**Reports.js (screen footer):**
+- Added `const grandTotalBelumDibayar = grandTotalNilai - grandTotalPaid`
+  immediately after the `grandTotalNilai` useMemo
+- Screen footer previously showed only Grand Total Nilai. Now shows three
+  values separated by `·`: Total Sudah Dibayar (green/red) · Total Belum
+  Dibayar (amber) · Grand Total Nilai (green/red)
+- `grandTotalPaid` was already computed but never shown on screen — now
+  surfaced alongside the new row
+
+**ReportModal.js (print footer):**
+- Added same `grandTotalBelumDibayar` derived value after `grandTotalNilai`
+- Inserted new div row between the existing Total Sudah Dibayar and
+  Grand Total Nilai divs: `padding: "4px 8px"`, label color `#1e3a5f`,
+  value color `#f59e0b`
+- Applies to all three report types (Semua / Penjualan / Pembelian) since
+  they all use the same ReportModal component
+
+**Edge cases:**
+- `grandTotalBelumDibayar` can be negative when orphan payments push
+  `grandTotalPaid` above `grandTotalNilai` — color stays amber regardless,
+  no conditional color logic needed
+- All three report types covered automatically — no per-type changes needed
+
+**Files:** `src/pages/Reports.js`, `src/components/ReportModal.js`
 
 ---
 

@@ -101,6 +101,8 @@ const ReportModal = ({
     return t.type === "income" ? sum + nilai : sum - nilai;
   }, 0) : 0);
 
+  const grandTotalBelumDibayar = grandTotalNilai - grandTotalPaid;
+
   const filteredIds = new Set(transactions.map((t) => t.id));
 
   const orphanPaymentGroups = allTransactions.flatMap((t) => {
@@ -541,6 +543,12 @@ const ReportModal = ({
             Total Sudah Dibayar{" "}
             <span style={{ color: grandTotalPaid >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>
               {fmtIDR(grandTotalPaid)}
+            </span>
+          </div>
+          <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: "4px 8px", color: "#1e3a5f" }}>
+            Total Belum Dibayar{" "}
+            <span style={{ color: "#f59e0b", fontWeight: 700 }}>
+              {fmtIDR(grandTotalBelumDibayar)}
             </span>
           </div>
           <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: "4px 8px 8px", color: "#1e3a5f" }}>
