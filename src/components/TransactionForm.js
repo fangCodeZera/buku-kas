@@ -101,10 +101,20 @@ const TransactionForm = ({
     return { itemNameInput: itemName, itemTypeInput: "", catalogItemId: "", matchedCatalog: null };
   };
 
+  /**
+   * Compute the transaction's net value from its items, discount, and type.
+   * Discount only applies to income (Penjualan) transactions — expense
+   * (Pembelian) transactions always use the gross sum, discount is ignored.
+   */
+  const computeNetValue = (items, discount, type) => {
+    const gross = items.reduce((s, it) => s + (it.subtotal || 0), 0);
+    return type === "income" ? Math.max(0, gross - (Number(discount) || 0)) : gross;
+  };
+
   const blank = {
     date: today(), time: nowTime(),
     counterparty: "",
-    stockUnit: "SACK", customUnit: "", value: 0,
+    stockUnit: "SACK", customUnit: "", value: 0, discount: 0,
     type: initType, status: STATUS.LUNAS, outstanding: 0, notes: "",
     items: [blankItem()],
   };
@@ -128,11 +138,14 @@ const TransactionForm = ({
           pricePerKg: Number(initial.pricePerKg) || 0,
           subtotal:   Number(initial.value)      || 0,
         }];
+    const loadedDiscount = Number(initial.discount) || 0;
+    const loadedType     = initial.type || initType;
     return {
       ...blank,
       ...initial,
+      discount: loadedDiscount,
       outstanding: Number(initial.outstanding) || 0,
-      value: items.reduce((s, it) => s + (it.subtotal || 0), 0),
+      value: computeNetValue(items, loadedDiscount, loadedType),
       items,
     };
   });
@@ -198,10 +211,17 @@ const TransactionForm = ({
     setForm((f) => ({
       ...f,
       type: newType,
+      value: computeNetValue(f.items, f.discount, newType),
       // Re-derive full status so Piutang/Utang stays correct for the new type
       status: deriveFullStatus(f.status === STATUS.LUNAS ? STATUS.LUNAS : "Belum Lunas", newType),
     }));
-    if (newType === "income") { setTxnIdInput(""); setTxnIdError(null); } // clear supplier invoice field when switching to income
+    if (newType === "income") {
+      setTxnIdInput(""); setTxnIdError(null); // clear supplier invoice field when switching to income
+    } else {
+      // Switching to expense — discount no longer applies or displays;
+      // clear any lingering discount validation error.
+      setErrors((prev) => ({ ...prev, discount: undefined }));
+    }
   };
 
   // ── Item management ──────────────────────────────────────────────────────────
@@ -216,8 +236,18 @@ const TransactionForm = ({
   const removeItem = (idx) =>
     setForm((f) => {
       const items = f.items.filter((_, i) => i !== idx);
-      return { ...f, items, value: items.reduce((s, it) => s + (it.subtotal || 0), 0) };
+      return { ...f, items, value: computeNetValue(items, f.discount, f.type) };
     });
+
+  /** Update the transaction-level discount and recompute net value.
+   *  Only meaningful when form.type === "income" — the input that calls
+   *  this is only rendered in that case (see Step 9). */
+  const setDiscount = (val) => {
+    setForm((f) => {
+      const discount = Number(val) || 0;
+      return { ...f, discount, value: computeNetValue(f.items, discount, f.type) };
+    });
+  };
 
   const setItem = (idx, key, val) =>
     setForm((f) => {
@@ -231,7 +261,7 @@ const TransactionForm = ({
         updated.subtotal = p * w;
         return updated;
       });
-      return { ...f, items, value: items.reduce((s, it) => s + (it.subtotal || 0), 0) };
+      return { ...f, items, value: computeNetValue(items, f.discount, f.type) };
     });
 
   // ── Item name/type change handlers ──────────────────────────────────────────
@@ -494,15 +524,32 @@ const TransactionForm = ({
     });
     if (itemErrors.some((ie) => Object.keys(ie).length > 0)) e.items = itemErrors;
 
-    const totalVal = form.items.reduce((s, it) => s + (it.subtotal || 0), 0);
-    if (!totalVal || totalVal <= 0) e.value = "Masukkan angka positif";
+    const grossTotal = form.items.reduce((s, it) => s + (it.subtotal || 0), 0);
+    if (!grossTotal || grossTotal <= 0) e.value = "Masukkan angka positif";
 
-    // Belum Lunas: paidAmount must be >= 0 and < value (outstanding > 0 means not yet fully paid)
+    const isIncome = form.type === "income";
+    const netTotal = computeNetValue(form.items, form.discount, form.type);
+
+    // Discount validation — income (Penjualan) only. Expense transactions
+    // never carry a discount, so these checks are skipped entirely for them.
+    if (isIncome) {
+      if (Number(form.discount) > grossTotal) {
+        e.discount = "Diskon tidak boleh melebihi total sebelum diskon";
+      } else if (initial) {
+        const alreadyPaid = Math.max(0, (Number(initial.value) || 0) - (Number(initial.outstanding) || 0));
+        if (alreadyPaid > 0 && netTotal < alreadyPaid) {
+          e.discount = `Diskon tidak boleh membuat total lebih kecil dari jumlah yang sudah dibayar (${fmtIDR(alreadyPaid)})`;
+        }
+      }
+    }
+
+    // Belum Lunas: paidAmount must be >= 0 and < NET value (outstanding is
+    // measured against what's actually billed, i.e. post-discount for income)
     if (form.status !== STATUS.LUNAS) {
       if (Number(form.outstanding) <= 0) {
         e.paidAmount = "Jumlah yang sudah dibayar harus kurang dari nilai total";
       }
-      if (Number(form.outstanding) > totalVal) {
+      if (Number(form.outstanding) > netTotal) {
         e.paidAmount = "Tidak boleh melebihi nilai total";
       }
     }
@@ -694,7 +741,12 @@ const TransactionForm = ({
   const doSave = (unit) => {
     const firstItem    = form.items[0] || {};
     const totalSackQty = form.items.reduce((s, it) => s + (parseFloat(it.sackQty) || 0), 0);
-    const totalVal     = form.items.reduce((s, it) => s + (it.subtotal || 0), 0);
+    // Hard save-time guarantee: discount is forced to 0 for anything that
+    // isn't income, regardless of whatever value is sitting in form state.
+    // This is the last line of defense against a discount leaking into a
+    // Pembelian transaction via any edge case in the type-toggle flow.
+    const finalDiscount = form.type === "income" ? (Number(form.discount) || 0) : 0;
+    const netTotal       = computeNetValue(form.items, finalDiscount, form.type);
     try {
       onSave({
         ...form,
@@ -715,7 +767,8 @@ const TransactionForm = ({
           ? normalizeTitleCase(firstItem.itemNameInput.trim() + " " + firstItem.itemTypeInput.trim())
           : normalizeTitleCase(firstItem.itemNameInput?.trim() || ""),
         counterparty: normalizeTitleCase(form.counterparty),
-        value:        totalVal,
+        value:        netTotal,
+        discount:     finalDiscount,
         outstanding:  Number(form.outstanding) || 0,
         stockQty:     totalSackQty,
         stockUnit:    unit,
@@ -1200,27 +1253,63 @@ const TransactionForm = ({
         </div>
 
         {secLbl("Total & Tipe")}
-        {/* Nilai Total — read-only, always the sum of all item subtotals */}
-        <div style={{ marginBottom: 12 }}>
-          <label style={lStyle}>
-            Total Transaksi (IDR)
-            <span style={{ fontWeight: 400, textTransform: "none", fontSize: 10, marginLeft: 6, color: "#10b981" }}>
-              ✓ jumlah semua item
-            </span>
-          </label>
-          <div
-            style={{
-              width: "100%", padding: "8px 10px",
-              border: `1.5px solid ${errors.value ? "#ef4444" : "#d1d5db"}`,
-              borderRadius: 8, fontSize: 14, boxSizing: "border-box",
-              background: "#f3f4f6", color: "#374151", cursor: "not-allowed",
-            }}
-            aria-label="Total transaksi (dihitung otomatis)"
-          >
-            {fmtIDR(form.value)}
+        {form.type === "income" ? (
+          /* ── Penjualan: 3-row discount breakdown ── */
+          <div style={{ marginBottom: 12, padding: "10px 12px", background: "#f8fbff", border: "1.5px solid #c7ddf7", borderRadius: 10 }}>
+            {/* Total Sebelum Diskon — read-only, gross sum of item subtotals */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#6b7280" }}>Total Sebelum Diskon</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#374151" }}>
+                {fmtIDR(form.items.reduce((s, it) => s + (it.subtotal || 0), 0))}
+              </span>
+            </div>
+
+            {/* Diskon — editable, transaction-level, Penjualan only */}
+            <div style={{ marginBottom: 10 }}>
+              <label style={lStyle}>Diskon (IDR)</label>
+              <RupiahInput
+                value={form.discount || 0}
+                onChange={(v) => setDiscount(v)}
+                hasError={!!errors.discount}
+              />
+              {errors.discount && <span className="field-error">{errors.discount}</span>}
+            </div>
+
+            {/* Total Sesudah Diskon — read-only, = form.value, this is what gets billed */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid #e5e7eb" }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: "#1e3a5f" }}>Total Sesudah Diskon</span>
+              <span
+                style={{ fontSize: 16, fontWeight: 800, color: "#10b981" }}
+                aria-label="Total setelah diskon (dihitung otomatis)"
+              >
+                {fmtIDR(form.value)}
+              </span>
+            </div>
+            {errors.value && <span className="field-error">{errors.value}</span>}
           </div>
-          {errors.value && <span className="field-error">{errors.value}</span>}
-        </div>
+        ) : (
+          /* ── Pembelian: original plain box, completely unchanged ── */
+          <div style={{ marginBottom: 12 }}>
+            <label style={lStyle}>
+              Total Transaksi (IDR)
+              <span style={{ fontWeight: 400, textTransform: "none", fontSize: 10, marginLeft: 6, color: "#10b981" }}>
+                ✓ jumlah semua item
+              </span>
+            </label>
+            <div
+              style={{
+                width: "100%", padding: "8px 10px",
+                border: `1.5px solid ${errors.value ? "#ef4444" : "#d1d5db"}`,
+                borderRadius: 8, fontSize: 14, boxSizing: "border-box",
+                background: "#f3f4f6", color: "#374151", cursor: "not-allowed",
+              }}
+              aria-label="Total transaksi (dihitung otomatis)"
+            >
+              {fmtIDR(form.value)}
+            </div>
+            {errors.value && <span className="field-error">{errors.value}</span>}
+          </div>
+        )}
 
         <div style={{ marginBottom: 12 }}>
           <label style={lStyle}>Tipe</label>
