@@ -71,8 +71,10 @@ const InvoiceModal = ({ transactions, settings, contacts = [], onClose }) => {
     return items.map((it) => ({ ...it, txType: t.type }));
   });
 
-  const subtotal    = transactions.reduce((a, t) => a + (t.value || 0), 0);
-  const outstanding = transactions.reduce((a, t) => a + (t.outstanding || 0), 0);
+  const subtotal      = transactions.reduce((a, t) => a + (t.value || 0), 0);
+  const outstanding   = transactions.reduce((a, t) => a + (t.outstanding || 0), 0);
+  const totalDiscount = transactions.reduce((a, t) => a + (Number(t.discount) || 0), 0);
+  const grossTotal    = subtotal + totalDiscount;
 
   // Use the first transaction's txnId as the Invoice No, fallback to timestamp
   const invNumber = transactions[0]?.txnId || `INV-${Date.now().toString().slice(-6)}`;
@@ -250,10 +252,27 @@ const InvoiceModal = ({ transactions, settings, contacts = [], onClose }) => {
 
         {/* ── Totals ── */}
         <div style={s.totalsWrap}>
-          <div style={s.totalRow}>
-            <span>Subtotal</span>
-            <span style={{ fontWeight: 700 }}>{fmtIDR(subtotal)}</span>
-          </div>
+          {totalDiscount > 0 ? (
+            <>
+              <div style={s.totalRow}>
+                <span style={{ paddingRight: 12, minWidth: 0 }}>Total Sebelum Diskon</span>
+                <span style={{ fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>{fmtIDR(grossTotal)}</span>
+              </div>
+              <div style={{ ...s.totalRow, color: "#ef4444" }}>
+                <span style={{ paddingRight: 12, minWidth: 0 }}>Diskon</span>
+                <span style={{ fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>-{fmtIDR(totalDiscount)}</span>
+              </div>
+              <div style={s.totalRow}>
+                <span style={{ paddingRight: 12, minWidth: 0 }}>Total Sesudah Diskon</span>
+                <span style={{ fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>{fmtIDR(subtotal)}</span>
+              </div>
+            </>
+          ) : (
+            <div style={s.totalRow}>
+              <span>Subtotal</span>
+              <span style={{ fontWeight: 700 }}>{fmtIDR(subtotal)}</span>
+            </div>
+          )}
           {outstanding > 0 && (
             <div data-no-print="true" style={{ ...s.totalRow, color: "#f59e0b" }}>
               <span>Sisa Tagihan</span>
