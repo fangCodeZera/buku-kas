@@ -158,6 +158,14 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
 
   const grandTotalBelumDibayar = grandTotalNilai - grandTotalPaid;
 
+  // grandTotalDiskon is computed independently of grandTotalNilai/
+  // grandTotalBelumDibayar/grandTotalPaid above — none of those three
+  // existing calculations are touched by this change.
+  const grandTotalDiskon = filtered
+    .filter((t) => t.type === "income")
+    .reduce((a, t) => a + (Number(t.discount) || 0), 0);
+  const grandTotalSebelumDiskon = grandTotalNilai + grandTotalDiskon;
+
   const exportCSV = () => {
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const pmtFilter = (ph) =>
@@ -901,6 +909,24 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
             </>
           )}
           <span style={{ color: "#6b7280" }}>|</span>
+          {grandTotalDiskon > 0 && (
+            <>
+              <span>
+                Total Sebelum Diskon:{" "}
+                <span style={{ fontWeight: 700, color: "#374151" }}>
+                  {fmtIDR(grandTotalSebelumDiskon)}
+                </span>
+              </span>
+              <span style={{ color: "#6b7280" }}>·</span>
+              <span>
+                Total Diskon:{" "}
+                <span style={{ fontWeight: 700, color: "#ef4444" }}>
+                  -{fmtIDR(grandTotalDiskon)}
+                </span>
+              </span>
+              <span style={{ color: "#6b7280" }}>·</span>
+            </>
+          )}
           <span>
             Total Sudah Dibayar:{" "}
             <span style={{ fontWeight: 700, color: grandTotalPaid >= 0 ? "#10b981" : "#ef4444" }}>

@@ -103,6 +103,16 @@ const ReportModal = ({
 
   const grandTotalBelumDibayar = grandTotalNilai - grandTotalPaid;
 
+  // Gated by printTable1, matching grandTotalNilai/table1Total above.
+  // Filters to income only — same deliberate logic as Reports.js's
+  // screen-side version, so Pembelian-only prints are naturally unaffected.
+  const grandTotalDiskon = printTable1
+    ? transactions
+        .filter((t) => t.type === "income")
+        .reduce((a, t) => a + (Number(t.discount) || 0), 0)
+    : 0;
+  const grandTotalSebelumDiskon = grandTotalNilai + grandTotalDiskon;
+
   const filteredIds = new Set(transactions.map((t) => t.id));
 
   const orphanPaymentGroups = allTransactions.flatMap((t) => {
@@ -539,7 +549,23 @@ const ReportModal = ({
 
         {/* Grand total */}
         <div style={s.section}>
-          <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: "8px 8px 4px", color: "#1e3a5f", borderTop: "2px solid #1e3a5f" }}>
+          {grandTotalDiskon > 0 && (
+            <>
+              <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: "8px 8px 4px", color: "#1e3a5f", borderTop: "2px solid #1e3a5f" }}>
+                Total Sebelum Diskon{" "}
+                <span style={{ color: "#374151", fontWeight: 700 }}>
+                  {fmtIDR(grandTotalSebelumDiskon)}
+                </span>
+              </div>
+              <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: "4px 8px", color: "#1e3a5f" }}>
+                Total Diskon{" "}
+                <span style={{ color: "#ef4444", fontWeight: 700 }}>
+                  -{fmtIDR(grandTotalDiskon)}
+                </span>
+              </div>
+            </>
+          )}
+          <div style={{ textAlign: "right", fontWeight: 600, fontSize: 12, padding: "8px 8px 4px", color: "#1e3a5f", borderTop: grandTotalDiskon > 0 ? "none" : "2px solid #1e3a5f" }}>
             Total Sudah Dibayar{" "}
             <span style={{ color: grandTotalPaid >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>
               {fmtIDR(grandTotalPaid)}
