@@ -145,11 +145,30 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
 
           {/* ── Section 4: Unified totals + payment summary ── */}
           <div style={{ marginTop: 8, marginBottom: 16 }}>
-            {/* Total Nilai */}
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 8px", fontSize: 13, borderTop: "2px solid #1e3a5f" }}>
-              <span style={{ fontWeight: 700, color: "#1e3a5f" }}>Total Nilai</span>
-              <span style={{ fontWeight: 800, color: t.type === "income" ? "#10b981" : "#ef4444" }}>{fmtIDR(t.value || 0)}</span>
-            </div>
+            {/* Total Nilai — plain row, OR discount breakdown when discount > 0 */}
+            {Number(t.discount) > 0 ? (
+              <div style={{ padding: "6px 8px", borderTop: "2px solid #1e3a5f" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                  <span style={{ color: "#6b7280", fontWeight: 600 }}>Total Sebelum Diskon</span>
+                  <span style={{ color: "#374151", fontWeight: 700 }}>
+                    {fmtIDR((t.value || 0) + (Number(t.discount) || 0))}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6 }}>
+                  <span style={{ color: "#ef4444", fontWeight: 600 }}>Diskon</span>
+                  <span style={{ color: "#ef4444", fontWeight: 700 }}>-{fmtIDR(t.discount)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, paddingTop: 6, borderTop: "1px solid #e5e7eb" }}>
+                  <span style={{ fontWeight: 700, color: "#1e3a5f" }}>Total Sesudah Diskon</span>
+                  <span style={{ fontWeight: 800, color: t.type === "income" ? "#10b981" : "#ef4444" }}>{fmtIDR(t.value || 0)}</span>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 8px", fontSize: 13, borderTop: "2px solid #1e3a5f" }}>
+                <span style={{ fontWeight: 700, color: "#1e3a5f" }}>Total Nilai</span>
+                <span style={{ fontWeight: 800, color: t.type === "income" ? "#10b981" : "#ef4444" }}>{fmtIDR(t.value || 0)}</span>
+              </div>
+            )}
 
             {/* Payment breakdown — divider + Sudah Dibayar + Sisa Tagihan + progress bar */}
             <div style={{ borderTop: "1px solid #e5e7eb", padding: "8px 8px 6px" }}>
@@ -219,7 +238,8 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
                         {isEdit && (() => {
                           const isNew = ph.counterpartyBefore !== undefined ||
                             ph.dateBefore !== undefined || ph.itemsAdded !== undefined ||
-                            ph.notesBefore !== undefined || ph.dueDateBefore !== undefined;
+                            ph.notesBefore !== undefined || ph.dueDateBefore !== undefined ||
+                            ph.discountBefore !== undefined;
                           const s = { fontSize: 11, color: "#6b7280", marginTop: 2, lineHeight: 1.6 };
                           if (isNew) return (
                             <div style={s}>
@@ -230,6 +250,9 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
                                 <div>Sudah Dibayar: {fmtIDR(ph.paidBefore ?? 0)} → {fmtIDR(ph.paidAfter ?? 0)}</div>
                                 <div>Sisa Tagihan: {fmtIDR(ph.outstandingBefore)} → {fmtIDR(ph.outstandingAfter)}</div>
                               </>}
+                              {ph.discountBefore !== undefined && (
+                                <div>Diskon: {fmtIDR(ph.discountBefore)} → {fmtIDR(ph.discountAfter)}</div>
+                              )}
                               {ph.statusBefore !== undefined && <div>Status: {ph.statusBefore} → {ph.statusAfter}</div>}
                               {ph.dueDateBefore !== undefined && <div>Jatuh Tempo: {fmtDate(ph.dueDateBefore)} → {fmtDate(ph.dueDateAfter)}</div>}
                               {ph.notesBefore !== undefined && <div>Catatan: {ph.notesBefore || "(kosong)"} → {ph.notesAfter || "(kosong)"}</div>}
