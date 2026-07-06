@@ -653,6 +653,12 @@ export default function App() {
     ...t,
     itemName:     normalizeTitleCase(t.itemName),
     counterparty: normalizeTitleCase(t.counterparty),
+    // Defensive second-line guard: discount must never apply to anything
+    // other than income (Penjualan) transactions. TransactionForm.js
+    // already enforces this at the UI/save layer (Stage 1) — this is
+    // backup enforcement at the data layer, in case of any future bug
+    // upstream. Cheap insurance, always runs regardless of caller.
+    discount: t.type === "income" ? (Number(t.discount) || 0) : 0,
   });
 
   // ── CRUD handlers ─────────────────────────────────────────────────────────
@@ -815,6 +821,7 @@ export default function App() {
         const dateChanged         = x.date !== nt.date;
         const financialChanged    = Number(x.value) !== Number(nt.value) ||
           Number(x.outstanding) !== out;
+        const discountChanged     = Number(x.discount || 0) !== Number(nt.discount || 0);
         const statusChanged       = x.status !== nt.status;
         const dueDateChanged      = x.dueDate !== nt.dueDate;
         const notesChanged        = (x.notes || "") !== (nt.notes || "");
@@ -853,7 +860,7 @@ export default function App() {
         const itemsChanged = addedItems.length > 0 || removedItems.length > 0 || changedItems.length > 0;
 
         const anyChanged = counterpartyChanged || dateChanged || financialChanged ||
-          statusChanged || dueDateChanged || notesChanged || itemsChanged;
+          discountChanged || statusChanged || dueDateChanged || notesChanged || itemsChanged;
         const editPaymentEntry = anyChanged ? {
           id:     generateId(),
           paidAt: new Date().toISOString(),
@@ -871,6 +878,10 @@ export default function App() {
             paidAfter:         Math.max(0, (Number(nt.value) || 0) - out),
             outstandingBefore: Number(x.outstanding) || 0,
             outstandingAfter:  out,
+          }),
+          ...(discountChanged      && {
+            discountBefore: Number(x.discount) || 0,
+            discountAfter:  Number(nt.discount) || 0,
           }),
           ...(statusChanged  && { statusBefore:  x.status  || "",   statusAfter:  deriveStatus(nt.type, out > 0) }),
           ...(dueDateChanged && { dueDateBefore: x.dueDate || null, dueDateAfter: nt.dueDate || null }),
