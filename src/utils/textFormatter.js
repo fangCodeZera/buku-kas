@@ -231,11 +231,21 @@ const formatItemsTable = (transactions) => {
  * No notes — note is now shown in formatInvoiceMeta.
  */
 const formatInvoiceFooter = (transactions, settings) => {
-  const total = transactions.reduce((a, t) => a + (Number(t.value) || 0), 0);
+  const total         = transactions.reduce((a, t) => a + (Number(t.value) || 0), 0);
+  // totalDiscount will always be 0 for Pembelian invoices, since App.js's
+  // normTx() guarantees discount is never set on expense transactions —
+  // no explicit type check needed, it falls out of the data itself.
+  const totalDiscount = transactions.reduce((a, t) => a + (Number(t.discount) || 0), 0);
+  const grossTotal    = total + totalDiscount;
   const lines = [];
 
-  // Major separator, then TOTAL row right-aligned below it
+  // Major separator, then SUBTOTAL/DISKON (only if discount exists),
+  // then the TOTAL row — unchanged in content and position.
   lines.push(SEP_MAJOR);
+  if (totalDiscount > 0) {
+    lines.push(padLeft("SUBTOTAL : " + fmtRp(grossTotal), LINE_WIDTH));
+    lines.push(padLeft("DISKON   : -" + fmtRp(totalDiscount), LINE_WIDTH));
+  }
   lines.push(padLeft("TOTAL : " + fmtRp(total), LINE_WIDTH));
 
   // Bank accounts
