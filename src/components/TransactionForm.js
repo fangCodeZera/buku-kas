@@ -177,6 +177,23 @@ const TransactionForm = ({
   const cpToastTimer     = useRef(null);
   const skipNextFocusOpen = useRef(true);
 
+  // Tracks whether the user actively touched a payment-status control (the
+  // Lunas/Belum Lunas dropdown, or the Sudah Dibayar amount) during THIS
+  // edit session — distinct from whatever outstanding value happens to
+  // already be sitting in form state. App.js uses this to decide whether
+  // an explicit outstanding value should override its own recalculation,
+  // or whether it's just a stale, untouched carryover from before this edit.
+  const [paymentManuallyEdited, setPaymentManuallyEdited] = useState(false);
+  // The REAL amount genuinely already paid, captured once when this edit
+  // session began and never recalculated afterward — used to keep the live
+  // Sudah Dibayar/Sisa Tagihan preview honest even as discount/price/qty
+  // edits change form.value, instead of letting it drift via a stale
+  // form.outstanding that never updates on its own. 0 for brand-new
+  // transactions (no prior payment to anchor to).
+  const initialAlreadyPaid = useRef(
+    initial ? Math.max(0, (Number(initial.value) || 0) - (Number(initial.outstanding) || 0)) : 0
+  );
+
   // Autocomplete visibility: track which item row's name/type suggestions are open
   const [showItemSugg, setShowItemSugg] = useState(null);
   const [showTypeSugg, setShowTypeSugg] = useState(null);
@@ -194,6 +211,7 @@ const TransactionForm = ({
 
   /** Handle the simplified status dropdown change */
   const handleSimpleStatusChange = (simple) => {
+    setPaymentManuallyEdited(true);
     if (simple === STATUS.LUNAS) {
       setForm((f) => ({ ...f, status: STATUS.LUNAS, outstanding: 0 }));
     } else {
@@ -770,6 +788,7 @@ const TransactionForm = ({
         value:        netTotal,
         discount:     finalDiscount,
         outstanding:  Number(form.outstanding) || 0,
+        paymentManuallyEdited,
         stockQty:     totalSackQty,
         stockUnit:    unit,
         sackQty:      totalSackQty,
@@ -1350,7 +1369,23 @@ const TransactionForm = ({
         </div>
 
         {/* ── Paid-so-far input — only shown when Belum Lunas ── */}
-        {!isLunas && (
+        {!isLunas && (() => {
+          // While the user hasn't touched a payment control this session,
+          // anchor this preview to the REAL amount already paid (captured
+          // once when the form opened) instead of the raw form.outstanding
+          // value, which never updates on its own when discount/price/qty
+          // edits change form.value — so it would otherwise silently drift
+          // from reality as you edit. The moment the user actually touches
+          // Sudah Dibayar or the status dropdown, paymentManuallyEdited
+          // flips true and this preview switches to showing exactly what
+          // they typed, same as before this fix.
+          const livePaid = paymentManuallyEdited
+            ? Math.max(0, Number(form.value) - Number(form.outstanding))
+            : Math.min(initialAlreadyPaid.current, Number(form.value));
+          const liveOutstanding = paymentManuallyEdited
+            ? Number(form.outstanding)
+            : Math.max(0, Number(form.value) - initialAlreadyPaid.current);
+          return (
           <div style={{ gridColumn: "1/-1", marginBottom: 12 }}>
             <label style={lStyle}>
               Sudah Dibayar (Rp)
@@ -1362,8 +1397,9 @@ const TransactionForm = ({
               </span>
             </label>
             <RupiahInput
-              value={Math.max(0, Number(form.value) - Number(form.outstanding))}
+              value={livePaid}
               onChange={(paid) => {
+                setPaymentManuallyEdited(true);
                 const clamped = Math.min(Math.max(0, paid), Number(form.value));
                 setForm((f) => ({ ...f, outstanding: Number(f.value) - clamped }));
               }}
@@ -1372,10 +1408,10 @@ const TransactionForm = ({
             {errors.paidAmount && <span className="field-error">{errors.paidAmount}</span>}
             {/* Live outstanding preview */}
             {Number(form.value) > 0 && (
-              <div className="stock-preview" style={{ color: form.outstanding > 0 ? "#f59e0b" : "#10b981" }}>
+              <div className="stock-preview" style={{ color: liveOutstanding > 0 ? "#f59e0b" : "#10b981" }}>
                 Sisa tagihan:{" "}
-                <strong>{fmtIDR(Math.max(0, Number(form.outstanding)))}</strong>
-                {form.outstanding <= 0 && " — ✅ Lunas penuh"}
+                <strong>{fmtIDR(liveOutstanding)}</strong>
+                {liveOutstanding <= 0 && " — ✅ Lunas penuh"}
               </div>
             )}
 
@@ -1403,11 +1439,12 @@ const TransactionForm = ({
                 aria-label="Tempo Pembayaran dalam hari"
               />
               <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>
-                Jatuh tempo: {fmtDate(form.outstanding > 0 ? addDays(form.date, parseInt(customDueDays, 10) || 0) : null)}
+                Jatuh tempo: {fmtDate(liveOutstanding > 0 ? addDays(form.date, parseInt(customDueDays, 10) || 0) : null)}
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
       </div>
 

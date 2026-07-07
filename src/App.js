@@ -666,6 +666,10 @@ export default function App() {
     const out = Number(t.outstanding) || 0;
     const dueDate = out > 0 ? (addDays(t.date, t.customDueDays) ?? null) : null;
     const nt = { ...normTx(t), createdAt: new Date().toISOString(), dueDate };
+    // Ephemeral signal from TransactionForm.js, only meaningful to
+    // editTransaction — strip it here too so it never persists on
+    // brand-new records either.
+    delete nt.paymentManuallyEdited;
     const value    = Number(nt.value) || 0;
     const paidNow  = value - out;
     const initialPayment = {
@@ -755,6 +759,13 @@ export default function App() {
 
   const editTransaction = async (t) => {
     const nt = normTx(t);
+    // Extracted here (and removed from nt) so this ephemeral "did the user
+    // touch payment controls this session" signal from TransactionForm.js
+    // never gets persisted into the stored transaction record. Only
+    // meaningful for income transactions — see the income/expense branch
+    // below.
+    const paymentManuallyEdited = !!nt.paymentManuallyEdited;
+    delete nt.paymentManuallyEdited;
 
     // Fix: In Supabase mode, pre-compute the new txnId atomically via RPC when the
     // YY-MM prefix will change. Mirrors the same pattern used in addTransaction.
@@ -785,10 +796,28 @@ export default function App() {
         const newValue = Number(nt.value) || 0;
         const correctOutstanding = Math.max(0, newValue - alreadyPaid);
 
-        // Full reversal detection: user explicitly set outstanding = full value (Sudah Dibayar = 0).
-        // In this case bypass T27's payment history recomputation — honor the user's intent directly.
-        const isFullReversal = Number(nt.outstanding) === newValue && newValue > 0;
-        const out = Number(nt.outstanding) === 0 ? 0 : (isFullReversal ? newValue : correctOutstanding);
+        // Payment-integrity safety net — income (Penjualan) transactions
+        // only. Only honor an explicit outstanding value from the form
+        // when the user actually touched a payment control (status toggle
+        // or Sudah Dibayar amount) during this edit — tracked via
+        // paymentManuallyEdited from TransactionForm.js. This avoids
+        // misreading a stale, untouched outstanding value (left over from
+        // before this edit, e.g. because only the discount/price/qty
+        // changed) as if it were a deliberate instruction.
+        //
+        // Deliberate scope decision: Pembelian (expense) transactions
+        // intentionally keep the ORIGINAL number-matching logic below,
+        // unchanged — including its known edge cases. Confirmed decision,
+        // not an oversight.
+        let isFullReversal, out;
+        if (nt.type === "income") {
+          isFullReversal = paymentManuallyEdited && Number(nt.outstanding) === newValue && newValue > 0;
+          const isExplicitLunas = paymentManuallyEdited && Number(nt.outstanding) === 0;
+          out = isExplicitLunas ? 0 : (isFullReversal ? newValue : correctOutstanding);
+        } else {
+          isFullReversal = Number(nt.outstanding) === newValue && newValue > 0;
+          out = Number(nt.outstanding) === 0 ? 0 : (isFullReversal ? newValue : correctOutstanding);
+        }
         // dueDate rules on edit:
         //  - fully paid → null
         //  - partial/unpaid and date changed → recalculate from new date
