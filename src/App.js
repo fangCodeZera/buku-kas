@@ -666,10 +666,12 @@ export default function App() {
     const out = Number(t.outstanding) || 0;
     const dueDate = out > 0 ? (addDays(t.date, t.customDueDays) ?? null) : null;
     const nt = { ...normTx(t), createdAt: new Date().toISOString(), dueDate };
-    // Ephemeral signal from TransactionForm.js, only meaningful to
-    // editTransaction — strip it here too so it never persists on
+    // Ephemeral signals from TransactionForm.js, only meaningful to
+    // editTransaction — strip them here too so neither ever persists on
     // brand-new records either.
     delete nt.paymentManuallyEdited;
+    delete nt.paymentIntegrityNote;
+    delete nt.correctedPaymentAmount;
     const value    = Number(nt.value) || 0;
     const paidNow  = value - out;
     const initialPayment = {
@@ -766,6 +768,21 @@ export default function App() {
     // below.
     const paymentManuallyEdited = !!nt.paymentManuallyEdited;
     delete nt.paymentManuallyEdited;
+    // Phase 2: an optional, human-readable explanation from the payment-
+    // integrity confirmation modal (TransactionForm.js) — e.g. explaining
+    // a refund actually occurred, rather than the generic "Detail
+    // Perubahan" wording. Extracted and removed the same way, for the
+    // same reason — a one-time signal for this save, not a field that
+    // should live on the stored transaction record itself.
+    const paymentIntegrityNote = nt.paymentIntegrityNote || null;
+    delete nt.paymentIntegrityNote;
+    // Fix 2: an optional instruction from Case 2's "correction" choice —
+    // the true amount that was actually paid, to be written into the
+    // transaction's real payment record (not just described in a note).
+    // Only ever present when TransactionForm.js confirmed exactly one real
+    // payment entry exists; re-verified defensively below regardless.
+    const correctedPaymentAmount = typeof nt.correctedPaymentAmount === "number" ? nt.correctedPaymentAmount : null;
+    delete nt.correctedPaymentAmount;
 
     // Fix: In Supabase mode, pre-compute the new txnId atomically via RPC when the
     // YY-MM prefix will change. Mirrors the same pattern used in addTransaction.
@@ -811,9 +828,20 @@ export default function App() {
         // not an oversight.
         let isFullReversal, out;
         if (nt.type === "income") {
+          // Fix 1: previously only trusted an explicit outstanding value
+          // when it was EXACTLY 0 or EXACTLY newValue — any other explicit
+          // answer (e.g. a genuine partial balance from Case 1's
+          // "paid_original" option) fell through to correctOutstanding and
+          // silently overwrote what the user actually confirmed. Now: any
+          // paymentManuallyEdited value is trusted directly (clamped to a
+          // sane [0, newValue] range as a safety bound), not just the two
+          // special cases. isFullReversal (which drives voiding prior
+          // payment history below) is unchanged — still only true on an
+          // exact full-unpaid match.
           isFullReversal = paymentManuallyEdited && Number(nt.outstanding) === newValue && newValue > 0;
-          const isExplicitLunas = paymentManuallyEdited && Number(nt.outstanding) === 0;
-          out = isExplicitLunas ? 0 : (isFullReversal ? newValue : correctOutstanding);
+          out = paymentManuallyEdited
+            ? Math.max(0, Math.min(Number(nt.outstanding) || 0, newValue))
+            : correctOutstanding;
         } else {
           isFullReversal = Number(nt.outstanding) === newValue && newValue > 0;
           out = Number(nt.outstanding) === 0 ? 0 : (isFullReversal ? newValue : correctOutstanding);
@@ -896,7 +924,7 @@ export default function App() {
           date:   today(),
           time:   nowTime(),
           amount: 0,
-          note:   "Detail Perubahan",
+          note:   paymentIntegrityNote || "Detail Perubahan",
           method: null,
           ...(counterpartyChanged && { counterpartyBefore: x.counterparty,    counterpartyAfter: nt.counterparty }),
           ...(dateChanged         && { dateBefore: x.date,                    dateAfter: nt.date }),
@@ -928,7 +956,7 @@ export default function App() {
           paymentHistory: (() => {
             // On full reversal: void all prior positive payment entries (set amount to 0,
             // add correction note) so the timeline doesn't contradict the Belum Lunas status.
-            const baseHistory = isFullReversal
+            let baseHistory = isFullReversal
               ? (x.paymentHistory || []).map((ph) => {
                   if (Number(ph.amount) <= 0 || EDIT_NOTES.has(ph.note)) return ph;
                   return {
@@ -938,6 +966,35 @@ export default function App() {
                   };
                 })
               : (x.paymentHistory || []);
+
+            // Fix 2: "koreksi data" must actually rewrite the real payment
+            // entry's amount, not just describe the correction in a note —
+            // otherwise every future edit keeps computing alreadyPaid from
+            // the original, uncorrected figure. Only ever applied when
+            // there is EXACTLY ONE real (amount>0, non-edit-note) payment
+            // entry — re-checked here defensively even though
+            // TransactionForm.js already gates this via realPaymentCount,
+            // since which entry to correct is genuinely ambiguous with
+            // more than one and must never be silently guessed.
+            if (correctedPaymentAmount !== null) {
+              const realEntries = baseHistory.filter(
+                (ph) => Number(ph.amount) > 0 && !EDIT_NOTES.has(ph.note)
+              );
+              if (realEntries.length === 1) {
+                const targetId = realEntries[0].id;
+                baseHistory = baseHistory.map((ph) =>
+                  ph.id === targetId
+                    ? { ...ph, amount: correctedPaymentAmount, note: `${ph.note} (dikoreksi dari ${fmtIDR(Number(ph.amount) || 0)})` }
+                    : ph
+                );
+              }
+              // If more than one real entry somehow still exists here despite
+              // the client-side gate (e.g. stale data), fail safe: skip the
+              // correction rather than guess which entry to change. The
+              // paymentIntegrityNote-based edit-log line above still records
+              // the intended correction for a human to apply manually.
+            }
+
             return editPaymentEntry
               ? [...baseHistory, editPaymentEntry]
               : baseHistory;

@@ -8,6 +8,7 @@ import QtyInput    from "./QtyInput";
 import Icon        from "./Icon";
 import { generateId, today, nowTime, normItem, normalizeTitleCase, fmtIDR, fmtDate, addDays } from "../utils/idGenerators";
 import { STATUS, deriveStatus } from "../utils/statusUtils";
+import { EDIT_NOTES } from "../utils/reportUtils";
 
 function contactBalance(name, transactions) {
   let ar = 0, ap = 0;
@@ -193,6 +194,21 @@ const TransactionForm = ({
   const initialAlreadyPaid = useRef(
     initial ? Math.max(0, (Number(initial.value) || 0) - (Number(initial.outstanding) || 0)) : 0
   );
+
+  // Phase 2 — payment-integrity confirmation. Set when editing an income
+  // transaction changes its total in a way that creates genuine ambiguity
+  // only a human can resolve (see getPaymentIntegrityCase below).
+  //   Case 1: currently Lunas, new total > what's genuinely been paid.
+  //   Case 2: what's genuinely been paid now exceeds the new total
+  //           (Lunas or Belum Lunas) — the app can't store a negative
+  //           balance, so this always requires a human to say which real
+  //           story occurred. Fires regardless of paymentManuallyEdited —
+  //           it's a process control (did a real refund happen?), not
+  //           just a numeric one, so it can't be silently superseded by
+  //           an unrelated payment-field edit earlier in the session.
+  const [paymentIntegrityConfirm, setPaymentIntegrityConfirm] = useState(null);
+  const [integrityChoice,    setIntegrityChoice]    = useState(null);
+  const [refundAcknowledged, setRefundAcknowledged] = useState(false);
 
   // Autocomplete visibility: track which item row's name/type suggestions are open
   const [showItemSugg, setShowItemSugg] = useState(null);
@@ -550,14 +566,15 @@ const TransactionForm = ({
 
     // Discount validation — income (Penjualan) only. Expense transactions
     // never carry a discount, so these checks are skipped entirely for them.
+    // Note: a "netTotal < alreadyPaid" block used to live here (Stage 1) but
+    // was removed — Phase 2's Case 2 payment-integrity modal now owns this
+    // scenario with a human-confirmed correction/refund acknowledgment
+    // instead of a blunt rejection. Keeping both would make Case 2
+    // permanently unreachable, since validate() runs before
+    // getPaymentIntegrityCase() in handleSubmit.
     if (isIncome) {
       if (Number(form.discount) > grossTotal) {
         e.discount = "Diskon tidak boleh melebihi total sebelum diskon";
-      } else if (initial) {
-        const alreadyPaid = Math.max(0, (Number(initial.value) || 0) - (Number(initial.outstanding) || 0));
-        if (alreadyPaid > 0 && netTotal < alreadyPaid) {
-          e.discount = `Diskon tidak boleh membuat total lebih kecil dari jumlah yang sudah dibayar (${fmtIDR(alreadyPaid)})`;
-        }
       }
     }
 
@@ -575,11 +592,55 @@ const TransactionForm = ({
     return Object.keys(e).length === 0;
   };
 
+  /**
+   * Determine whether saving this edit requires an explicit payment-
+   * integrity confirmation first. Income transactions, edit mode only —
+   * brand-new transactions and Pembelian are never ambiguous this way (see
+   * Phase 2 scope decision). Returns null when no confirmation is needed.
+   */
+  const getPaymentIntegrityCase = () => {
+    if (!initial) return null;               // brand-new transaction
+    if (form.type !== "income") return null;  // Pembelian excluded — confirmed decision
+
+    const realPaid = initialAlreadyPaid.current;
+    const newTotal  = computeNetValue(form.items, form.discount, form.type);
+    const oldTotal  = Number(initial.value) || 0;
+
+    if (newTotal === oldTotal) return null;   // nothing actually changed
+
+    if (realPaid > newTotal) {
+      // Case 2 — always fires, regardless of paymentManuallyEdited. This
+      // is a human process control (confirming a real refund happened),
+      // not just a numeric safety net, so an unrelated earlier touch of
+      // the Sudah Dibayar field must not be able to silently bypass it.
+      //
+      // realPaymentCount: how many REAL (amount>0, non-edit-note) payment
+      // entries this transaction has on record. "Koreksi data" can only
+      // safely rewrite the underlying payment record when there's exactly
+      // one — with more than one, which entry was the actual mistake is
+      // genuinely ambiguous and must never be guessed (see the modal
+      // below, which disables that option when this is > 1).
+      const realPaymentCount = (initial.paymentHistory || [])
+        .filter((ph) => Number(ph.amount) > 0 && !EDIT_NOTES.has(ph.note))
+        .length;
+      return { case: 2, oldTotal, newTotal, realPaid, realPaymentCount };
+    }
+    if (paymentManuallyEdited) return null;   // user already made an explicit choice this session — only guards Case 1
+
+    if (isLunas && newTotal > realPaid) {
+      // Case 1 — currently Lunas, new (bigger) total exceeds what's
+      // genuinely been paid.
+      return { case: 1, oldTotal, newTotal, realPaid };
+    }
+    return null; // Belum Lunas, still owes more than paid — no ambiguity,
+                 // the visible Sudah Dibayar field already handles this.
+  };
+
   // ── Stock check + save flow ───────────────────────────────────────────────────
 
   /** Stock warning check then save — extracted so it can be called from both
    *  handleSubmit (no new items) and handleConfirmNewItems (after catalog updates). */
-  const doStockCheckAndSave = (unit) => {
+  const doStockCheckAndSave = (unit, overrides = null) => {
     if (form.type === "income") {
       const negItems = [];
       const committedMap = {}; // tracks qty committed by prior items for the same normalized name
@@ -616,13 +677,49 @@ const TransactionForm = ({
           item: negItems[0].item,
           current: negItems[0].current,
           selling: negItems[0].selling,
-          onConfirm: () => doSave(unit),
+          onConfirm: () => doSave(unit, overrides),
           onCancel: () => setSubmitting(false),
         });
         return;
       }
     }
-    doSave(unit);
+    doSave(unit, overrides);
+  };
+
+  /**
+   * Shared continuation for both the normal submit path and the path
+   * after a user answers the Case 1/Case 2 payment-integrity modal —
+   * derives the unit, checks for new/unrecognized catalog items, then
+   * hands off to stock-check + save. `overrides` is null for the normal
+   * path, or the resolved {outstanding, status, paymentIntegrityNote}
+   * object when called from resolvePaymentIntegrity below.
+   */
+  const proceedToItemAndStockCheck = (overrides) => {
+    // Derive unit from the first item — use fresh catalog lookup to avoid stale matchedCatalog
+    const firstItem = form.items[0];
+    const freshFirstCat = firstItem?.catalogItemId
+      ? itemCatalog.find((c) => c.id === firstItem.catalogItemId)
+      : null;
+    const unit = displayUnit(freshFirstCat?.defaultUnit || firstItem?.matchedCatalog?.defaultUnit);
+
+    // Check for new items/subtypes before saving — build confirmation list
+    const toConfirm = form.items.map(getItemStatus).filter((s) => s.status !== "matched");
+    // Deduplicate by full item name (baseName + typeName) so e.g. "Kacang Ijo Malay"
+    // and "Kacang Ijo Viet" are not incorrectly collapsed to one entry
+    const seen = new Set();
+    const deduped = toConfirm.filter((s) => {
+      const key = normItem(s.baseName) + (s.typeName ? " " + normItem(s.typeName) : "");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (deduped.length > 0) {
+      setSubmitting(false); // handleConfirmNewItems will re-set to true
+      setNewItemConfirm({ items: deduped, unit, overrides });
+      return;
+    }
+
+    doStockCheckAndSave(unit, overrides);
   };
 
   const handleSubmit = () => {
@@ -647,36 +744,72 @@ const TransactionForm = ({
     }
     if (!validate()) { setSubmitting(false); return; }
 
-    // Derive unit from the first item — use fresh catalog lookup to avoid stale matchedCatalog
-    const firstItem = form.items[0];
-    const freshFirstCat = firstItem?.catalogItemId
-      ? itemCatalog.find((c) => c.id === firstItem.catalogItemId)
-      : null;
-    const unit = displayUnit(freshFirstCat?.defaultUnit || firstItem?.matchedCatalog?.defaultUnit);
-
-    // Check for new items/subtypes before saving — build confirmation list
-    const toConfirm = form.items.map(getItemStatus).filter((s) => s.status !== "matched");
-    // Deduplicate by full item name (baseName + typeName) so e.g. "Kacang Ijo Malay"
-    // and "Kacang Ijo Viet" are not incorrectly collapsed to one entry
-    const seen = new Set();
-    const deduped = toConfirm.filter((s) => {
-      const key = normItem(s.baseName) + (s.typeName ? " " + normItem(s.typeName) : "");
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    if (deduped.length > 0) {
-      setSubmitting(false); // handleConfirmNewItems will re-set to true
-      setNewItemConfirm({ items: deduped, unit });
+    // Phase 2 — payment integrity: resolve BEFORE any catalog/stock checks,
+    // since its answer can change what those downstream steps ultimately
+    // save (status/outstanding).
+    const integrityCase = getPaymentIntegrityCase();
+    if (integrityCase) {
+      setPaymentIntegrityConfirm(integrityCase);
+      setIntegrityChoice(null);
+      setRefundAcknowledged(false);
+      setSubmitting(false);
       return;
     }
 
-    doStockCheckAndSave(unit);
+    proceedToItemAndStockCheck(null);
+  };
+
+  /** User answered the Case 1/Case 2 payment-integrity modal — apply the
+   *  resolved values explicitly (see doSave's overrides param) and
+   *  continue exactly where handleSubmit left off. */
+  const resolvePaymentIntegrity = (choice) => {
+    if (!paymentIntegrityConfirm || !choice) return;
+    const { case: c, newTotal, realPaid } = paymentIntegrityConfirm;
+    let overrides;
+
+    if (c === 1) {
+      overrides = choice === "paid_full"
+        ? {
+            outstanding: 0,
+            status: STATUS.LUNAS,
+            paymentIntegrityNote: `Total bertambah menjadi ${fmtIDR(newTotal)} — dikonfirmasi lunas penuh`,
+          }
+        : {
+            outstanding: newTotal - realPaid,
+            status: deriveFullStatus("Belum Lunas", form.type),
+            paymentIntegrityNote: `Total bertambah menjadi ${fmtIDR(newTotal)} — baru dibayar ${fmtIDR(realPaid)}, sisa ${fmtIDR(newTotal - realPaid)}`,
+          };
+    } else {
+      if (choice === "refund" && !refundAcknowledged) return; // guarded by disabled button too
+      if (choice === "correction" && paymentIntegrityConfirm.realPaymentCount > 1) return; // guarded by disabled radio too
+      overrides = choice === "correction"
+        ? {
+            outstanding: 0,
+            status: STATUS.LUNAS,
+            paymentIntegrityNote: `Koreksi data — jumlah pembayaran awal sebenarnya ${fmtIDR(newTotal)}, bukan ${fmtIDR(realPaid)}`,
+            // Fix 2: actually rewrite the real payment record (not just
+            // describe the correction in a note) — only ever set when
+            // realPaymentCount === 1, since the modal disables this
+            // option otherwise. App.js re-verifies this defensively too.
+            correctedPaymentAmount: newTotal,
+          }
+        : {
+            outstanding: 0,
+            status: STATUS.LUNAS,
+            paymentIntegrityNote: `Kelebihan bayar ${fmtIDR(realPaid - newTotal)} — sudah dikembalikan ke klien`,
+          };
+    }
+
+    setPaymentIntegrityConfirm(null);
+    setIntegrityChoice(null);
+    setRefundAcknowledged(false);
+    setSubmitting(true);
+    proceedToItemAndStockCheck(overrides);
   };
 
   /** Called when user confirms new items in the confirmation dialog */
   const handleConfirmNewItems = () => {
-    const { items: newItems, unit } = newItemConfirm;
+    const { items: newItems, unit, overrides } = newItemConfirm;
     setNewItemConfirm(null);
 
     // Handle archived items/subtypes — restore from archive instead of creating new
@@ -736,7 +869,7 @@ const TransactionForm = ({
     }
 
     setSubmitting(true);
-    doStockCheckAndSave(unit);
+    doStockCheckAndSave(unit, overrides);
   };
 
   /** Merge duplicate items (same normalized name + same pricePerKg) by summing their quantities. */
@@ -756,7 +889,7 @@ const TransactionForm = ({
     return Array.from(groups.values());
   };
 
-  const doSave = (unit) => {
+  const doSave = (unit, overrides = null) => {
     const firstItem    = form.items[0] || {};
     const totalSackQty = form.items.reduce((s, it) => s + (parseFloat(it.sackQty) || 0), 0);
     // Hard save-time guarantee: discount is forced to 0 for anything that
@@ -765,6 +898,20 @@ const TransactionForm = ({
     // Pembelian transaction via any edge case in the type-toggle flow.
     const finalDiscount = form.type === "income" ? (Number(form.discount) || 0) : 0;
     const netTotal       = computeNetValue(form.items, finalDiscount, form.type);
+    // Phase 2: when this save follows a payment-integrity confirmation,
+    // the resolved values are passed explicitly here rather than read back
+    // out of form/paymentManuallyEdited state — avoids a stale-closure bug
+    // where React hasn't yet applied a setState from the same click before
+    // this function would otherwise read it. Normal saves (overrides null)
+    // are completely unaffected — identical to before this change.
+    const finalOutstanding = overrides ? overrides.outstanding : (Number(form.outstanding) || 0);
+    const finalStatus      = overrides ? overrides.status : form.status;
+    // Hardcoding `true` here is load-bearing, not just stale-closure
+    // avoidance: App.js's isExplicitLunas/isFullReversal branches require
+    // paymentManuallyEdited=true to honor these overrides at all — reading
+    // the (accurately `false`) closure value here would silently revert
+    // "paid_full"/"correction"/"refund" back to Phase 1's own recompute.
+    const finalPME         = overrides ? true : paymentManuallyEdited;
     try {
       onSave({
         ...form,
@@ -787,8 +934,11 @@ const TransactionForm = ({
         counterparty: normalizeTitleCase(form.counterparty),
         value:        netTotal,
         discount:     finalDiscount,
-        outstanding:  Number(form.outstanding) || 0,
-        paymentManuallyEdited,
+        status:       finalStatus,
+        outstanding:  finalOutstanding,
+        paymentManuallyEdited: finalPME,
+        ...(overrides?.paymentIntegrityNote ? { paymentIntegrityNote: overrides.paymentIntegrityNote } : {}),
+        ...(overrides?.correctedPaymentAmount !== undefined ? { correctedPaymentAmount: overrides.correctedPaymentAmount } : {}),
         stockQty:     totalSackQty,
         stockUnit:    unit,
         sackQty:      totalSackQty,
@@ -1647,6 +1797,196 @@ const TransactionForm = ({
                 onClick={() => setMissingTypeItems(null)}
               >
                 Isi Tipe Barang
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Payment integrity: Case 1 — total increased on a Lunas transaction ── */}
+      {paymentIntegrityConfirm && paymentIntegrityConfirm.case === 1 && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-box" style={{ maxWidth: 480 }}>
+            <h3 className="modal-title">💰 Status Pembayaran Berubah</h3>
+            <div className="modal-body">
+              <p style={{ marginBottom: 12 }}>
+                Total tagihan berubah dari <strong>{fmtIDR(paymentIntegrityConfirm.oldTotal)}</strong> menjadi{" "}
+                <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong>. Transaksi ini sebelumnya Lunas —
+                bagaimana status pembayarannya sekarang?
+              </p>
+              <label
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10,
+                  padding: 10, borderRadius: 8,
+                  border: `1.5px solid ${integrityChoice === "paid_full" ? "#10b981" : "#e2e8f0"}`,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="integrity-case1"
+                  checked={integrityChoice === "paid_full"}
+                  onChange={() => setIntegrityChoice("paid_full")}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  Klien sudah membayar penuh <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong>
+                </span>
+              </label>
+              <label
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 8,
+                  padding: 10, borderRadius: 8,
+                  border: `1.5px solid ${integrityChoice === "paid_original" ? "#f59e0b" : "#e2e8f0"}`,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="integrity-case1"
+                  checked={integrityChoice === "paid_original"}
+                  onChange={() => setIntegrityChoice("paid_original")}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  Klien baru membayar <strong>{fmtIDR(paymentIntegrityConfirm.realPaid)}</strong> — Sisa Tagihan{" "}
+                  <strong style={{ color: "#f59e0b" }}>
+                    {fmtIDR(paymentIntegrityConfirm.newTotal - paymentIntegrityConfirm.realPaid)}
+                  </strong>
+                </span>
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setPaymentIntegrityConfirm(null);
+                  setIntegrityChoice(null);
+                  setSubmitting(false);
+                }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!integrityChoice}
+                onClick={() => resolvePaymentIntegrity(integrityChoice)}
+              >
+                Lanjutkan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Payment integrity: Case 2 — real amount paid now exceeds the new total ── */}
+      {paymentIntegrityConfirm && paymentIntegrityConfirm.case === 2 && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-box" style={{ maxWidth: 480 }}>
+            <h3 className="modal-title">⚠ Total Lebih Kecil dari Pembayaran</h3>
+            <div className="modal-body">
+              <p style={{ marginBottom: 12 }}>
+                Total tagihan berubah dari <strong>{fmtIDR(paymentIntegrityConfirm.oldTotal)}</strong> menjadi{" "}
+                <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong> — lebih kecil dari jumlah yang sudah
+                dibayar (<strong>{fmtIDR(paymentIntegrityConfirm.realPaid)}</strong>). Bagaimana ini terjadi?
+              </p>
+              <label
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10,
+                  padding: 10, borderRadius: 8,
+                  border: `1.5px solid ${integrityChoice === "correction" ? "#10b981" : "#e2e8f0"}`,
+                  cursor: paymentIntegrityConfirm.realPaymentCount > 1 ? "not-allowed" : "pointer",
+                  opacity: paymentIntegrityConfirm.realPaymentCount > 1 ? 0.55 : 1,
+                }}
+              >
+                <input
+                  type="radio"
+                  name="integrity-case2"
+                  checked={integrityChoice === "correction"}
+                  disabled={paymentIntegrityConfirm.realPaymentCount > 1}
+                  onChange={() => { setIntegrityChoice("correction"); setRefundAcknowledged(false); }}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  Klien sebenarnya hanya membayar <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong>{" "}
+                  (koreksi data — bukan pengembalian dana)
+                  {paymentIntegrityConfirm.realPaymentCount > 1 && (
+                    <div style={{ fontSize: 12, color: "#ef4444", marginTop: 4, fontWeight: 400 }}>
+                      Tidak tersedia — transaksi ini memiliki {paymentIntegrityConfirm.realPaymentCount}{" "}
+                      pembayaran tercatat. Sistem tidak dapat menentukan pembayaran mana yang perlu
+                      dikoreksi. Batalkan, lalu sesuaikan riwayat pembayaran secara manual terlebih dahulu.
+                    </div>
+                  )}
+                </span>
+              </label>
+              <label
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 8,
+                  padding: 10, borderRadius: 8,
+                  border: `1.5px solid ${integrityChoice === "refund" ? "#f59e0b" : "#e2e8f0"}`,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="integrity-case2"
+                  checked={integrityChoice === "refund"}
+                  onChange={() => setIntegrityChoice("refund")}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  Klien benar-benar membayar <strong>{fmtIDR(paymentIntegrityConfirm.realPaid)}</strong>{" "}
+                  (kelebihan bayar{" "}
+                  <strong style={{ color: "#f59e0b" }}>
+                    {fmtIDR(paymentIntegrityConfirm.realPaid - paymentIntegrityConfirm.newTotal)}
+                  </strong>)
+                </span>
+              </label>
+              {integrityChoice === "refund" && (
+                <div style={{ marginTop: 10, padding: 10, background: "#fff7ed", borderRadius: 8, border: "1px solid #fed7aa" }}>
+                  <p style={{ fontSize: 13, marginBottom: 8 }}>
+                    Sistem tidak dapat menyimpan saldo kelebihan bayar. Total akan disesuaikan menjadi{" "}
+                    <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong> — tolong kembalikan{" "}
+                    <strong>{fmtIDR(paymentIntegrityConfirm.realPaid - paymentIntegrityConfirm.newTotal)}</strong>{" "}
+                    secara tunai/transfer ke klien sebelum melanjutkan.
+                  </p>
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={refundAcknowledged}
+                      onChange={(e) => setRefundAcknowledged(e.target.checked)}
+                      style={{ marginTop: 2 }}
+                    />
+                    <span>
+                      Saya sudah mengembalikan{" "}
+                      {fmtIDR(paymentIntegrityConfirm.realPaid - paymentIntegrityConfirm.newTotal)} ke klien
+                    </span>
+                  </label>
+                </div>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setPaymentIntegrityConfirm(null);
+                  setIntegrityChoice(null);
+                  setRefundAcknowledged(false);
+                  setSubmitting(false);
+                }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!integrityChoice || (integrityChoice === "refund" && !refundAcknowledged)}
+                onClick={() => resolvePaymentIntegrity(integrityChoice)}
+              >
+                Lanjutkan
               </button>
             </div>
           </div>
