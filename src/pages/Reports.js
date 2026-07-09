@@ -683,6 +683,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                     const inlinePayments = Array.isArray(t.paymentHistory)
                       ? t.paymentHistory.filter(visiblePmtFilter)
                       : [];
+                    const singleDiscount = Number(t.discount) || 0;
                     return [
                       <tr
                         key={t.id}
@@ -702,6 +703,17 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                         <td className="td-right" style={{ fontWeight: 700, color: t.type === "income" ? "#10b981" : "#ef4444" }}>{fmtIDR(it.subtotal)}</td>
                         {optCells(true)}
                       </tr>,
+                      ...(singleDiscount > 0 ? [
+                        <tr key={`${t.id}-disc`} style={{ ...rowBg }}>
+                          <td colSpan={8} style={{ textAlign: "right", fontSize: 11, color: "#ef4444", paddingRight: 8, fontStyle: "italic" }}>
+                            Diskon:
+                          </td>
+                          <td className="td-right" style={{ fontWeight: 700, color: "#ef4444" }}>
+                            -{fmtIDR(singleDiscount)}
+                          </td>
+                          {optCells(false)}
+                        </tr>,
+                      ] : []),
                       ...mkPaymentRows(t, inlinePayments, "iph"),
                     ];
                   }
@@ -738,9 +750,30 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                     );
                   });
 
+                  // Discount row — only for income transactions with a real
+                  // discount (Pembelian's discount is always guaranteed 0 at
+                  // save time, so this naturally never shows for expense).
+                  // When shown, it carries the border that would otherwise
+                  // sit on subtotalRow, so there's exactly one divider line
+                  // between the item rows and this summary block — never
+                  // doubled, never missing. Not prorated by item filter —
+                  // same deliberate scope limit as the Part A footer figure.
+                  const multiDiscount = Number(t.discount) || 0;
+                  const discountRow = multiDiscount > 0 ? (
+                    <tr key={`${t.id}-disc`} style={{ ...rowBg, borderTop: "1px solid #e2e8f0" }}>
+                      <td colSpan={8} style={{ textAlign: "right", fontSize: 11, color: "#ef4444", paddingRight: 8, fontStyle: "italic" }}>
+                        Diskon:
+                      </td>
+                      <td className="td-right" style={{ fontWeight: 700, color: "#ef4444" }}>
+                        -{fmtIDR(multiDiscount)}
+                      </td>
+                      {optCells(false)}
+                    </tr>
+                  ) : null;
+
                   // Subtotal row — spans label cols, shows total value + optional cols
                   const subtotalRow = (
-                    <tr key={`${t.id}-sub`} style={{ ...rowBg, borderTop: "1px solid #e2e8f0" }}>
+                    <tr key={`${t.id}-sub`} style={{ ...rowBg, ...(multiDiscount > 0 ? {} : { borderTop: "1px solid #e2e8f0" }) }}>
                       <td colSpan={8} style={{ textAlign: "right", fontSize: 11, color: "#6b7280", paddingRight: 8, fontStyle: "italic" }}>
                         {contrib ? (
                           <>
@@ -761,7 +794,12 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                   const inlinePayments = Array.isArray(t.paymentHistory)
                     ? t.paymentHistory.filter(visiblePmtFilter)
                     : [];
-                  return [...rows, subtotalRow, ...mkPaymentRows(t, inlinePayments, "iph", contrib)];
+                  return [
+                    ...rows,
+                    ...(discountRow ? [discountRow] : []),
+                    subtotalRow,
+                    ...mkPaymentRows(t, inlinePayments, "iph", contrib),
+                  ];
                 })}
               </tbody>
             </table>

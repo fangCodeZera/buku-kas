@@ -420,6 +420,7 @@ const ReportModal = ({
                 if (!isMulti) {
                   const it = items[0];
                   const beratHarga = `${it.weightKg ? `${fmtQty(it.weightKg)} Kg` : "—"} @ ${it.pricePerKg ? fmtQty(it.pricePerKg) : "—"}`;
+                  const singleDiscount = Number(t.discount) || 0;
                   return [
                     <tr key={t.id} style={firstRowStyle}>
                       <td style={{ ...s.td, ...s.tdC }}>{txNo}</td>
@@ -432,6 +433,17 @@ const ReportModal = ({
                       <td style={{ ...s.td, ...s.tdR, fontSize: 10, fontWeight: 700, color: t.type === "income" ? "#10b981" : "#ef4444" }}>{fmtIDR(it.subtotal)}</td>
                       {optCellsForRow(t)}
                     </tr>,
+                    ...(singleDiscount > 0 ? [
+                      <tr key={`${t.id}-disc`} style={{ background: "#f8fafc" }}>
+                        <td colSpan={7} style={{ ...s.td, textAlign: "right", fontStyle: "italic", color: "#ef4444", fontSize: 10, paddingRight: 8 }}>
+                          Diskon:
+                        </td>
+                        <td style={{ ...s.td, ...s.tdR, fontSize: 10, fontWeight: 700, color: "#ef4444" }}>
+                          -{fmtIDR(singleDiscount)}
+                        </td>
+                        {optCellsBlank()}
+                      </tr>,
+                    ] : []),
                     ...mkPaymentRows(t, inlinePayments, "iph", true),
                   ];
                 }
@@ -462,8 +474,28 @@ const ReportModal = ({
                   );
                 });
 
+                // Discount row — only for income transactions with a real
+                // discount (Pembelian's discount is always guaranteed 0 at
+                // save time). When shown, it carries the border that would
+                // otherwise sit on subtotalRow, so there's exactly one
+                // divider line between the item rows and this summary
+                // block — never doubled, never missing. Not prorated by
+                // item filter — same deliberate scope limit as Part A.
+                const multiDiscount = Number(t.discount) || 0;
+                const discountRow = multiDiscount > 0 ? (
+                  <tr key={`${t.id}-disc`} style={{ background: "#f1f5f9", borderTop: "1px solid #e2e8f0" }}>
+                    <td colSpan={7} style={{ ...s.td, textAlign: "right", fontStyle: "italic", color: "#ef4444", fontSize: 10, paddingRight: 8 }}>
+                      Diskon:
+                    </td>
+                    <td style={{ ...s.td, ...s.tdR, fontSize: 10, fontWeight: 700, color: "#ef4444" }}>
+                      -{fmtIDR(multiDiscount)}
+                    </td>
+                    {optCellsBlank()}
+                  </tr>
+                ) : null;
+
                 const subtotalRow = (
-                  <tr key={`${t.id}-sub`} style={{ background: "#f1f5f9", borderTop: "1px solid #e2e8f0" }}>
+                  <tr key={`${t.id}-sub`} style={{ background: "#f1f5f9", ...(multiDiscount > 0 ? {} : { borderTop: "1px solid #e2e8f0" }) }}>
                     <td colSpan={7} style={{ ...s.td, textAlign: "right", fontStyle: "italic", color: "#64748b", fontSize: 10, paddingRight: 8 }}>
                       {contrib
                         ? <>Total: {fmtIDR(contrib.combinedSubtotal)}{" "}
@@ -480,7 +512,12 @@ const ReportModal = ({
                   </tr>
                 );
 
-                return [...rows, subtotalRow, ...mkPaymentRows(t, inlinePayments, "iph", true, contrib)];
+                return [
+                  ...rows,
+                  ...(discountRow ? [discountRow] : []),
+                  subtotalRow,
+                  ...mkPaymentRows(t, inlinePayments, "iph", true, contrib),
+                ];
               })}
 
             </tbody>
