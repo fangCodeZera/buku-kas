@@ -223,7 +223,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
       if (!Array.isArray(t.paymentHistory)) return;
       const jenisLabel = t.type === "income" ? "Penjualan" : "Pembelian";
       t.paymentHistory.filter(pmtFilter).forEach((ph) => {
-        const effectiveAmount = ph.note === "Lunas saat transaksi dibuat"
+        const effectiveAmount = ph.note.startsWith("Lunas saat transaksi dibuat")
           ? Number(t.value) - (Number(t.outstanding) || 0)
           : Number(ph.amount);
         const signedAmount = t.type === "income" ? effectiveAmount : -effectiveAmount;
@@ -242,7 +242,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
       if (!Array.isArray(t.paymentHistory)) return;
       const jenisLabel = t.type === "income" ? "Penjualan" : "Pembelian";
       t.paymentHistory.filter(pmtFilter).forEach((ph) => {
-        const effectiveAmount = ph.note === "Lunas saat transaksi dibuat"
+        const effectiveAmount = ph.note.startsWith("Lunas saat transaksi dibuat")
           ? Number(t.value) - (Number(t.outstanding) || 0)
           : Number(ph.amount);
         const signedAmount = t.type === "income" ? effectiveAmount : -effectiveAmount;
@@ -379,7 +379,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         {colSudahDibayar && (
           <td className="td-right" style={{ color: phAmountColor, fontWeight: 700, fontSize: 12 }}>
             {isIncome ? "+" : "-"}{fmtIDR(
-              ph.note === "Lunas saat transaksi dibuat"
+              ph.note.startsWith("Lunas saat transaksi dibuat")
                 ? Number(t.value) - (Number(t.outstanding) || 0)
                 : ph.amount
             )}
@@ -901,7 +901,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                           {colSudahDibayar && (
                             <td className="td-right" style={{ color: phAmountColor, fontWeight: 700, fontSize: 12 }}>
                               {isIncome ? "+" : "-"}{fmtIDR(
-                                ph.note === "Lunas saat transaksi dibuat"
+                                ph.note.startsWith("Lunas saat transaksi dibuat")
                                   ? Number(t.value) - (Number(t.outstanding) || 0)
                                   : ph.amount
                               )}

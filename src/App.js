@@ -674,6 +674,14 @@ export default function App() {
     delete nt.correctedPaymentAmount;
     const value    = Number(nt.value) || 0;
     const paidNow  = value - out;
+    // Discount context for the creation-time note. Appended as a SUFFIX, not
+    // a replacement — Reports.js, TransactionDetailModal.js, and
+    // PaymentHistoryPanel.js match against these base note strings and use
+    // startsWith() accordingly (see their changes in this same fix).
+    const discount = Number(nt.discount) || 0;
+    const discountSuffix = discount > 0
+      ? ` — Total Sebelum Diskon: ${fmtIDR(value + discount)}, Diskon: ${fmtIDR(discount)}`
+      : "";
     const initialPayment = {
       id:                generateId(),
       paidAt:            new Date().toISOString(),
@@ -682,11 +690,11 @@ export default function App() {
       amount:            out === 0 ? value : (paidNow > 0 ? paidNow : 0),
       outstandingBefore: value,
       outstandingAfter:  out,
-      note:              out === 0
+      note:              (out === 0
         ? "Lunas saat transaksi dibuat"
         : paidNow > 0
         ? "Pembayaran awal"
-        : "Belum ada pembayaran saat transaksi dibuat",
+        : "Belum ada pembayaran saat transaksi dibuat") + discountSuffix,
       method: null,
     };
 

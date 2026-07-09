@@ -222,7 +222,14 @@ const TransactionDetailModal = ({ transaction, onClose }) => {
 
                 {history.map((ph, i) => {
                   const isEdit = ph.note === "Detail Perubahan" || ph.note === "Transaksi diedit — nilai diperbarui";
-                  const isSystem = SYSTEM_NOTES.has(ph.note);
+                  // startsWith, not exact .has() — "Pembayaran awal" (the
+                  // only one of the discount-affected notes actually in
+                  // this Set — "Lunas saat transaksi dibuat" was never a
+                  // member here) can now carry an appended discount-
+                  // context suffix from App.js's addTransaction. Behaves
+                  // identically to exact matching for every note that
+                  // never gets a suffix.
+                  const isSystem = [...SYSTEM_NOTES].some((n) => ph.note.startsWith(n));
                   const isPending = !ph.amount && i === history.length - 1 && (t.outstanding || 0) > 0;
                   return (
                     <div key={ph.id || i} style={{ display: "flex", gap: 10, marginBottom: 10, alignItems: "flex-start" }}>

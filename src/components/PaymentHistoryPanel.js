@@ -24,9 +24,9 @@ function getEntryLabel(entry) {
     if (note.startsWith("Belum ada")) return "Belum Ada Pembayaran";
     return "Riwayat Historis";
   }
-  if (note === "Lunas saat transaksi dibuat") return "Lunas Saat Dibuat";
-  if (note === "Pembayaran awal") return "Pembayaran Awal";
-  if (note === "Belum ada pembayaran saat transaksi dibuat") return "Belum Ada Pembayaran";
+  if (note.startsWith("Lunas saat transaksi dibuat")) return "Lunas Saat Dibuat";
+  if (note.startsWith("Pembayaran awal")) return "Pembayaran Awal";
+  if (note.startsWith("Belum ada pembayaran saat transaksi dibuat")) return "Belum Ada Pembayaran";
   if (note === "Pelunasan") return "Pelunasan";
   if (note === "Pembayaran sebagian") return "Pembayaran Sebagian";
   if (note === "Transaksi diedit — nilai diperbarui" || note === "Detail Perubahan") return "Detail Perubahan";
@@ -40,7 +40,13 @@ function getUserNote(entry) {
   const note = entry.note || "";
   if (!note) return null;
   if (note.includes("data lama")) return null;
-  if (SYSTEM_NOTES.includes(note)) return null;
+  // startsWith, not exact .includes() — creation-time notes ("Lunas saat
+  // transaksi dibuat", "Pembayaran awal", "Belum ada pembayaran saat
+  // transaksi dibuat") can now carry an appended discount-context suffix
+  // from App.js's addTransaction. Behaves identically to exact matching
+  // for every note that never gets a suffix (Pelunasan, Pembayaran
+  // sebagian, etc. are never suffixed, so this is a no-op for them).
+  if (SYSTEM_NOTES.some((n) => note.startsWith(n))) return null;
   return note;
 }
 
