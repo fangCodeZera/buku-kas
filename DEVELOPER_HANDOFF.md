@@ -24,7 +24,7 @@ npm run build    # production build
 
 ```
 src/
-  App.js                          1830  Root component — all state, all handlers, nav, Supabase integration
+  App.js                          2176  Root component — all state, all handlers, nav, Supabase integration; T101/T103/T104: discount guard in normTx(), payment-integrity safety net + Case 1/Case 2 resolution (type-agnostic, income+expense) in editTransaction
   styles.css                      3051  All styling (BEM-inspired, no CSS modules)
   index.js                              React root render
 
@@ -40,10 +40,10 @@ src/
     balanceUtils.js                 72  computeARandAP, computeCashIncome, computeCashExpense, computeNetCash
     printUtils.js                   47  printWithPortal, escapeHtml
     stockUtils.js                  114  computeStockMap, computeStockMapForDate
-    textFormatter.js              ~420  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText); formatSuratJalanFooter removes sigLine + brackets (T67); when no catatan: one blank line before labels (T68); when catatan: blank line after catatan (T68); formatInvoiceFooter: else branch adds blank line when no bank accounts, sigLine + brackets removed (T70); T90: added KARUNG column to formatItemsTable (6-col layout, COL_KARUNG=10, COL_BARANG 28→20, COL_BERAT 14→13, COL_HARGA 16→15, COL_TOTAL 14→16); formatSuratJalanItems unit hardcoded to "SACK"
+    textFormatter.js               431  ASCII dot matrix layout engine (formatInvoice, formatSuratJalan, wrapText); formatSuratJalanFooter removes sigLine + brackets (T67); when no catatan: one blank line before labels (T68); when catatan: blank line after catatan (T68); formatInvoiceFooter: else branch adds blank line when no bank accounts, sigLine + brackets removed (T70); T90: added KARUNG column to formatItemsTable (6-col layout, COL_KARUNG=10, COL_BARANG 28→20, COL_BERAT 14→13, COL_HARGA 16→15, COL_TOTAL 14→16); formatSuratJalanItems unit hardcoded to "SACK"; T102: formatInvoiceFooter computes totalDiscount/grossTotal — extra SUBTOTAL/DISKON row shown above TOTAL when totalDiscount > 0
     AuthContext.js                 175  AuthProvider, useAuth — session state, signIn (with login audit log), signOut, 15-min idle timeout; `ignoringSessionRef` guards onAuthStateChange during idle sign-out (T23); clears #access_token hash on auth state change to prevent PASSWORD_RECOVERY re-trigger on reload
     supabaseClient.js               19  Creates Supabase client (anon key only, env var validated)
-    supabaseStorage.js             445  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog, getNextTxnSerial, isSupabaseReachable
+    supabaseStorage.js             436  Full Supabase field mapping, save/load/delete helpers, saveActivityLog, loadActivityLog, getNextTxnSerial, isSupabaseReachable; T101: discount column mapped in mapTransaction + saveTransaction upsert (was silently dropped)
     storageConfig.js                ~30  USE_SUPABASE flag
     realtimeManager.js             ~100  subscribeToChanges, subscribeToPresence (Phase 5)
     conflictDetector.js             ~86  ConflictError class, checkVersion (Phase 5)
@@ -54,7 +54,7 @@ src/
     Inventory.js                  ~1884  Stock inventory with catalog table + ledger — groups derived from itemCatalog (no itemCategories); permanent delete (catalog/subtype) requires typing "hapus" (T24); "Tambah Barang Baru" form requires ≥1 non-empty subtype — "Tambah" button always enabled, clicking with no valid subtype shows blocking modal (T54, replaces T49 disabled-button behavior); opens with one pre-filled empty input, defaultUnit hardcoded to "SACK" (T48/T49/T93); base item rows hidden when zero stock AND zero transactions (T50); subtype rows with 0 stock + 0 txCount + 0 adjCount hidden by default (T55) — "Tampilkan item tanpa stok & transaksi" toggle reveals them (label updated T72); handleAddSubtype checks both subtypes+archivedSubtypes for duplicates (T60); rename guard checks all catalog entries not just stockMap (T60); hasTx checks include archivedSubtypes (T60); uncatalogued item delete requires typing "hapus" (T60); ledgerEntries sort uses date+time only, ignoring createdAt (T71); T93: displayUnit() normalizer maps null/undefined/empty/"karung"→"SACK" at all display points (openAdj, handleAdjConfirm, expandedItemInfo, tableGroups base/subtype/uncatalogued, ledgerEntries, renderLedgerPanel, handleUpdateCatalogItem); summary cards updated to "SACK"
     Contacts.js                    672  Contact list + detail panel + transaction history; handleSave uses editingContact (from contacts array) not sel (from filtered withBalance) — prevents silent add-instead-of-edit when search is active (T61); archive/delete confirm handlers call setEditMode(false) (T61); progress bar at 0% returns null not "0%" text (T61); payment history colSpan corrected 8→9 (T62); T97: displayUnit() normalizer — multi-item hardcoded "karung"→"SACK", single-item t.stockUnit normalized via displayUnit()
     Login.js                       241  Login page — email/password, idle-timeout banner, forgot-password flow
-    Reports.js                     573  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table); chip dismiss + Reset Filter both sync inventoryFilterItem↔selectedItems (T63); orphanPayments + paymentCount both respect typeFilter (T63); Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84); T100: grandTotalBelumDibayar = grandTotalNilai - grandTotalPaid added; screen footer now shows Total Sudah Dibayar + Total Belum Dibayar (amber #f59e0b) + Grand Total Nilai
+    Reports.js                     996  Date-range financial report + CSV/JSON export (Laba/Rugi + financial cols hidden from Karyawan; redesigned item-level table); chip dismiss + Reset Filter both sync inventoryFilterItem↔selectedItems (T63); orphanPayments + paymentCount both respect typeFilter (T63); Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84); T100: grandTotalBelumDibayar = grandTotalNilai - grandTotalPaid added; screen footer now shows Total Sudah Dibayar + Total Belum Dibayar (amber #f59e0b) + Grand Total Nilai; T102: grandTotalDiskon (income-only sum) + grandTotalSebelumDiskon added to grand-total footer; T105: per-transaction discount row inserted between item row(s) and subtotal row (single- and multi-item); T106: creation-time note match converted === → startsWith (×4, live-recompute paid amount)
     Outstanding.js                 557  AR/AP outstanding transactions view
     Settings.js                    617  Business settings + JSON/CSV backup/restore + printer type toggle; handleSave flushes unblurred numeric fields into finalForm (T64); import syncs form/dueDaysStr/lowStockStr/maxBankStr from parsed.settings on success (T64); NORM_VERSION from storage.js (T64)
     ArchivedItems.js               286  Archived catalog items — restore or delete
@@ -63,16 +63,16 @@ src/
 
   components/
     TransactionPage.js             652  Shared base: Penjualan + Pembelian day-view; T94: displayUnit() normalizer — multi-item and single-item STOK column unit normalized ("karung"/null→"SACK")
-    TransactionForm.js            1531  Full transaction input form (multi-item, catalog autocomplete); Tipe field required — missing-type blocking modal (T52); stock qty display uses fmtQtyDisplay (integer=no decimals, float=2dp) at all 5 locations (T82); Nama Barang autocomplete hides stock hint for base items with subtypes (T82); T95: displayUnit() normalizer — blank stockUnit "karung"→"SACK", handleSubmit unit fallback, type autocomplete hints, stock display, "Jumlah Karung"→"Jumlah SACK", "satuan: karung"→"satuan: SACK", stock delta preview, validation message "Jumlah SACK harus lebih dari 0"
-    PaymentHistoryPanel.js         334  Expandable payment timeline — newest-first order (T29); PendingNode at top
+    TransactionForm.js            2036  Full transaction input form (multi-item, catalog autocomplete); Tipe field required — missing-type blocking modal (T52); stock qty display uses fmtQtyDisplay (integer=no decimals, float=2dp) at all 5 locations (T82); Nama Barang autocomplete hides stock hint for base items with subtypes (T82); T95: displayUnit() normalizer — blank stockUnit "karung"→"SACK", handleSubmit unit fallback, type autocomplete hints, stock display, "Jumlah Karung"→"Jumlah SACK", "satuan: karung"→"satuan: SACK", stock delta preview, validation message "Jumlah SACK harus lebih dari 0"; T101: discount form field + computeNetValue() + 3-row discount breakdown UI (income only); T103/T104: getPaymentIntegrityCase() + Case 1/Case 2 confirmation modals + resolvePaymentIntegrity() — type-agnostic (income+expense), type-aware wording
+    PaymentHistoryPanel.js         341  Expandable payment timeline — newest-first order (T29); PendingNode at top; T106: own separate SYSTEM_NOTES array — getEntryLabel() ×3 and getUserNote()'s .includes() converted to startsWith() to tolerate the discount-context suffix on creation-time notes
     PaymentUpdateModal.js          183  Record payment modal
     DeleteConfirmModal.js          125  Dual-mode (transaction/contact) delete confirm — requires typing "hapus" to enable confirm button
-    InvoiceModal.js                337  Printable A4 invoice; T91: Karung column unit "krg"→"SACK"; Sisa Tagihan + Total Terhutang/Lunas + lunas note hidden from print via data-no-print (Subtotal stays visible)
+    InvoiceModal.js                365  Printable A4 invoice; T91: Karung column unit "krg"→"SACK"; Sisa Tagihan + Total Terhutang/Lunas + lunas note hidden from print via data-no-print (Subtotal stays visible); T102: totalDiscount/grossTotal computed — extra SUBTOTAL/DISKON row shown above TOTAL when totalDiscount > 0 (income only; always 0 for Pembelian)
     SuratJalanModal.js             289  Printable A4 delivery note; T92: unit values "karung"→"SACK" in item table and total line
-    TransactionDetailModal.js      ~320  Full transaction detail modal — items table, payment summary block, payment history timeline; T96: Karung column cell values "krg"→"SACK"; edit log "krg"→"SACK", "Krg:"→"SACK:" (column header "Karung" unchanged)
+    TransactionDetailModal.js      327  Full transaction detail modal — items table, payment summary block, payment history timeline; T96: Karung column cell values "krg"→"SACK"; edit log "krg"→"SACK", "Krg:"→"SACK:" (column header "Karung" unchanged); T101: Total Nilai row shows discount breakdown when t.discount > 0, edit log shows "Diskon: X → Y"; T106: SYSTEM_NOTES.has() → prefix-based .some() to tolerate the discount-context suffix
     DotMatrixPrintModal.js         127  Dot matrix preview + print modal (invoice & surat jalan); both modes render single `<pre>` on screen and print — surat jalan bold-title split removed (T67); modal-box maxWidth 750; `<pre>` style lineHeight:1.2 only (T69 final). Print uses `@page { margin: 4mm }` to suppress browser headers/footers and eliminate right-side gap (T85)
     ToggleSwitch.js                 65  Reusable toggle switch — track+thumb, #007bff/#cbd5e1, keyboard accessible (role=switch, Space/Enter)
-    ReportModal.js                 590  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR. Defaults (T25): showCompanyName=false, showSummary=false, printTable1=true, printTable2=false. grandTotalPaid = table1Total + table2Total (T26 — each 0 when its toggle is off). Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84); T100: Total Belum Dibayar row (amber) inserted between Total Sudah Dibayar and Grand Total Nilai in print footer
+    ReportModal.js                 698  Printable landscape report modal — 3-col header, 8 fixed cols + 5 optional, two collapsible tables, print options bar with ToggleSwitch (Tampilan: company name/summary; Sertakan: printTable1/printTable2), Grand Total IDR. Defaults (T25): showCompanyName=false, showSummary=false, printTable1=true, printTable2=false. grandTotalPaid = table1Total + table2Total (T26 — each 0 when its toggle is off). Subtotal amounts color-coded: income=#10b981, expense=#ef4444 (T84); T100: Total Belum Dibayar row (amber) inserted between Total Sudah Dibayar and Grand Total Nilai in print footer; T102: grandTotalDiskon + grandTotalSebelumDiskon mirror Reports.js; T105: per-transaction discount row mirrors Reports.js
     StockWarningModal.js            77  Negative-stock warning
     StockReportModal.js            ~430  Printable stock report — derives groupings from itemCatalog prop (active entries = groups, active subtypes = members, uncatalogued → "Lainnya", archived → "Barang Diarsipkan"). Toggles: showZeroStock, showCompanyName (default OFF — T53), showArchivedItems (default OFF). Base rows hidden when baseQty===0 && baseTxCount===0 even with showZeroStock ON (T53 — mirrors Inventory T50); T98: displayUnit() normalizer added — all 6 unit fallbacks in groupedData useMemo normalized; zero-stock fallbacks hardcoded to "SACK"
     Badge.js                       113  StatusBadge, TypeBadge (named exports)
@@ -128,7 +128,8 @@ All data lives in a single localStorage key (`"bukukas_data_v2"`). The full obje
 - `itemName` — title-cased primary item name (mirrors `items[0].itemName`)
 - `stockQty` — legacy (use `items[].sackQty`)
 - `stockUnit` — unit string at transaction level (e.g. "karung")
-- `value` — total transaction value in IDR
+- `value` — total transaction value in IDR (net, post-discount for income)
+- `discount` — income (Penjualan) only; IDR amount subtracted from the gross item total to produce `value`. Always `0` for expense (Pembelian), enforced at two independent layers: `TransactionForm.js`'s `doSave` and `App.js`'s `normTx()` (both explicitly check `type === "income"`). A separate fix in `supabaseStorage.js` (T101) ensures the field round-trips correctly as a number rather than being silently dropped on load/save — but this fix is not itself type-aware, so it relies on the two guards above having already zeroed the value before it reaches this layer.
 - `outstanding` — remaining unpaid amount (0 = fully paid)
 - `status` — one of `STATUS.*` constants from statusUtils.js
 - `txnId` — `"YY-MM-NNNNN"` for income (auto); supplier invoice no for expense (manual)
@@ -1929,6 +1930,89 @@ Pembelian) on both the screen and the printed Cetak Laporan output.
 
 ---
 
+### T101 (2026-07-06): Discount feature — transaction-level discount for Penjualan (Stages 1–3)
+
+**Feature:** Added an optional Rupiah discount field to income (Penjualan) transactions. Discount is applied to the gross item total to produce the transaction's net `value`. Never applies to Pembelian (expense) — enforced at two independent layers (defense in depth): `TransactionForm.js`'s `doSave` (`finalDiscount = form.type === "income" ? (Number(form.discount) || 0) : 0`) and `App.js`'s `normTx()` (`discount: t.type === "income" ? (Number(t.discount) || 0) : 0`) — both explicitly check `type === "income"`. The Supabase field mapper fix (see below) is a separate, non-type-aware data-integrity fix — it just faithfully round-trips whatever value the two guards above already produced, and relies on them having already zeroed it for expense.
+
+**Stage 1 (`TransactionForm.js`):** New `discount` field on `form` state (default 0). `computeNetValue(items, discount, type)` helper: `type === "income" ? Math.max(0, gross - discount) : gross`. New UI: a 3-row discount breakdown box shown only for `form.type === "income"` (Subtotal Sebelum Diskon / Diskon input via `RupiahInput` / net total), with validation that the discount cannot exceed the gross total (`errors.discount`). Switching type to expense clears any discount and its validation error.
+
+**Stage 2 (`App.js`):** `normTx()` gains the second-line discount guard described above. `editTransaction`'s diff/audit logic gains dedicated `discountChanged` tracking, distinct from the general `financialChanged` check — so a discount-only edit (e.g. offset by a price change so net `value` is unchanged) still produces an audit trail entry recording `discountBefore`/`discountAfter`.
+
+**Stage 3 (`TransactionDetailModal.js`):** The "Total Nilai" row now shows a 2-line discount breakdown ("Total Sebelum Diskon" / "Diskon", red) instead of a plain value line whenever `t.discount > 0`. Edit-log entries show a "Diskon: X → Y" line when `discountBefore !== undefined`.
+
+**Supabase persistence fix (`src/utils/supabaseStorage.js`):** The `discount` field was being silently dropped on every load/save round-trip — `mapTransaction` didn't read the column and `saveTransaction`'s upsert didn't write it. Fixed by adding `discount: Number(row.discount) || 0` to the mapper and `discount: Number(tx.discount) || 0` to the upsert payload.
+
+**Files:** `src/components/TransactionForm.js`, `src/App.js`, `src/components/TransactionDetailModal.js`, `src/utils/supabaseStorage.js`
+
+---
+
+### T102 (2026-07-06): Discount feature — display in print outputs and Laporan footer (Stages 4–6 Part A)
+
+**Stage 4 (`InvoiceModal.js`, A4 print):** Invoice totals section computes `totalDiscount` (sum of `t.discount` across all transactions in the invoice) and `grossTotal = total + totalDiscount`. When `totalDiscount > 0`, an extra SUBTOTAL/DISKON breakdown is shown above the TOTAL row; when 0, the layout is byte-for-byte identical to before the discount feature existed.
+
+**Stage 5 (`src/utils/textFormatter.js`, dot matrix invoice footer):** Same breakdown logic ported to the 80-column ASCII footer generator (`formatInvoiceFooter`). Comment in source notes `totalDiscount` is always 0 for Pembelian invoices by construction — no explicit type check needed, since it falls out of the guaranteed-zero `discount` field on expense transactions.
+
+**Stage 6 Part A (`Reports.js` + `ReportModal.js`, Laporan footer, screen + print):** New `grandTotalDiskon` (sum of `discount` across income transactions only) and `grandTotalSebelumDiskon = grandTotalNilai + grandTotalDiskon`, surfaced in the Laporan grand-total footer on both the screen table and the Cetak Laporan print modal.
+
+**Files:** `src/components/InvoiceModal.js`, `src/utils/textFormatter.js`, `src/pages/Reports.js`, `src/components/ReportModal.js`
+
+---
+
+### T103 (2026-07-07 – 2026-07-08): Payment-integrity safety net + Case 1/Case 2 confirmation modals
+
+**Problem:** Even with the pre-existing T27 (2026-04-26) safety net — `alreadyPaid` derived by summing real (non-edit-note) `paymentHistory` entries, and `correctOutstanding = Math.max(0, newValue - alreadyPaid)` used instead of blindly trusting the form's `outstanding` value — there was no way for a human to disambiguate genuinely different scenarios that `correctOutstanding` alone can't tell apart: did the counterparty actually pay/get paid the new total, or is the old partial payment still all that's really changed hands?
+
+**T103's actual new contribution (`src/App.js` `editTransaction` + `src/components/TransactionForm.js`):** Not the `alreadyPaid`/`correctOutstanding` recompute itself (that's T27, already in place) — T103 adds a `paymentManuallyEdited`-gated override layer on top of it, deciding WHEN to trust an explicit, human-confirmed override value instead of always falling back to T27's `correctOutstanding`, plus the Case 1/Case 2 modals (below) that supply that override.
+
+**Case 1/Case 2 confirmation modals (`src/components/TransactionForm.js`):** `getPaymentIntegrityCase()` runs on edit-mode submit only (never on brand-new transactions) and returns `null`, `{ case: 1, ... }`, or `{ case: 2, ... }`:
+- **Case 1** — transaction is currently Lunas and the new total exceeds what's genuinely been paid. Modal asks: did the counterparty pay the new total in full, or only the original amount (leaving a genuine partial balance)?
+- **Case 2** — what's genuinely been paid now exceeds the new (lower) total. Modal asks: is this a data-entry correction (the recorded payment amount was wrong) or a genuine overpayment requiring a refund?
+
+`resolvePaymentIntegrity(choice)` threads the user's answer into the save payload as `paymentManuallyEdited` (+ `paymentIntegrityNote`, + `correctedPaymentAmount` for the correction path) — consumed by `editTransaction`.
+
+**Fix 1 — safety net no longer discards a genuine partial override:** Previously the safety net only trusted two hardcoded special-case outstanding values; a legitimate Case 1 "paid_original" partial balance confirmed by the user could still be silently overwritten by `correctOutstanding`. Fixed: any `paymentManuallyEdited` value is now trusted directly (clamped to `[0, newValue]` as a safety bound) instead of only the two special cases. `isFullReversal` (which drives payment-history voiding) is unchanged — still only true on an exact full-unpaid match.
+
+**Fix 2 — Case 2 "correction" now rewrites the actual payment record:** Previously choosing "koreksi data" only added an explanatory note (`paymentIntegrityNote`) without changing the underlying `paymentHistory` entry's `amount` — so every future edit kept computing `alreadyPaid` from the original, uncorrected figure. Fixed: `correctedPaymentAmount` now rewrites the single real payment entry's `amount` in place (appending `"(dikoreksi dari Rp X)"` to its note), gated defensively to exactly one real (amount>0, non-edit-note) payment entry — both in the UI (`TransactionForm.js` disables this radio option when `realPaymentCount > 1`) and again in `App.js` (re-checked, since which entry to correct is ambiguous with more than one and must never be silently guessed). This is now one of the two deliberate exceptions to `paymentHistory[]`'s append-only rule documented in CLAUDE.md Rule 5.
+
+**Files:** `src/App.js`, `src/components/TransactionForm.js`, `CLAUDE.md` (Rule 5)
+
+---
+
+### T104 (2026-07-09): Payment-integrity — Pembelian (expense) parity
+
+**Change:** The safety net and Case 1/Case 2 confirmation modals (T103) previously applied to income (Penjualan) transactions only — Pembelian kept its original, unfixed logic as a deliberate scope exclusion. That decision was reversed: `getPaymentIntegrityCase()`'s `form.type !== "income"` early return was removed, and `App.js`'s `editTransaction` branch was merged from `if (nt.type === "income") {...} else {...}` into a single type-agnostic block — Fix 1's formula now applies uniformly to both types.
+
+**Side effect — a second, previously undiscovered bug fixed for expense:** The old expense-only formula computed `isFullReversal` without a `paymentManuallyEdited` gate. For an ordinary Belum Lunas expense edit that never touched a payment control, if the untouched `outstanding` happened to numerically coincide with the new total after a price/qty change, the old code wrongly treated it as a full reversal and voided a genuine prior payment entry purely by coincidence. The merge fixes this as a side effect — no regressions found for any other expense scenario.
+
+**Modal wording:** Case 1/Case 2 modal body text, option labels, refund panel, and refund checkbox now branch on `form.type` — supplier/utang framing for Pembelian (e.g. "Kita sudah membayar penuh X kepada supplier", "supplier perlu mengembalikan Y kepada kita...") vs. the original client/piutang framing for Penjualan.
+
+**Files:** `src/App.js`, `src/components/TransactionForm.js`
+
+---
+
+### T105 (2026-07-09): Discount feature — itemized per-transaction discount row (Stage 6 Part B)
+
+Added a per-transaction discount row to the Laporan item-level table (both `Reports.js` screen and `ReportModal.js` print), complementing T102's grand-total summary. For income transactions with `discount > 0`, an extra row is inserted between the item row(s) and the subtotal row showing the discount amount — handled for both single-item and multi-item transactions (`singleDiscount`/`multiDiscount` + `discountRow` in each file). Never shown for Pembelian, since `discount` is guaranteed 0 for expense transactions — same deliberate scope limit as Stage 6 Part A.
+
+**Files:** `src/pages/Reports.js`, `src/components/ReportModal.js`
+
+---
+
+### T106 (2026-07-09): Creation-time payment-history note — discount-context suffix
+
+Added a discount-context suffix to the creation-time `paymentHistory` note (`"Lunas saat transaksi dibuat"` / `"Pembayaran awal"` / `"Belum ada pembayaran saat transaksi dibuat"`, written once in `addTransaction`) so the payment history timeline shows discount context at the moment it mattered, not only in `TransactionDetailModal`'s separate discount breakdown row. Suffix format: `" — Total Sebelum Diskon: Rp X, Diskon: Rp Y"`, appended only when `discount > 0` — zero change for every transaction without a discount (which includes all Pembelian, since discount is guaranteed 0 at save time).
+
+**Downstream fix required:** appending text to these three note strings broke 9 places across 3 files that did exact-string matching against them (a full-codebase search — `grep -rn` for both note strings across all of `src/`, plus a check for any indirect constant/array holding them — confirmed these were the only ones). All 9 converted from exact-match (`===` / `Set.has()` / `Array.includes()`) to `.startsWith()`, which is a no-op for every unsuffixed note (old data, and any note that never gets a suffix):
+- `src/pages/Reports.js` — 4 sites recomputing a live paid amount from `value - outstanding` instead of trusting a possibly-stale `ph.amount` (CSV export ×2, on-screen table ×2)
+- `src/components/TransactionDetailModal.js` — `SYSTEM_NOTES.has(ph.note)` → prefix-based `.some()`
+- `src/components/PaymentHistoryPanel.js` — its own, separate `SYSTEM_NOTES` array (module-level, distinct from `TransactionDetailModal.js`'s Set): 3 direct `===` comparisons in `getEntryLabel()` (friendly display labels) + 1 `.includes()` check in `getUserNote()`
+
+No changes needed in `src/components/ReportModal.js` (always displays `ph.amount` directly, no note comparison) or `src/utils/storage.js` (its similar-looking string, `"Pembayaran awal (data lama — riwayat tidak tersedia)"`, is a different, longer legacy migration literal, never compared against these notes).
+
+**Files:** `src/App.js`, `src/pages/Reports.js`, `src/components/TransactionDetailModal.js`, `src/components/PaymentHistoryPanel.js`
+
+---
+
 ## 16. What Is NOT Yet Done
 
 ### Penjualan/Pembelian audit (partial)
@@ -1951,3 +2035,101 @@ Remaining "karung" strings in `App.js`, `stockUtils.js`, `storage.js`, and
 left as-is. Every display component has a `displayUnit()` normalizer that
 maps "karung"→"SACK" at render time. Changing the data layer risks DB
 integrity with zero user-visible benefit.
+
+---
+
+## 17. Test Harness Setup Guide
+
+> **⚠️ This app holds real production data (a live family business's actual
+> financial records via Supabase).** Any test harness built against this
+> codebase MUST follow the safety rules below without exception. If a test
+> could plausibly touch the real database even indirectly, don't run it —
+> ask first.
+
+This section documents the component-level test harness built and used during the 2026-07-06 – 2026-07-09 payment-integrity work (T101–T106 above), so it can be quickly recreated the next time a feature needs this kind of testing, without re-deriving the safety reasoning from scratch.
+
+### 1. The core safety rule
+
+Any test harness in this app MUST:
+
+- **Render ONLY the component under test, in isolation** — e.g. `render(<TransactionForm ... />)` via React Testing Library. Never render the full `<App />`, and never render anything that imports or initializes `AuthContext.js` or the real Supabase client (`supabaseClient.js`).
+- **Use mocked callback props exclusively** — `onSave={jest.fn()}`, `onStockWarning={jest.fn()}`, etc. These record their arguments for assertions; they must never be a real save/network function.
+- **Verify zero Supabase/network imports before running ANY test file.** Grep the component under test and everything it transitively imports for `supabase`, `fetch`, `XMLHttpRequest`, `WebSocket`. State this check's result explicitly in your own reasoning before running tests — don't just assume it's safe because you wrote mocks. (`TransactionForm.js` imports only from `utils/` — `idGenerators.js`, `statusUtils.js` — none of which touch Supabase or the network; this was verified before writing any test in this session.)
+- **When in doubt, don't run it — ask first.** Never write a test that could plausibly touch the real database even indirectly.
+
+### 2. Mocking-fidelity lesson learned this session
+
+A mock that only records "was this function called" is not enough for business logic this sensitive (money/payment calculations). Early in this session, tests asserted only that `onSave` was called with *some* object — that would have passed even if the saved `outstanding` value were wrong, because the assertion never re-derived what the value *should* be.
+
+**The effective pattern:** write a small helper function — `simulateEditTransaction` in this session — that faithfully reproduces the REAL logic from the actual source file (`App.js`'s `editTransaction`) line-for-line. Test assertions then compare against what `simulateEditTransaction` computes, i.e. what would actually be persisted after a real save, not just whatever the component happened to submit.
+
+```js
+// Faithful reproduction of App.js's editTransaction — kept in sync manually.
+// If editTransaction's logic changes, this helper MUST be updated to match,
+// or its tests will silently validate against stale, incorrect behavior.
+function simulateEditTransaction(original, formSubmission) {
+  // ...line-for-line copy of the real alreadyPaid / correctOutstanding /
+  // paymentManuallyEdited / isFullReversal logic from App.js...
+}
+```
+
+**This must be kept in sync with the real file if that logic changes.** There is no automated link between the helper and `App.js` — it is a manual, human-maintained mirror. Recommended approach for next time: re-copy the relevant block from the current `editTransaction` at the start of the session, not from memory of a previous session's version.
+
+### 3. How to run it
+
+```bash
+CI=true npm test -- --watchAll=false
+```
+
+`CI=true` prevents the interactive watch-mode prompt; `--watchAll=false` ensures a single pass-through run suitable for scripted verification.
+
+### 4. Lifecycle — temporary scaffolding, not a permanent suite
+
+This harness is **temporary scaffolding for active feature development**, not a permanent addition to the test suite:
+
+- **Built** when starting deep, iterative work on sensitive logic (money/payment calculations) — in this session, at the start of the payment-integrity work.
+- **Used throughout** that work — every iteration of the safety-net formula, every Case 1/Case 2 branch, and the Pembelian parity extension were verified against it before being considered done.
+- **Deleted** once the feature was fully verified and committed — `src/components/TransactionForm.test.js` and `src/setupTests.js` were removed as soon as the payment-integrity + discount work was complete and committed.
+
+**Why:** this avoids an unmaintained parallel test suite silently accumulating over time (tests nobody updates when the code they mirror changes, eventually asserting against behavior that no longer exists) — while still providing a real safety net during the active development window when the risk of a subtle money-math regression is highest.
+
+### 5. Quick-start snippet
+
+Minimal render + mock + safety-grep pattern, to copy-adapt for the next feature:
+
+```js
+// 0. FIRST — before writing or running anything — verify no Supabase/network
+//    import exists anywhere in the render tree:
+//    grep -rn "supabase\|fetch(\|XMLHttpRequest\|WebSocket" src/components/<Component>.js
+//    ...and repeat for every file it imports from `utils/`. State the result
+//    explicitly before proceeding.
+
+import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event"; // fireEvent.click() does not
+                                                        // reliably toggle disabled
+                                                        // radio inputs under jsdom
+import TransactionForm from "../components/TransactionForm";
+
+test("description of the specific business rule being verified", () => {
+  const onSave = jest.fn();       // records args only — never a real save
+  const onCancel = jest.fn();
+
+  render(
+    <TransactionForm
+      initial={fixtureTransaction}   // a plain JS object, not from any real DB read
+      onSave={onSave}
+      onCancel={onCancel}
+      contacts={[]}
+      stockMap={{}}
+      itemCatalog={[]}
+      // ...every other required prop mocked with plain values/jest.fn()
+    />
+  );
+
+  // ...interact via screen/userEvent...
+
+  const saved = onSave.mock.calls[0][0];
+  const expected = simulateEditTransaction(fixtureTransaction, saved);
+  expect(saved.outstanding).toBe(expected.outstanding);
+});
+```
