@@ -813,39 +813,37 @@ export default function App() {
         const newValue = Number(nt.value) || 0;
         const correctOutstanding = Math.max(0, newValue - alreadyPaid);
 
-        // Payment-integrity safety net — income (Penjualan) transactions
-        // only. Only honor an explicit outstanding value from the form
-        // when the user actually touched a payment control (status toggle
-        // or Sudah Dibayar amount) during this edit — tracked via
-        // paymentManuallyEdited from TransactionForm.js. This avoids
-        // misreading a stale, untouched outstanding value (left over from
-        // before this edit, e.g. because only the discount/price/qty
-        // changed) as if it were a deliberate instruction.
+        // Payment-integrity safety net — applies to BOTH income (Penjualan)
+        // and expense (Pembelian) transactions. Only honor an explicit
+        // outstanding value from the form when the user actually touched a
+        // payment control (status toggle, Sudah Dibayar amount, or a
+        // Case 1/Case 2 payment-integrity modal resolution) during this
+        // edit — tracked via paymentManuallyEdited from TransactionForm.js.
+        // This avoids misreading a stale, untouched outstanding value (left
+        // over from before this edit, e.g. because only the price/qty/
+        // discount changed) as if it were a deliberate instruction.
         //
-        // Deliberate scope decision: Pembelian (expense) transactions
-        // intentionally keep the ORIGINAL number-matching logic below,
-        // unchanged — including its known edge cases. Confirmed decision,
-        // not an oversight.
-        let isFullReversal, out;
-        if (nt.type === "income") {
-          // Fix 1: previously only trusted an explicit outstanding value
-          // when it was EXACTLY 0 or EXACTLY newValue — any other explicit
-          // answer (e.g. a genuine partial balance from Case 1's
-          // "paid_original" option) fell through to correctOutstanding and
-          // silently overwrote what the user actually confirmed. Now: any
-          // paymentManuallyEdited value is trusted directly (clamped to a
-          // sane [0, newValue] range as a safety bound), not just the two
-          // special cases. isFullReversal (which drives voiding prior
-          // payment history below) is unchanged — still only true on an
-          // exact full-unpaid match.
-          isFullReversal = paymentManuallyEdited && Number(nt.outstanding) === newValue && newValue > 0;
-          out = paymentManuallyEdited
-            ? Math.max(0, Math.min(Number(nt.outstanding) || 0, newValue))
-            : correctOutstanding;
-        } else {
-          isFullReversal = Number(nt.outstanding) === newValue && newValue > 0;
-          out = Number(nt.outstanding) === 0 ? 0 : (isFullReversal ? newValue : correctOutstanding);
-        }
+        // Historical note: Pembelian used to intentionally keep the
+        // ORIGINAL, unfixed number-matching logic here (trusting a stale
+        // outstanding===0 unconditionally) as a deliberate scope decision.
+        // That decision is now reversed — TransactionForm.js's Case 1/
+        // Case 2 modals cover Pembelian too, so both transaction types go
+        // through the identical, corrected logic below.
+        //
+        // Fix 1: previously only trusted an explicit outstanding value
+        // when it was EXACTLY 0 or EXACTLY newValue — any other explicit
+        // answer (e.g. a genuine partial balance from Case 1's
+        // "paid_original" option) fell through to correctOutstanding and
+        // silently overwrote what the user actually confirmed. Now: any
+        // paymentManuallyEdited value is trusted directly (clamped to a
+        // sane [0, newValue] range as a safety bound), not just the two
+        // special cases. isFullReversal (which drives voiding prior
+        // payment history below) is unchanged — still only true on an
+        // exact full-unpaid match.
+        const isFullReversal = paymentManuallyEdited && Number(nt.outstanding) === newValue && newValue > 0;
+        const out = paymentManuallyEdited
+          ? Math.max(0, Math.min(Number(nt.outstanding) || 0, newValue))
+          : correctOutstanding;
         // dueDate rules on edit:
         //  - fully paid → null
         //  - partial/unpaid and date changed → recalculate from new date

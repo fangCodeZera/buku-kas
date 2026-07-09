@@ -594,13 +594,18 @@ const TransactionForm = ({
 
   /**
    * Determine whether saving this edit requires an explicit payment-
-   * integrity confirmation first. Income transactions, edit mode only —
-   * brand-new transactions and Pembelian are never ambiguous this way (see
-   * Phase 2 scope decision). Returns null when no confirmation is needed.
+   * integrity confirmation first. Edit mode only — brand-new transactions
+   * are never ambiguous this way. Applies to BOTH income (Penjualan) and
+   * expense (Pembelian) transactions — the ambiguity (did the counterparty
+   * actually pay/get paid the new amount, or is there a genuine over/
+   * under-payment story?) is identical either way, just pointed in the
+   * opposite direction. Returns null when no confirmation is needed.
    */
   const getPaymentIntegrityCase = () => {
     if (!initial) return null;               // brand-new transaction
-    if (form.type !== "income") return null;  // Pembelian excluded — confirmed decision
+    // Pembelian (expense) now goes through the SAME ambiguity checks as
+    // Penjualan (income) — see the modal JSX below for the type-aware
+    // wording (Utang/supplier framing vs. Piutang/klien framing).
 
     const realPaid = initialAlreadyPaid.current;
     const newTotal  = computeNetValue(form.items, form.discount, form.type);
@@ -796,7 +801,9 @@ const TransactionForm = ({
         : {
             outstanding: 0,
             status: STATUS.LUNAS,
-            paymentIntegrityNote: `Kelebihan bayar ${fmtIDR(realPaid - newTotal)} — sudah dikembalikan ke klien`,
+            paymentIntegrityNote: `Kelebihan bayar ${fmtIDR(realPaid - newTotal)} — ${
+              form.type === "income" ? "sudah dikembalikan ke klien" : "sudah dikembalikan oleh supplier"
+            }`,
           };
     }
 
@@ -1810,9 +1817,15 @@ const TransactionForm = ({
             <h3 className="modal-title">💰 Status Pembayaran Berubah</h3>
             <div className="modal-body">
               <p style={{ marginBottom: 12 }}>
-                Total tagihan berubah dari <strong>{fmtIDR(paymentIntegrityConfirm.oldTotal)}</strong> menjadi{" "}
-                <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong>. Transaksi ini sebelumnya Lunas —
-                bagaimana status pembayarannya sekarang?
+                {form.type === "income" ? (
+                  <>Total tagihan berubah dari <strong>{fmtIDR(paymentIntegrityConfirm.oldTotal)}</strong> menjadi{" "}
+                  <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong>. Transaksi ini sebelumnya Lunas —
+                  bagaimana status pembayarannya sekarang?</>
+                ) : (
+                  <>Total tagihan dari supplier berubah dari <strong>{fmtIDR(paymentIntegrityConfirm.oldTotal)}</strong> menjadi{" "}
+                  <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong>. Transaksi ini sebelumnya Lunas —
+                  apakah kita sudah membayar penuh jumlah baru ini?</>
+                )}
               </p>
               <label
                 style={{
@@ -1830,7 +1843,9 @@ const TransactionForm = ({
                   style={{ marginTop: 3 }}
                 />
                 <span>
-                  Klien sudah membayar penuh <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong>
+                  {form.type === "income"
+                    ? <>Klien sudah membayar penuh <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong></>
+                    : <>Kita sudah membayar penuh <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong> kepada supplier</>}
                 </span>
               </label>
               <label
@@ -1849,7 +1864,9 @@ const TransactionForm = ({
                   style={{ marginTop: 3 }}
                 />
                 <span>
-                  Klien baru membayar <strong>{fmtIDR(paymentIntegrityConfirm.realPaid)}</strong> — Sisa Tagihan{" "}
+                  {form.type === "income" ? "Klien baru membayar" : "Kita baru membayar"}{" "}
+                  <strong>{fmtIDR(paymentIntegrityConfirm.realPaid)}</strong> —{" "}
+                  {form.type === "income" ? "Sisa Tagihan" : "Sisa Utang"}{" "}
                   <strong style={{ color: "#f59e0b" }}>
                     {fmtIDR(paymentIntegrityConfirm.newTotal - paymentIntegrityConfirm.realPaid)}
                   </strong>
@@ -1888,9 +1905,15 @@ const TransactionForm = ({
             <h3 className="modal-title">⚠ Total Lebih Kecil dari Pembayaran</h3>
             <div className="modal-body">
               <p style={{ marginBottom: 12 }}>
-                Total tagihan berubah dari <strong>{fmtIDR(paymentIntegrityConfirm.oldTotal)}</strong> menjadi{" "}
-                <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong> — lebih kecil dari jumlah yang sudah
-                dibayar (<strong>{fmtIDR(paymentIntegrityConfirm.realPaid)}</strong>). Bagaimana ini terjadi?
+                {form.type === "income" ? (
+                  <>Total tagihan berubah dari <strong>{fmtIDR(paymentIntegrityConfirm.oldTotal)}</strong> menjadi{" "}
+                  <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong> — lebih kecil dari jumlah yang sudah
+                  dibayar (<strong>{fmtIDR(paymentIntegrityConfirm.realPaid)}</strong>). Bagaimana ini terjadi?</>
+                ) : (
+                  <>Total tagihan dari supplier turun dari <strong>{fmtIDR(paymentIntegrityConfirm.oldTotal)}</strong> menjadi{" "}
+                  <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong> — lebih kecil dari yang sudah kita
+                  bayarkan (<strong>{fmtIDR(paymentIntegrityConfirm.realPaid)}</strong>). Bagaimana ini terjadi?</>
+                )}
               </p>
               <label
                 style={{
@@ -1910,7 +1933,8 @@ const TransactionForm = ({
                   style={{ marginTop: 3 }}
                 />
                 <span>
-                  Klien sebenarnya hanya membayar <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong>{" "}
+                  {form.type === "income" ? "Klien sebenarnya hanya membayar" : "Sebenarnya kita hanya membayar"}{" "}
+                  <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong>{" "}
                   (koreksi data — bukan pengembalian dana)
                   {paymentIntegrityConfirm.realPaymentCount > 1 && (
                     <div style={{ fontSize: 12, color: "#ef4444", marginTop: 4, fontWeight: 400 }}>
@@ -1937,7 +1961,8 @@ const TransactionForm = ({
                   style={{ marginTop: 3 }}
                 />
                 <span>
-                  Klien benar-benar membayar <strong>{fmtIDR(paymentIntegrityConfirm.realPaid)}</strong>{" "}
+                  {form.type === "income" ? "Klien benar-benar membayar" : "Kita benar-benar membayar"}{" "}
+                  <strong>{fmtIDR(paymentIntegrityConfirm.realPaid)}</strong>{" "}
                   (kelebihan bayar{" "}
                   <strong style={{ color: "#f59e0b" }}>
                     {fmtIDR(paymentIntegrityConfirm.realPaid - paymentIntegrityConfirm.newTotal)}
@@ -1948,9 +1973,16 @@ const TransactionForm = ({
                 <div style={{ marginTop: 10, padding: 10, background: "#fff7ed", borderRadius: 8, border: "1px solid #fed7aa" }}>
                   <p style={{ fontSize: 13, marginBottom: 8 }}>
                     Sistem tidak dapat menyimpan saldo kelebihan bayar. Total akan disesuaikan menjadi{" "}
-                    <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong> — tolong kembalikan{" "}
-                    <strong>{fmtIDR(paymentIntegrityConfirm.realPaid - paymentIntegrityConfirm.newTotal)}</strong>{" "}
-                    secara tunai/transfer ke klien sebelum melanjutkan.
+                    <strong>{fmtIDR(paymentIntegrityConfirm.newTotal)}</strong> —{" "}
+                    {form.type === "income" ? (
+                      <>tolong kembalikan{" "}
+                      <strong>{fmtIDR(paymentIntegrityConfirm.realPaid - paymentIntegrityConfirm.newTotal)}</strong>{" "}
+                      secara tunai/transfer ke klien sebelum melanjutkan.</>
+                    ) : (
+                      <>supplier perlu mengembalikan{" "}
+                      <strong>{fmtIDR(paymentIntegrityConfirm.realPaid - paymentIntegrityConfirm.newTotal)}</strong>{" "}
+                      kepada kita sebelum melanjutkan.</>
+                    )}
                   </p>
                   <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, cursor: "pointer" }}>
                     <input
@@ -1960,8 +1992,13 @@ const TransactionForm = ({
                       style={{ marginTop: 2 }}
                     />
                     <span>
-                      Saya sudah mengembalikan{" "}
-                      {fmtIDR(paymentIntegrityConfirm.realPaid - paymentIntegrityConfirm.newTotal)} ke klien
+                      {form.type === "income" ? (
+                        <>Saya sudah mengembalikan{" "}
+                        {fmtIDR(paymentIntegrityConfirm.realPaid - paymentIntegrityConfirm.newTotal)} ke klien</>
+                      ) : (
+                        <>Supplier sudah mengembalikan{" "}
+                        {fmtIDR(paymentIntegrityConfirm.realPaid - paymentIntegrityConfirm.newTotal)} kepada kita</>
+                      )}
                     </span>
                   </label>
                 </div>
