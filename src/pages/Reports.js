@@ -107,6 +107,45 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
     return a + (contrib ? contrib.combinedCashValue : Number(t.value) - (Number(t.outstanding) || 0));
   }, 0), [filtered, selectedItems]);
 
+  // Recognizes payment-history entries representing a real financial
+  // event (a refund, a voided/reversed payment, or newly-confirmed extra
+  // payment) that would otherwise be invisible in this report — they're
+  // stored with amount: 0, same as routine "Detail Perubahan" edit notes,
+  // which this report correctly hides. Deliberately does NOT affect
+  // paymentCount or grandTotalPaid below — those must keep counting only
+  // genuine amount>0 payments; this only affects what's DISPLAYED.
+  const isVisibleSpecialEvent = (ph) =>
+    ph.note.startsWith("Kelebihan bayar") ||
+    ph.note.startsWith("Pembayaran dikoreksi") ||
+    ph.note.includes("dikonfirmasi lunas penuh");
+
+  const getSpecialEventDisplay = (ph) => {
+    if (ph.note.startsWith("Kelebihan bayar")) {
+      return {
+        badgeBg: "#fef3c7", badgeFg: "#92400e", badgeLabel: "Kelebihan Bayar Dikembalikan",
+        amountColor: "#d97706",
+        amountNode: `-${fmtIDR(ph.refundAmount ?? 0)}`,
+      };
+    }
+    if (ph.note.startsWith("Pembayaran dikoreksi")) {
+      const originalAmount = Math.max(0, (Number(ph.outstandingBefore) || 0) - (Number(ph.outstandingAfter) || 0));
+      return {
+        badgeBg: "#e5e7eb", badgeFg: "#4b5563", badgeLabel: "Pembayaran Dibatalkan",
+        amountColor: "#6b7280",
+        amountNode: <span style={{ textDecoration: "line-through" }}>{fmtIDR(originalAmount)}</span>,
+      };
+    }
+    if (ph.note.includes("dikonfirmasi lunas penuh")) {
+      const extra = Math.max(0, (Number(ph.paidAfter) || 0) - (Number(ph.paidBefore) || 0));
+      return {
+        badgeBg: "#dcfce7", badgeFg: "#065f46", badgeLabel: "Pembayaran Diterima",
+        amountColor: "#10b981",
+        amountNode: `+${fmtIDR(extra)}`,
+      };
+    }
+    return null;
+  };
+
   const paymentCount = useMemo(() => {
     const filteredTxIds = new Set(filtered.map((t) => t.id));
     return transactions.reduce((total, t) => {
@@ -169,8 +208,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
   const exportCSV = () => {
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const pmtFilter = (ph) =>
-      Number(ph.amount) > 0 &&
-      !EDIT_NOTES.has(ph.note) &&
+      (isVisibleSpecialEvent(ph) || (Number(ph.amount) > 0 && !EDIT_NOTES.has(ph.note))) &&
       (!dateFrom || (ph.date || "") >= dateFrom) &&
       (!dateTo   || (ph.date || "") <= dateTo);
 
@@ -319,8 +357,7 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
 
   // Helper: filter predicate for visible payment entries
   const visiblePmtFilter = (ph) =>
-    Number(ph.amount) > 0 &&
-    !EDIT_NOTES.has(ph.note) &&
+    (isVisibleSpecialEvent(ph) || (Number(ph.amount) > 0 && !EDIT_NOTES.has(ph.note))) &&
     (!dateFrom || (ph.date || "") >= dateFrom) &&
     (!dateTo   || (ph.date || "") <= dateTo);
 
@@ -342,13 +379,15 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
   // Helper: render payment <tr> elements for a transaction
   const mkPaymentRows = (t, payments, keyPrefix, contrib = null) => {
     const isIncome = t.type === "income";
-    const phBorderColor = isIncome ? "#10b981" : "#ef4444";
-    const phBg          = isIncome ? "#f0fdf4" : "#fff1f2";
-    const phBadgeBg     = isIncome ? "#dcfce7" : "#fee2e2";
-    const phBadgeFg     = isIncome ? "#065f46" : "#991b1b";
-    const phBadgeLabel  = isIncome ? "Pembayaran Diterima" : "Pembayaran Dilakukan";
-    const phAmountColor = isIncome ? "#10b981" : "#ef4444";
-    return payments.map((ph, phIdx) => (
+    return payments.map((ph, phIdx) => {
+      const special = getSpecialEventDisplay(ph);
+      const phBorderColor = special ? special.amountColor : (isIncome ? "#10b981" : "#ef4444");
+      const phBg          = special ? "#f9fafb" : (isIncome ? "#f0fdf4" : "#fff1f2");
+      const phBadgeBg     = special ? special.badgeBg : (isIncome ? "#dcfce7" : "#fee2e2");
+      const phBadgeFg     = special ? special.badgeFg : (isIncome ? "#065f46" : "#991b1b");
+      const phBadgeLabel  = special ? special.badgeLabel : (isIncome ? "Pembayaran Diterima" : "Pembayaran Dilakukan");
+      const phAmountColor = special ? special.amountColor : (isIncome ? "#10b981" : "#ef4444");
+      return (
       <tr key={`${keyPrefix}-${t.id}-${phIdx}`} style={{ background: phBg, borderLeft: `3px solid ${phBorderColor}` }}>
         <td />
         <td style={{ fontSize: 11, fontWeight: 600, color: isIncome ? "#6366f1" : "#374151", fontFamily: "monospace", whiteSpace: "nowrap" }}>
@@ -378,10 +417,12 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         <td /><td /><td /><td />
         {colSudahDibayar && (
           <td className="td-right" style={{ color: phAmountColor, fontWeight: 700, fontSize: 12 }}>
-            {isIncome ? "+" : "-"}{fmtIDR(
-              ph.note.startsWith("Lunas saat transaksi dibuat")
-                ? Number(t.value) - (Number(t.outstanding) || 0)
-                : ph.amount
+            {special ? special.amountNode : (
+              <>{isIncome ? "+" : "-"}{fmtIDR(
+                ph.note.startsWith("Lunas saat transaksi dibuat")
+                  ? Number(t.value) - (Number(t.outstanding) || 0)
+                  : ph.amount
+              )}</>
             )}
           </td>
         )}
@@ -396,7 +437,8 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
         {colPiutang && <td />}
         {colJenis   && <td />}
       </tr>
-    ));
+      );
+    });
   };
 
   return (
@@ -865,12 +907,13 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                   {orphanPayments.map(({ t, pmts }, groupIdx) =>
                     pmts.map((ph, phIdx) => {
                       const isIncome = t.type === "income";
-                      const phBorderColor = isIncome ? "#10b981" : "#ef4444";
-                      const phBg          = isIncome ? "#f0fdf4" : "#fff1f2";
-                      const phBadgeBg     = isIncome ? "#dcfce7" : "#fee2e2";
-                      const phBadgeFg     = isIncome ? "#065f46" : "#991b1b";
-                      const phBadgeLabel  = isIncome ? "Pembayaran Diterima" : "Pembayaran Dilakukan";
-                      const phAmountColor = isIncome ? "#10b981" : "#ef4444";
+                      const special = getSpecialEventDisplay(ph);
+                      const phBorderColor = special ? special.amountColor : (isIncome ? "#10b981" : "#ef4444");
+                      const phBg          = special ? "#f9fafb" : (isIncome ? "#f0fdf4" : "#fff1f2");
+                      const phBadgeBg     = special ? special.badgeBg : (isIncome ? "#dcfce7" : "#fee2e2");
+                      const phBadgeFg     = special ? special.badgeFg : (isIncome ? "#065f46" : "#991b1b");
+                      const phBadgeLabel  = special ? special.badgeLabel : (isIncome ? "Pembayaran Diterima" : "Pembayaran Dilakukan");
+                      const phAmountColor = special ? special.amountColor : (isIncome ? "#10b981" : "#ef4444");
                       return (
                         <tr
                           key={`oph-${t.id}-${phIdx}`}
@@ -900,10 +943,12 @@ const Reports = ({ transactions, contacts, settings, onReport, initItemFilter = 
                           <td /><td /><td /><td />
                           {colSudahDibayar && (
                             <td className="td-right" style={{ color: phAmountColor, fontWeight: 700, fontSize: 12 }}>
-                              {isIncome ? "+" : "-"}{fmtIDR(
-                                ph.note.startsWith("Lunas saat transaksi dibuat")
-                                  ? Number(t.value) - (Number(t.outstanding) || 0)
-                                  : ph.amount
+                              {special ? special.amountNode : (
+                                <>{isIncome ? "+" : "-"}{fmtIDR(
+                                  ph.note.startsWith("Lunas saat transaksi dibuat")
+                                    ? Number(t.value) - (Number(t.outstanding) || 0)
+                                    : ph.amount
+                                )}</>
                               )}
                             </td>
                           )}

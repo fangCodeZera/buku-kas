@@ -777,7 +777,7 @@ const TransactionForm = ({
         ? {
             outstanding: 0,
             status: STATUS.LUNAS,
-            paymentIntegrityNote: `Total bertambah menjadi ${fmtIDR(newTotal)} — dikonfirmasi lunas penuh`,
+            paymentIntegrityNote: `Total bertambah menjadi ${fmtIDR(newTotal)} — dikonfirmasi lunas penuh (tambahan ${fmtIDR(newTotal - realPaid)} diterima)`,
           }
         : {
             outstanding: newTotal - realPaid,
@@ -804,6 +804,10 @@ const TransactionForm = ({
             paymentIntegrityNote: `Kelebihan bayar ${fmtIDR(realPaid - newTotal)} — ${
               form.type === "income" ? "sudah dikembalikan ke klien" : "sudah dikembalikan oleh supplier"
             }`,
+            // The refund gap as a real number, not parsed from the note
+            // text — Laporan needs this to display the amount without
+            // relying on fragile string parsing.
+            refundAmount: realPaid - newTotal,
           };
     }
 
@@ -946,6 +950,7 @@ const TransactionForm = ({
         paymentManuallyEdited: finalPME,
         ...(overrides?.paymentIntegrityNote ? { paymentIntegrityNote: overrides.paymentIntegrityNote } : {}),
         ...(overrides?.correctedPaymentAmount !== undefined ? { correctedPaymentAmount: overrides.correctedPaymentAmount } : {}),
+        ...(overrides?.refundAmount !== undefined ? { refundAmount: overrides.refundAmount } : {}),
         stockQty:     totalSackQty,
         stockUnit:    unit,
         sackQty:      totalSackQty,

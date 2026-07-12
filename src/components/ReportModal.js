@@ -60,10 +60,45 @@ const ReportModal = ({
   }, 0);
   const netProfit    = totalIncome - totalExpense;
 
+  // Recognizes payment-history entries representing a real financial
+  // event (a refund, a voided/reversed payment, or newly-confirmed extra
+  // payment) that would otherwise be invisible here — they're stored
+  // with amount: 0, same as routine "Detail Perubahan" edit notes.
+  const isVisibleSpecialEvent = (ph) =>
+    ph.note.startsWith("Kelebihan bayar") ||
+    ph.note.startsWith("Pembayaran dikoreksi") ||
+    ph.note.includes("dikonfirmasi lunas penuh");
+
+  const getSpecialEventDisplay = (ph) => {
+    if (ph.note.startsWith("Kelebihan bayar")) {
+      return {
+        amountColor: "#d97706",
+        badgeLabel: "Kelebihan Bayar Dikembalikan",
+        amountNode: `-${fmtIDR(ph.refundAmount ?? 0)}`,
+      };
+    }
+    if (ph.note.startsWith("Pembayaran dikoreksi")) {
+      const originalAmount = Math.max(0, (Number(ph.outstandingBefore) || 0) - (Number(ph.outstandingAfter) || 0));
+      return {
+        amountColor: "#6b7280",
+        badgeLabel: "Pembayaran Dibatalkan",
+        amountNode: <span style={{ textDecoration: "line-through" }}>{fmtIDR(originalAmount)}</span>,
+      };
+    }
+    if (ph.note.includes("dikonfirmasi lunas penuh")) {
+      const extra = Math.max(0, (Number(ph.paidAfter) || 0) - (Number(ph.paidBefore) || 0));
+      return {
+        amountColor: "#10b981",
+        badgeLabel: "Pembayaran Diterima",
+        amountNode: `+${fmtIDR(extra)}`,
+      };
+    }
+    return null;
+  };
+
   // Payment filter: amount > 0, not an edit note, date within range
   const visiblePmtFilter = (ph) =>
-    Number(ph.amount) > 0 &&
-    !EDIT_NOTES.has(ph.note) &&
+    (isVisibleSpecialEvent(ph) || (Number(ph.amount) > 0 && !EDIT_NOTES.has(ph.note))) &&
     (!dateFrom || (ph.date || "") >= dateFrom) &&
     (!dateTo   || (ph.date || "") <= dateTo);
 
@@ -219,7 +254,10 @@ const ReportModal = ({
   // isInline: adds border-top on first row to visually separate from parent transaction
   const mkPaymentRows = (t, payments, keyPrefix, _isInline, contrib = null) => {
     const isIncome = t.type === "income";
-    return payments.map((ph, phIdx) => (
+    return payments.map((ph, phIdx) => {
+      const special = getSpecialEventDisplay(ph);
+      const rowColor = special ? special.amountColor : (isIncome ? "#10b981" : "#ef4444");
+      return (
       <tr key={`${keyPrefix}-${t.id}-${phIdx}`}
           style={{ borderLeft: "2px solid #94a3b8", background: "#fff" }}>
         <td style={s.td} />
@@ -228,8 +266,8 @@ const ReportModal = ({
         <td style={{ ...s.td, fontSize: 10, color: "#475569" }}>{t.counterparty}</td>
         <td style={{ ...s.td, paddingLeft: 12, whiteSpace: "normal" }}>
           <div style={{ fontSize: 10, color: "#475569" }}>
-            <span style={{ color: isIncome ? "#10b981" : "#ef4444", fontWeight: 600 }}>
-              {isIncome ? "+" : "−"}
+            <span style={{ color: rowColor, fontWeight: 600 }}>
+              {special ? special.badgeLabel : (isIncome ? "+" : "−")}
             </span>{" "}
             {ph.note || "Pembayaran"}
           </div>
@@ -247,9 +285,8 @@ const ReportModal = ({
         </td>
         <td style={s.td} /><td style={s.td} /><td style={s.td} />
         {colSudahDibayar && (
-          <td style={{ ...s.td, ...s.tdR, fontWeight: 600, fontSize: 10,
-                       color: isIncome ? "#10b981" : "#ef4444" }}>
-            {isIncome ? "+" : "−"}{fmtIDR(ph.amount)}
+          <td style={{ ...s.td, ...s.tdR, fontWeight: 600, fontSize: 10, color: rowColor }}>
+            {special ? special.amountNode : <>{isIncome ? "+" : "−"}{fmtIDR(ph.amount)}</>}
           </td>
         )}
         {effectiveTotalNilai  && <td style={s.td} />}
@@ -261,7 +298,8 @@ const ReportModal = ({
         {effectivePiutang && <td style={s.td} />}
         {colJenis   && <td style={s.td} />}
       </tr>
-    ));
+      );
+    });
   };
 
   return (

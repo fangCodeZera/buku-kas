@@ -672,6 +672,7 @@ export default function App() {
     delete nt.paymentManuallyEdited;
     delete nt.paymentIntegrityNote;
     delete nt.correctedPaymentAmount;
+    delete nt.refundAmount;
     const value    = Number(nt.value) || 0;
     const paidNow  = value - out;
     // Discount context for the creation-time note. Appended as a SUFFIX, not
@@ -791,6 +792,12 @@ export default function App() {
     // payment entry exists; re-verified defensively below regardless.
     const correctedPaymentAmount = typeof nt.correctedPaymentAmount === "number" ? nt.correctedPaymentAmount : null;
     delete nt.correctedPaymentAmount;
+    // The refund gap amount, as a real number — attached directly onto
+    // the editPaymentEntry below so Laporan can display it without
+    // parsing the note text. Ephemeral signal, stripped here so it never
+    // gets misread as anything other than this one-time save's intent.
+    const refundAmount = typeof nt.refundAmount === "number" ? nt.refundAmount : null;
+    delete nt.refundAmount;
 
     // Fix: In Supabase mode, pre-compute the new txnId atomically via RPC when the
     // YY-MM prefix will change. Mirrors the same pattern used in addTransaction.
@@ -932,6 +939,7 @@ export default function App() {
           amount: 0,
           note:   paymentIntegrityNote || "Detail Perubahan",
           method: null,
+          ...(refundAmount !== null && { refundAmount }),
           ...(counterpartyChanged && { counterpartyBefore: x.counterparty,    counterpartyAfter: nt.counterparty }),
           ...(dateChanged         && { dateBefore: x.date,                    dateAfter: nt.date }),
           ...(financialChanged    && {
