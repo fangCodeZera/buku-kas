@@ -135,21 +135,82 @@ const mapSettings = (row) => ({
 
 // ── loadDataFromSupabase ───────────────────────────────────────────────────────
 
+// PostgREST silently caps every response at `max_rows` (Supabase default: 1000).
+// It returns no error and no warning — just the first N rows. The app relies on
+// the FULL history being in memory (stock, piutang, laporan, backup all derive
+// from data.transactions), so every collection must be fetched in pages.
+const FETCH_PAGE_SIZE = 1000;
+
+/**
+ * Fetches every row of a query by walking it in FETCH_PAGE_SIZE pages.
+ *
+ * `buildQuery` must return a FRESH builder each call (builders are mutable —
+ * calling .range() twice on the same one overwrites the previous range). The
+ * builder must carry a deterministic ORDER BY ending in a unique column (`id`)
+ * so pages never overlap or skip rows.
+ *
+ * Termination: the first page requests an exact count; we stop once we have
+ * collected `count` rows, or a page comes back empty. Advancing by the actual
+ * returned length (not by FETCH_PAGE_SIZE) keeps this correct even if the
+ * server's max_rows is lower than FETCH_PAGE_SIZE. Rows are de-duplicated by
+ * `id` as a guard against a concurrent insert shifting page boundaries.
+ *
+ * @param {() => import('@supabase/supabase-js').PostgrestFilterBuilder} buildQuery
+ * @returns {Promise<{ data: Array, error: Object|null }>} same shape as a single query
+ */
+async function fetchAll(buildQuery) {
+  const rows = [];
+  const seen = new Set();
+  let from  = 0;
+  let total = null;
+
+  while (true) {
+    const { data, error, count } = await buildQuery().range(from, from + FETCH_PAGE_SIZE - 1);
+    if (error) return { data: null, error };
+
+    const page = data || [];
+    if (total === null && typeof count === 'number') total = count;
+
+    for (const row of page) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      rows.push(row);
+    }
+
+    if (page.length === 0) break;
+    from += page.length;
+    if (total !== null && from >= total) break;
+  }
+
+  return { data: rows, error: null };
+}
+
 /**
  * Fetches all 5 data collections from Supabase in parallel.
- * Transactions and stock_adjustments are filtered to the last 2 years to keep
- * initial load fast as data grows. Older records remain in Supabase and are
- * never deleted — they just aren't loaded on startup.
+ * The FULL history is always loaded — no date filter (see T73 revert: stock
+ * and balances are computed client-side from data.transactions, so any
+ * truncation produces silently wrong numbers). Collections are fetched in
+ * pages via fetchAll() to bypass PostgREST's max_rows response cap.
  * Returns the same shape as loadData() in storage.js.
  * @param {string} userId - current user's UUID (unused for queries, RLS handles auth)
  * @returns {Promise<Object>} full data object matching defaultData shape
  */
 export async function loadDataFromSupabase(userId) {
+  // Every ORDER BY ends in `id` so pagination is deterministic (see fetchAll).
   const [txRes, contactRes, adjRes, catalogRes, settingsRes] = await Promise.all([
-    supabase.from('transactions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
-    supabase.from('contacts').select('*').order('name', { ascending: true }),
-    supabase.from('stock_adjustments').select('*').order('date', { ascending: false }),
-    supabase.from('item_catalog').select('*').order('name', { ascending: true }),
+    fetchAll(() => supabase.from('transactions').select('*', { count: 'exact' })
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })),
+    fetchAll(() => supabase.from('contacts').select('*', { count: 'exact' })
+      .order('name', { ascending: true })
+      .order('id', { ascending: true })),
+    fetchAll(() => supabase.from('stock_adjustments').select('*', { count: 'exact' })
+      .order('date', { ascending: false })
+      .order('id', { ascending: false })),
+    fetchAll(() => supabase.from('item_catalog').select('*', { count: 'exact' })
+      .order('name', { ascending: true })
+      .order('id', { ascending: true })),
     supabase.from('app_settings').select('*').eq('id', 'singleton').maybeSingle(),
   ]);
 
