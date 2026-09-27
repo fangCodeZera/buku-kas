@@ -61,6 +61,7 @@ import {
   mapCatalogItem,
   getNextTxnSerial,
   syncTxnCounter,
+  getRememberedSerialForDate,
   isSupabaseReachable,
 } from "./utils/supabaseStorage";
 import SaveErrorModal from "./components/SaveErrorModal";
@@ -712,6 +713,9 @@ export default function App() {
         // resulting duplicate.
         console.error("getNextTxnSerial failed, falling back to local generateTxnId:", err);
         usedFallback = true;
+        // T108: the fallback used to be silent, which is why months of skipped
+        // invoice numbers went unnoticed. Surface it the moment it happens.
+        setToast("⚠️ Koneksi database bermasalah — nomor faktur dibuat secara lokal. Mohon periksa urutan nomor faktur.");
       }
     }
 
@@ -722,7 +726,7 @@ export default function App() {
       const txnId = nt.type === "income"
         // Supabase mode: nt.txnId already set atomically above (or fell back on error).
         // localStorage mode: generate from local state as before.
-        ? (nt.txnId || generateTxnId(d.transactions, nt.date))
+        ? (nt.txnId || generateTxnId(d.transactions, nt.date, getRememberedSerialForDate(nt.date)))
         : (nt.txnId || null);
       const newTx = { ...nt, txnId, paymentHistory: [initialPayment] };
       return {
@@ -812,6 +816,7 @@ export default function App() {
           precomputedTxnId = await getNextTxnSerial(nt.date);
         } catch (err) {
           console.error("getNextTxnSerial failed on edit, falling back to local generateTxnId:", err);
+          setToast("⚠️ Koneksi database bermasalah — nomor faktur dibuat secara lokal. Mohon periksa urutan nomor faktur.");
         }
       }
     }
@@ -880,7 +885,7 @@ export default function App() {
           const oldPrefix = (x.date || "").slice(2, 7);
           const newPrefix = (nt.date || "").slice(2, 7);
           txnId = (oldPrefix && newPrefix && oldPrefix !== newPrefix)
-            ? (precomputedTxnId || generateTxnId(d.transactions, nt.date))
+            ? (precomputedTxnId || generateTxnId(d.transactions, nt.date, getRememberedSerialForDate(nt.date)))
             : x.txnId;
         } else {
           txnId = nt.txnId || null;

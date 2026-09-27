@@ -452,24 +452,112 @@ export async function loadActivityLog(filters = {}) {
 }
 
 /**
+ * Derive the "YY-MM" txn counter prefix from a YYYY-MM-DD date string.
+ * Rule 3: date MATH uses the T00:00:00Z suffix + UTC getters so the prefix never
+ * shifts a month at the year/month boundary in UTC+ timezones.
+ *
+ * @param {string} dateStr - "YYYY-MM-DD"
+ * @returns {string|null} "YY-MM", or null if the date is unusable
+ */
+function txnPrefix(dateStr) {
+  try {
+    if (!dateStr || typeof dateStr !== "string") return null;
+    const d = new Date(dateStr + "T00:00:00Z");
+    if (isNaN(d.getTime())) return null;
+    const yy = String(d.getUTCFullYear()).slice(-2);
+    const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+    return `${yy}-${mm}`;
+  } catch {
+    return null;
+  }
+}
+
+// ── T108: local "highest serial already issued" memo ──────────────────────────
+// The DB counter (txn_counters) is monotonic — deleting a transaction never frees
+// its number. The offline fallback (generateTxnId) can only see transactions that
+// still exist, so on its own it would happily re-issue a deleted transaction's
+// number. This memo records every serial the RPC hands out, giving the fallback a
+// floor to stay above so both paths follow the same "never reuse" rule.
+// Browser-local and best-effort by design: it can be empty (new device, cleared
+// storage, private window) and every access is guarded.
+const SERIAL_MEMO_KEY = "bukukas_last_serial";
+
+function readSerialMemo() {
+  try {
+    const raw = localStorage.getItem(SERIAL_MEMO_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Record the highest serial the DB is known to have issued for a YY-MM prefix. */
+function rememberTxnSerial(prefix, serial) {
+  try {
+    if (!prefix || !Number.isFinite(serial)) return;
+    const memo = readSerialMemo();
+    if ((Number(memo[prefix]) || 0) >= serial) return; // never move backwards
+    memo[prefix] = serial;
+    localStorage.setItem(SERIAL_MEMO_KEY, JSON.stringify(memo));
+  } catch {
+    /* storage unavailable — the fallback simply loses its floor for this month */
+  }
+}
+
+/**
+ * Highest serial this browser has seen the DB issue for the month of `dateStr`.
+ * Returns 0 when unknown, which makes it a no-op floor for generateTxnId().
+ *
+ * @param {string} dateStr - Transaction date "YYYY-MM-DD"
+ * @returns {number} last known issued serial, or 0
+ */
+export function getRememberedSerialForDate(dateStr) {
+  const prefix = txnPrefix(dateStr);
+  if (!prefix) return 0;
+  return Number(readSerialMemo()[prefix]) || 0;
+}
+
+/**
  * H2 LONG-TERM FIX: Atomically get the next invoice serial from the Supabase
  * txn_counters table via the next_txn_serial() Postgres function.
  * Uses INSERT ... ON CONFLICT DO UPDATE ... RETURNING — safe under concurrent writes.
  *
+ * T108: wrapped in withTimeout and retried before giving up, because the caller's
+ * only alternative is the offline fallback — and a fallback that fires on the
+ * first transient blip is how invoice numbering drifted for months. Note the RPC
+ * is NOT idempotent: a call that succeeds server-side but whose response is lost
+ * burns a serial, so a retry can leave a one-number gap. That is a deliberate
+ * trade — a skipped number is harmless, a wrong counter is not.
+ *
  * @param {string} dateStr - Transaction date "YYYY-MM-DD"
+ * @param {number} [attempts=3] - total tries before throwing
  * @returns {Promise<string>} txnId in format "YY-MM-NNNNN"
  */
-export async function getNextTxnSerial(dateStr) {
-  const d = new Date(dateStr + "T00:00:00Z");
-  const yy = String(d.getUTCFullYear()).slice(-2);
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const prefix = `${yy}-${mm}`;
+export async function getNextTxnSerial(dateStr, attempts = 3) {
+  const prefix = txnPrefix(dateStr);
+  if (!prefix) throw new Error("Gagal mendapatkan nomor faktur: tanggal transaksi tidak valid.");
 
-  const { data, error } = await supabase.rpc("next_txn_serial", { p_prefix: prefix });
-  if (error) throw new Error(`Gagal mendapatkan nomor faktur: ${error.message}`);
-
-  const serial = String(data).padStart(5, "0");
-  return `${prefix}-${serial}`;
+  let lastErr = null;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 400 * attempt));
+    try {
+      const { data, error } = await withTimeout(
+        supabase.rpc("next_txn_serial", { p_prefix: prefix }),
+        8000
+      );
+      if (error) throw new Error(error.message);
+      const serial = Number(data);
+      if (!Number.isFinite(serial) || serial <= 0) {
+        throw new Error("nomor faktur tidak valid dari server");
+      }
+      rememberTxnSerial(prefix, serial);
+      return `${prefix}-${String(serial).padStart(5, "0")}`;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw new Error(`Gagal mendapatkan nomor faktur: ${lastErr?.message || "tidak diketahui"}`);
 }
 
 /**
@@ -483,13 +571,12 @@ export async function getNextTxnSerial(dateStr) {
  */
 export async function syncTxnCounter(dateStr, txnId) {
   try {
-    const d = new Date(dateStr + "T00:00:00Z");
-    const yy = String(d.getUTCFullYear()).slice(-2);
-    const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-    const prefix = `${yy}-${mm}`;
+    const prefix = txnPrefix(dateStr);
+    if (!prefix) return;
     // Extract serial from txnId format "YY-MM-NNNNN"
     const serial = parseInt(txnId.split("-")[2], 10);
     if (!serial || isNaN(serial)) return;
+    rememberTxnSerial(prefix, serial);
     await supabase.rpc("sync_txn_counter", { p_prefix: prefix, p_serial: serial });
   } catch (err) {
     console.warn("[syncTxnCounter] non-blocking failure:", err.message);

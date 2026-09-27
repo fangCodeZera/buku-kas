@@ -111,20 +111,35 @@ export const normalizeTitleCase = (s) => {
 
 /**
  * Generate a human-readable transaction ID in the format YY-MM-XXXXX.
- * The XXXXX serial resets each calendar year and is based on existing
- * transactions that share the same YY- prefix.
  *
- * @param {Array}  transactions - current transactions array (to count existing serials)
- * @param {string} dateStr      - YYYY-MM-DD date of the new transaction
+ * The XXXXX serial resets each calendar MONTH, matching the Supabase
+ * next_txn_serial() RPC that issues these numbers in normal operation. This
+ * function is only the offline fallback for when that RPC is unreachable.
+ *
+ * T108 — the prefix MUST stay month-scoped (`YY-MM-`). It was year-scoped
+ * (`YY-`) until 2026-09, which made the fallback return the highest serial in
+ * the whole year plus one: in Sep 2026 it jumped to 00408 because July had
+ * reached 00407, and sync_txn_counter then wrote that into the month counter
+ * permanently. Three months (Jun/Jul/Sep) skipped 440 invoice numbers that way.
+ *
+ * `minSerial` is the floor supplied by the caller — the highest serial the DB is
+ * known to have already issued this month (see getRememberedSerialForDate in
+ * supabaseStorage.js). Without it the fallback would re-issue a deleted
+ * transaction's number, because deleting a row does not free its serial in the
+ * DB counter. Scanning existing transactions alone cannot see that.
+ *
+ * @param {Array}  transactions   - FULL transactions array (filtered to income internally, Rule 6)
+ * @param {string} dateStr        - YYYY-MM-DD date of the new transaction
+ * @param {number} [minSerial=0]  - highest serial already issued this month, if known
  * @returns {string} e.g. "26-03-00001"
  */
-export const generateTxnId = (transactions, dateStr) => {
+export const generateTxnId = (transactions, dateStr, minSerial = 0) => {
   const yy = (dateStr || today()).slice(2, 4);  // "2026-03-10" → "26"
   const mm = (dateStr || today()).slice(5, 7);  // "2026-03-10" → "03"
-  const prefix = `${yy}-`;
+  const prefix = `${yy}-${mm}-`;
 
-  // Find the highest existing serial for this year (not just count — avoids
-  // duplicate IDs after deletions). Parse the last 5 chars of each matching txnId.
+  // Highest existing serial for THIS MONTH (not just a count — avoids duplicate
+  // IDs after deletions). Parse the last 5 chars of each matching txnId.
   const maxSerial = (transactions || []).reduce((max, t) => {
     if (t.type !== "income") return max; // only income transactions use auto-generated IDs
     if (!t.txnId || !t.txnId.startsWith(prefix)) return max;
@@ -132,7 +147,8 @@ export const generateTxnId = (transactions, dateStr) => {
     return isNaN(num) ? max : Math.max(max, num);
   }, 0);
 
-  const serial = String(maxSerial + 1).padStart(5, "0");
+  const floor = Number.isFinite(Number(minSerial)) ? Number(minSerial) : 0;
+  const serial = String(Math.max(maxSerial, floor) + 1).padStart(5, "0");
   return `${yy}-${mm}-${serial}`;
 };
 
