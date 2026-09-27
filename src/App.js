@@ -587,11 +587,25 @@ export default function App() {
     });
   }, []);
 
+  // T109: these effects depend on PRIMITIVE identity fields, never on the `user`
+  // or `profile` OBJECTS. AuthContext's handleSession() runs setUser(session.user)
+  // on every auth event — including TOKEN_REFRESHED, which Supabase fires roughly
+  // hourly — and a refreshed session carries a brand-new user object. Depending on
+  // the object therefore tore the realtime channel down and rebuilt it every hour,
+  // and postgres_changes has NO replay: anything another user wrote during that
+  // window was lost from this browser until a manual reload. Keeping the channel
+  // alive across a refresh is what supabase-js expects — it pushes the new token
+  // into the existing socket itself (realtime.setAuth() on TOKEN_REFRESHED).
+  const userId       = user?.id;
+  const profileId    = profile?.id;
+  const presenceName = profile?.full_name || profile?.email;
+  const presenceRole = profile?.role;
+
   useEffect(() => {
-    if (!USE_SUPABASE || !user) return;
+    if (!USE_SUPABASE || !userId) return;
     const cleanup = subscribeToChanges(handleRealtimeUpdate);
     return cleanup;
-  }, [user, handleRealtimeUpdate]);
+  }, [userId, handleRealtimeUpdate]);
 
   // ── Phase 5: Presence — track online users ───────────────────────────────
   const handlePresenceChange = useCallback((presences) => {
@@ -599,14 +613,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!USE_SUPABASE || !user || !profile) return;
+    // profileId stands in for the old `!profile` guard — same semantics, primitive dep.
+    if (!USE_SUPABASE || !userId || !profileId) return;
     const cleanup = subscribeToPresence(
-      user.id,
-      { id: user.id, name: profile.full_name || profile.email, role: profile.role },
+      userId,
+      { id: userId, name: presenceName, role: presenceRole },
       handlePresenceChange
     );
     return cleanup;
-  }, [user, profile, handlePresenceChange]);
+  }, [userId, profileId, presenceName, presenceRole, handlePresenceChange]);
 
   // Note: totalIncome/totalExpense are CASH-BASIS (value - outstanding), not gross values.
   // The Contacts page labels these as "Total Penjualan/Pembelian" which may imply gross.
@@ -1925,6 +1940,7 @@ export default function App() {
             onUnarchiveSubtype={unarchiveSubtype}
             onUnarchiveContact={unarchiveContact}
             saved={saved}
+            saveError={saveError}
             initViewDate={txPageHighlight?.date}
             highlightTxIds={txPageHighlight ? [txPageHighlight.txId] : null}
             onClearHighlight={() => setTxPageHighlight(null)}
@@ -1951,6 +1967,7 @@ export default function App() {
             onUnarchiveSubtype={unarchiveSubtype}
             onUnarchiveContact={unarchiveContact}
             saved={saved}
+            saveError={saveError}
             initViewDate={txPageHighlight?.date}
             highlightTxIds={txPageHighlight ? [txPageHighlight.txId] : null}
             onClearHighlight={() => setTxPageHighlight(null)}

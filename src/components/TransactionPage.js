@@ -51,6 +51,7 @@ const TransactionPage = ({
   onSuratJalan,
   onNavigateOutstanding,
   saved,
+  saveError,
   itemCatalog = [],
   onAddCatalogItem = () => {},
   onUpdateCatalogItem = () => {},
@@ -230,7 +231,7 @@ const TransactionPage = ({
       <div className="page-header">
         <div>
           <h2 className="page-title" style={{ color: accentColor }}>{title}</h2>
-          <div style={{ marginTop: 4 }}><SaveIndicator saved={saved} /></div>
+          <div style={{ marginTop: 4 }}><SaveIndicator saved={saved} saveError={saveError} /></div>
         </div>
         <button
           onClick={() => setShowForm(true)}
