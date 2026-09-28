@@ -62,6 +62,7 @@ import {
   getNextTxnSerial,
   syncTxnCounter,
   getRememberedSerialForDate,
+  loadTransactionById,
   isSupabaseReachable,
 } from "./utils/supabaseStorage";
 import SaveErrorModal from "./components/SaveErrorModal";
@@ -336,6 +337,7 @@ export default function App() {
   // Phase 5: Realtime + conflict detection
   const [showConflictModal,  setShowConflictModal]  = useState(false);
   const [conflictUpdatedBy,  setConflictUpdatedBy]  = useState('');
+  const [conflictMessage,    setConflictMessage]    = useState(null); // T111: custom text + no auto-dismiss (payments)
   const [onlineUsers,        setOnlineUsers]        = useState([]); // [{ id, name, role }]
   // T110: realtime health. `realtimeLive` is the current state; `realtimeDropped`
   // is STICKY — once sync has broken, reconnecting does NOT recover the changes
@@ -380,7 +382,11 @@ export default function App() {
   }, [data]);
 
   // ── Phase 4: async Supabase persistence ─────────────────────────────────
-  const persistToSupabase = useCallback(async (operation, retryFn) => {
+  // T111: `onConflict` (optional) lets a caller repair local state when the write
+  // was refused. Needed because this app applies changes to the screen FIRST and
+  // saves after — on a conflict the change is left visible but unsaved, which for
+  // a payment means the user believes money was recorded when it was not.
+  const persistToSupabase = useCallback(async (operation, retryFn, onConflict) => {
     setSaved(false);
     setSaveError(false);
     try {
@@ -393,6 +399,7 @@ export default function App() {
         setConflictUpdatedBy(err.updatedBy);
         setShowConflictModal(true);
         setSaved(true); // CRITICAL: prevent stuck 'Menyimpan...' state
+        if (onConflict) onConflict(err);
         return;
       }
       setSaveError(true);
@@ -1143,12 +1150,43 @@ export default function App() {
     if (USE_SUPABASE) {
       const nd = dataRef.current;
       const updated = nd.transactions.find((x) => x.id === id);
+      // T111: `true` = check the stored version before writing. Payments were the
+      // ONLY write path that skipped this, and because saveTransaction upserts the
+      // WHOLE row, a browser holding stale data would silently overwrite another
+      // user's edit — wrong value kept AND the bill marked settled. Every other
+      // write path (editTransaction, updateContact) has always checked.
       const supabaseSave = () => Promise.all([
-        updated ? sbSaveTransaction(updated, user.id) : Promise.resolve(),
+        updated ? sbSaveTransaction(updated, user.id, true) : Promise.resolve(),
         logActivity('payment', 'transaction', updated?.txnId || id, { amount: paidAmount, note: paymentNote }),
       ]);
-      const retryFn = () => persistToSupabase(supabaseSave, retryFn);
-      persistToSupabase(supabaseSave, retryFn);
+      const retryFn = () => persistToSupabase(supabaseSave, retryFn, onPaymentConflict);
+      // Recovery: the payment is already drawn on screen but was NOT saved.
+      // Reverting to the local copy is pointless (it is the stale one that caused
+      // the conflict), so pull the row fresh and let the user re-enter against it.
+      const onPaymentConflict = () => {
+        setConflictMessage(
+          "Pembayaran TIDAK tersimpan. Transaksi ini baru saja diubah pengguna lain. " +
+          "Data sudah diperbarui — silakan periksa dan catat pembayaran kembali."
+        );
+        loadTransactionById(id)
+          .then((fresh) => {
+            setData((d) => ({
+              ...d,
+              transactions: fresh
+                ? d.transactions.map((x) => (x.id === id ? fresh : x))
+                : d.transactions.filter((x) => x.id !== id), // deleted by someone else
+            }));
+          })
+          .catch((e) => {
+            // Refetch failed — the on-screen row stays stale, so say so plainly
+            console.warn('[applyPayment] conflict refetch failed:', e.message);
+            setConflictMessage(
+              "Pembayaran TIDAK tersimpan. Transaksi ini baru saja diubah pengguna lain. " +
+              "Muat ulang halaman sebelum mencatat pembayaran kembali."
+            );
+          });
+      };
+      persistToSupabase(supabaseSave, retryFn, onPaymentConflict);
     }
   };
 
@@ -2232,7 +2270,9 @@ export default function App() {
       {showConflictModal && (
         <ConflictModal
           updatedBy={conflictUpdatedBy}
-          onClose={() => { setShowConflictModal(false); setConflictUpdatedBy(''); }}
+          message={conflictMessage}
+          autoDismiss={!conflictMessage}
+          onClose={() => { setShowConflictModal(false); setConflictUpdatedBy(''); setConflictMessage(null); }}
         />
       )}
       {showPasswordChange && (

@@ -7,19 +7,28 @@
 import React, { useEffect } from 'react';
 
 /**
+ * T111: `message` and `autoDismiss` are optional and default to the original
+ * behaviour, so existing callers (editTransaction, updateContact) are unchanged.
+ * A payment conflict passes autoDismiss=false — money must not disappear behind
+ * a popup that times out after 8 seconds while the user is looking elsewhere.
+ *
  * @param {{
  *   updatedBy: string,
- *   onClose: () => void
+ *   onClose: () => void,
+ *   message?: string,
+ *   autoDismiss?: boolean
  * }} props
  */
-export default function ConflictModal({ updatedBy, onClose }) {
-  // Auto-dismiss after 8 seconds
+export default function ConflictModal({ updatedBy, onClose, message, autoDismiss = true }) {
+  // Auto-dismiss after 8 seconds (skipped when autoDismiss is false)
   useEffect(() => {
+    if (!autoDismiss) return;
     const timer = setTimeout(onClose, 8000);
     return () => clearTimeout(timer);
-  }, [onClose]);
+  }, [onClose, autoDismiss]);
 
-  // Escape key dismisses
+  // Escape key dismisses (kept even when autoDismiss is off — the user can
+  // always close it deliberately; only the silent timeout is suppressed)
   useEffect(() => {
     const handleKey = (e) => {
       if (e.key === 'Escape') onClose();
@@ -43,14 +52,20 @@ export default function ConflictModal({ updatedBy, onClose }) {
           ⚠ Data Telah Diubah
         </div>
         <div className="modal-body">
-          <p>
-            Data ini sudah diubah oleh{' '}
-            <strong>{updatedBy}</strong>.
-            Perubahan Anda tidak disimpan.
-          </p>
-          <p style={{ marginTop: 8 }}>
-            Silakan refresh halaman untuk melihat data terbaru.
-          </p>
+          {message ? (
+            <p>{message}</p>
+          ) : (
+            <>
+              <p>
+                Data ini sudah diubah oleh{' '}
+                <strong>{updatedBy}</strong>.
+                Perubahan Anda tidak disimpan.
+              </p>
+              <p style={{ marginTop: 8 }}>
+                Silakan refresh halaman untuk melihat data terbaru.
+              </p>
+            </>
+          )}
         </div>
         <div className="modal-actions">
           <button className="btn btn-primary" onClick={onClose}>

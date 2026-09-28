@@ -231,6 +231,23 @@ export async function loadDataFromSupabase(userId) {
   };
 }
 
+/**
+ * T111: re-fetch a single transaction straight from Supabase.
+ * Used to recover after a payment conflict — the local copy is known-stale at
+ * that point, so reverting to it would be worse than useless. Returns null when
+ * the row is gone (deleted by someone else) so callers can drop it from state.
+ *
+ * @param {string} id - internal transaction id
+ * @returns {Promise<Object|null>} mapped transaction, or null if not found
+ */
+export async function loadTransactionById(id) {
+  const { data, error } = await withTimeout(
+    supabase.from('transactions').select('*').eq('id', id).maybeSingle()
+  );
+  if (error) throw new Error(`Gagal memuat ulang transaksi: ${error.message}`);
+  return data ? mapTransaction(data) : null;
+}
+
 // ── Individual write functions ─────────────────────────────────────────────────
 
 /**
