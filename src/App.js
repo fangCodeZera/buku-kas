@@ -337,6 +337,13 @@ export default function App() {
   const [showConflictModal,  setShowConflictModal]  = useState(false);
   const [conflictUpdatedBy,  setConflictUpdatedBy]  = useState('');
   const [onlineUsers,        setOnlineUsers]        = useState([]); // [{ id, name, role }]
+  // T110: realtime health. `realtimeLive` is the current state; `realtimeDropped`
+  // is STICKY — once sync has broken, reconnecting does NOT recover the changes
+  // that were missed (postgres_changes has no replay), so the warning must persist
+  // until the user reloads, not vanish the moment the socket comes back.
+  const [realtimeLive,       setRealtimeLive]       = useState(true);
+  const [realtimeDropped,    setRealtimeDropped]    = useState(false);
+  const [syncBannerDismissed, setSyncBannerDismissed] = useState(false);
   const [toast,              setToast]              = useState(null); // app-level warning toast (e.g. txnId collision)
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const saveTimer = useRef();
@@ -603,8 +610,19 @@ export default function App() {
 
   useEffect(() => {
     if (!USE_SUPABASE || !userId) return;
-    const cleanup = subscribeToChanges(handleRealtimeUpdate);
-    return cleanup;
+    // `cancelled` guards the trailing CLOSED that removeChannel fires during
+    // cleanup — without it, logging out or switching user would raise a false alarm.
+    let cancelled = false;
+    const cleanup = subscribeToChanges(handleRealtimeUpdate, (status) => {
+      if (cancelled) return;
+      const healthy = status === "SUBSCRIBED";
+      setRealtimeLive(healthy);
+      if (!healthy) {
+        setRealtimeDropped(true);
+        setSyncBannerDismissed(false); // a fresh drop re-raises a dismissed banner
+      }
+    });
+    return () => { cancelled = true; cleanup(); };
   }, [userId, handleRealtimeUpdate]);
 
   // ── Phase 5: Presence — track online users ───────────────────────────────
@@ -1890,6 +1908,31 @@ export default function App() {
               <button onClick={retrySave} className="btn btn-primary btn-sm">Coba Lagi</button>
               <button onClick={() => setPage("settings")} className="btn btn-outline btn-sm">Buka Pengaturan</button>
             </div>
+          </div>
+        )}
+
+        {/* ── Sync Status Banner (T110) ── */}
+        {USE_SUPABASE && realtimeDropped && !syncBannerDismissed && (
+          <div role="alert" className="sync-banner">
+            <span className="sync-banner__text">
+              {realtimeLive
+                ? "⚠️ Sinkronisasi sempat terputus. Perubahan dari pengguna lain selama itu mungkin belum tampil."
+                : "⚠️ Sinkronisasi langsung terputus. Data di layar mungkin tidak terbaru."}
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="sync-banner__link"
+              >
+                Muat Ulang
+              </button>
+            </span>
+            <button
+              onClick={() => setSyncBannerDismissed(true)}
+              className="sync-banner__dismiss"
+              aria-label="Tutup peringatan sinkronisasi"
+            >
+              ✕
+            </button>
           </div>
         )}
 

@@ -20,10 +20,17 @@ import supabase from './supabaseClient';
  *
  * Returns a cleanup function that removes all subscriptions.
  *
+ * T110: onStatus (optional) receives every subscription state change —
+ * 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR'. These were previously
+ * logged in development only and discarded in production, so a dead sync channel
+ * was completely invisible to the user. Callers must tolerate a trailing 'CLOSED'
+ * arriving after their own cleanup ran (removeChannel triggers it).
+ *
  * @param {(table: string, eventType: string, record: Object) => void} onUpdate
+ * @param {(status: string, err?: Error) => void} [onStatus]
  * @returns {() => void} cleanup function
  */
-export function subscribeToChanges(onUpdate) {
+export function subscribeToChanges(onUpdate, onStatus) {
   const channel = supabase
     .channel('bukukas-realtime')
     .on(
@@ -62,10 +69,11 @@ export function subscribeToChanges(onUpdate) {
         payload.new || payload.old
       )
     )
-    .subscribe((status) => {
+    .subscribe((status, err) => {
       if (process.env.NODE_ENV === 'development') {
-        console.log('Realtime subscription status:', status);
+        console.log('Realtime subscription status:', status, err || '');
       }
+      if (onStatus) onStatus(status, err);
     });
 
   return () => {

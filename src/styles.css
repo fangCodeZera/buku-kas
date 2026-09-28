@@ -3025,3 +3025,48 @@ input[type="number"] {
   }
 }
 
+
+/* ── sync-banner (realtime health, slim dismissible) ─────────────────────── */
+.sync-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-left: 4px solid #ef4444;
+  border-radius: 8px;
+  padding: 7px 12px;
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+.sync-banner__text {
+  color: #991b1b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sync-banner__link {
+  background: none;
+  border: none;
+  color: #b91c1c;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+  text-decoration: underline;
+}
+.sync-banner__link:hover { color: #7f1d1d; }
+.sync-banner__dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #b91c1c;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+  padding: 2px 4px;
+}
+.sync-banner__dismiss:hover { color: #7f1d1d; }
